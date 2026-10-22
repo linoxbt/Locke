@@ -98,12 +98,12 @@ export default async function HomePage() {
 
       {/* Closing CTA */}
       <section className="pb-14 sm:pb-20">
-        <div className={`${wrap} flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between`}>
+        {/* Headline and button share one line, centred as a pair; they stack (centred) on phones. */}
+        <div className={`${wrap} flex flex-col items-center justify-center gap-5 text-center sm:flex-row sm:gap-6`}>
           <h2 className="display text-[26px] sm:text-[34px]">Protect what your business runs on</h2>
-          {/* Same size and style as the header's Get started pill. */}
           <Link
             href={start}
-            className="inline-flex h-9 shrink-0 items-center rounded-full bg-cobalt px-3.5 text-[14px] text-paper transition-colors hover:bg-cobalt-deep"
+            className="inline-flex h-11 shrink-0 items-center rounded-full bg-cobalt px-5 text-[15px] text-paper transition-colors hover:bg-cobalt-deep"
           >
             Get started
           </Link>
