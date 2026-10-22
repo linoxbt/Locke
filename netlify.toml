@@ -1,4 +1,4 @@
-# Next.js on Netlify uses the OpenNext adapter automatically (SSR, route handlers, middleware).
+# Next.js on Netlify runs on the Netlify Next.js runtime (SSR, route handlers, middleware).
 # Runtime secrets (DATABASE_URL, LOCKE_KEY_ENC, SESSION_SECRET, STRIKE_BUILDER_CODE) live in the
 # Netlify UI with the Functions scope, not in this file. The risk worker is a long-running
 # process and runs elsewhere (see railway.json).
@@ -9,3 +9,8 @@
 [build.environment]
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
+
+# Declared explicitly so CLI/API uploads get the Next.js runtime too (Git-connected builds
+# detect it automatically). Unpinned on purpose: Netlify keeps it current.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
