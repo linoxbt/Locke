@@ -1,100 +1,143 @@
 import Link from "next/link";
-import { Arrow, Card, Display, Eyebrow, SUBTLE } from "@/components/ui";
+import { Collage } from "@/components/landing/Collage";
+import { PlanDemo } from "@/components/landing/PlanDemo";
+import { Showcase } from "@/components/landing/Showcase";
+import { SiteFooter } from "@/components/landing/SiteFooter";
 import { optionalSession } from "@/lib/server/pageAuth";
-import { getMarkPrice, type MarkPrice } from "@/lib/strike/client";
+import { getMarkPrice } from "@/lib/strike/client";
 import { pct, price } from "@/lib/ui/format";
 
 export const dynamic = "force-dynamic";
 
-async function markets(): Promise<{ ada: MarkPrice | null; wti: MarkPrice | null }> {
-  const [ada, wti] = await Promise.allSettled([getMarkPrice("ADA-USD"), getMarkPrice("WTI-USD")]);
-  return { ada: ada.status === "fulfilled" ? ada.value : null, wti: wti.status === "fulfilled" ? wti.value : null };
-}
+const wrap = "mx-auto w-full max-w-[1440px] px-5 sm:px-14";
 
 export default async function HomePage() {
-  const [session, m] = await Promise.all([optionalSession(), markets()]);
-  const primary = session ? { href: "/portfolio", label: "Open your portfolio" } : { href: "/connect", label: "Connect a Cardano wallet" };
+  const [session, ada, wti] = await Promise.all([
+    optionalSession(),
+    getMarkPrice("ADA-USD").catch(() => null),
+    getMarkPrice("WTI-USD").catch(() => null),
+  ]);
+  const start = session ? "/protect" : "/connect";
 
   return (
-    <div className="animate-rise space-y-3">
-      <section className="pb-8 pt-6 sm:pb-14 sm:pt-12">
-        <Eyebrow className="mb-6 text-ink-2">Protection plans · built on Strike</Eyebrow>
-        <Display size="xl" lead="Protect what your business holds." rest="Manage what it needs to buy." className="max-w-[15ch]" />
-        <p className="mt-8 max-w-[52ch] text-lg leading-relaxed text-ink-2">
-          Tell Locke what you want to protect — ADA in your treasury, or the fuel you buy every month. Locke opens, sizes and watches a hedge
-          for it on Strike. Your ADA stays in your wallet, still staked. Only the margin moves.
-        </p>
-        <div className="mt-10 flex flex-wrap gap-2">
-          <Link href={primary.href} className="inline-flex h-16 items-center gap-3 rounded-full bg-cobalt px-8 text-lg font-medium text-paper hover:bg-cobalt-deep">
-            {primary.label} <Arrow />
-          </Link>
-          <Link href="/how-it-works" className="inline-flex h-16 items-center rounded-full bg-paper px-8 text-lg ring-1 ring-inset ring-line hover:ring-ink">
-            How it works
-          </Link>
+    <>
+      {/* Hero: one card over a drifting collage. */}
+      <section className="relative h-[100svh] min-h-[620px] overflow-hidden bg-mist">
+        <Collage ada={ada?.mark ?? null} wti={wti?.mark ?? null} />
+        <div className="relative z-10 flex h-full items-center justify-center px-4">
+          <div className="w-full max-w-[620px] animate-rise rounded-[14px] bg-paper p-5 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.35)] sm:p-6">
+            <h1 className="display text-[30px] leading-[1.04] sm:text-[44px]">
+              Protect what your business holds. <span className="text-ink-3">Manage what it needs to buy, with hedges on Strike.</span>
+            </h1>
+            <Link
+              href={start}
+              className="mt-16 flex h-14 items-center justify-center rounded-full bg-cobalt text-[18px] text-paper transition-colors hover:bg-cobalt-deep sm:mt-24 sm:h-[84px] sm:text-[22px]"
+            >
+              {session ? "New protection plan" : "Try Locke"}
+            </Link>
+          </div>
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-        <Link href={session ? "/protect/holdings" : "/how-it-works#holdings"} className="group lg:col-span-5">
-          <Card tone="cobalt" className="flex h-full min-h-[300px] flex-col transition-transform duration-300 group-hover:-translate-y-1">
-            <div className="flex items-start justify-between">
-              <Eyebrow className={SUBTLE.cobalt}>01 · Holdings</Eyebrow>
-              <span className="num rounded-full bg-paper/15 px-3 py-1 text-[12px]">ADA-USD</span>
-            </div>
-            <h2 className="display mt-auto pt-10 text-[36px] sm:text-[48px]">Protect what you hold</h2>
-            <p className={`mt-3 text-[15px] ${SUBTLE.cobalt}`}>A direct hedge. If ADA falls, the hedge gains what your treasury loses.</p>
-          </Card>
-        </Link>
-        <Link href={session ? "/protect/costs" : "/how-it-works#costs"} className="group lg:col-span-4">
-          <Card tone="lime" className="flex h-full min-h-[300px] flex-col transition-transform duration-300 group-hover:-translate-y-1">
-            <div className="flex items-start justify-between">
-              <Eyebrow className={SUBTLE.lime}>02 · Operating costs</Eyebrow>
-              <span className="num rounded-full bg-ink/10 px-3 py-1 text-[12px]">WTI-USD</span>
-            </div>
-            <h2 className="display mt-auto pt-10 text-[36px] sm:text-[48px]">Manage what you buy</h2>
-            <p className={`mt-3 text-[15px] ${SUBTLE.lime}`}>A partial hedge on crude for the diesel you burn.</p>
-          </Card>
-        </Link>
-        <Card tone="ink" className="lg:col-span-3">
-          <div className="flex items-center justify-between">
-            <Eyebrow className={SUBTLE.ink}>Live on Strike</Eyebrow>
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-lime" aria-label="live" />
-          </div>
-          <dl className="mt-8 space-y-6">
-            {(
-              [
-                ["ADA-USD", m.ada],
-                ["WTI-USD", m.wti],
-              ] as const
-            ).map(([sym, mk]) => (
-              <div key={sym}>
-                <dt className="num text-[12px] text-paper/50">{sym}</dt>
-                <dd className="num mt-1 text-[32px] leading-none">{mk ? price(mk.mark) : "—"}</dd>
-                <dd className="num mt-2 text-[12px] text-paper/50">funding {mk ? `${pct(mk.fundingRate * 24, 3)}/day` : "unavailable"}</dd>
-              </div>
-            ))}
-          </dl>
-        </Card>
-      </div>
+      {/* Showcase */}
+      <section className={`${wrap} pb-24 pt-24 sm:pb-32 sm:pt-36`}>
+        <h2 className="display text-[40px] sm:text-[56px]">Who Locke protects</h2>
+        <div className="mt-10 sm:mt-16">
+          <Showcase />
+        </div>
+      </section>
 
-      <Card tone="mist" as="section" className="!mt-3 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-        <Display as="h2" size="md" lead="Your ADA keeps earning and voting." rest="The hedge lives on Strike." className="max-w-[22ch]" />
-        <Link href="/how-it-works" className="inline-flex h-12 shrink-0 items-center gap-2 self-start rounded-full bg-ink px-6 text-paper sm:self-auto">
-          See every step <Arrow />
-        </Link>
-      </Card>
+      {/* Black interlude with a live demo */}
+      <section className="bg-ink px-4 py-20 text-paper sm:py-32">
+        <h2 className="display mx-auto max-w-[22ch] text-center text-[28px] leading-[1.05] sm:text-[44px]">
+          Describe it, preview it, fund it. <span className="text-paper/50">Then move the price and watch the plan hold.</span>
+        </h2>
+        <div className="mt-12 sm:mt-16">
+          {ada && wti ? (
+            <PlanDemo ada={ada.mark} wti={wti.mark} />
+          ) : (
+            <p className="text-center text-paper/50">Live prices are unavailable right now.</p>
+          )}
+        </div>
+        <p className="mt-10 text-center text-[14px] text-paper/50">From your exposure to a live hedge on Strike in a few minutes</p>
+      </section>
 
-      <footer className="!mt-20 flex flex-col gap-4 border-t border-line pt-8 text-[13px] leading-relaxed text-ink-3 sm:flex-row sm:justify-between">
-        <p className="max-w-[70ch]">
-          Locke is a tool, not financial advice. Hedges can lose money on their own, and positions can be liquidated if margin runs out. Strike
-          has eligibility rules; check{" "}
-          <a className="underline underline-offset-4" href="https://docs.strikefinance.org" target="_blank" rel="noreferrer">
-            Strike&apos;s restricted persons policy
-          </a>{" "}
-          before you use it.
-        </p>
-        <p className="num shrink-0">Built on Strike · Cardano</p>
-      </footer>
+      {/* Bento */}
+      <section className={`${wrap} py-24 sm:py-36`}>
+        <h2 className="display text-[40px] sm:text-[56px]">Everything a protection plan needs</h2>
+        <div className="mt-10 grid grid-cols-2 gap-2 sm:mt-16 sm:gap-3 lg:grid-cols-4">
+          <Tile tone="bg-ink text-paper" className="col-span-2 row-span-2 min-h-[300px] sm:min-h-[460px]" title="Live Strike prices" sub="Sized from the mark price the moment you preview">
+            <dl className="mt-auto grid grid-cols-2 gap-4">
+              {(
+                [
+                  ["ADA-USD", ada],
+                  ["WTI-USD", wti],
+                ] as const
+              ).map(([s, m]) => (
+                <div key={s}>
+                  <dt className="num text-[12px] text-paper/50">{s}</dt>
+                  <dd className="num mt-1 text-[34px] leading-none sm:text-[56px]">{m ? price(m.mark) : "—"}</dd>
+                  <dd className="num mt-2 text-[12px] text-paper/50">funding {m ? `${pct(m.fundingRate * 24, 3)}/day` : "—"}</dd>
+                </div>
+              ))}
+            </dl>
+          </Tile>
+          <Tile tone="bg-cobalt text-paper" className="min-h-[200px] sm:min-h-[224px]" title="Isolated margin" sub="Trouble in one plan never touches another" />
+          <Tile tone="bg-danger text-paper" className="min-h-[200px] sm:min-h-[224px]" title="Alerts before Strike's" sub="At 10% from liquidation, not after" />
+          <Tile tone="bg-lime text-ink" className="min-h-[200px] sm:min-h-[224px]" title="Replay" sub="Your plan against 180 days of real prices">
+            <svg viewBox="0 0 100 40" className="mt-auto h-14 w-full" preserveAspectRatio="none" aria-hidden>
+              <path d="M0 26 L12 20 L24 28 L36 12 L48 18 L60 6 L72 14 L84 8 L100 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.5" />
+              <path d="M0 26 L12 25 L24 26 L36 23 L48 24 L60 21 L72 23 L84 22 L100 23" fill="none" stroke="currentColor" strokeWidth="2.5" />
+            </svg>
+          </Tile>
+          <Tile tone="bg-watch text-ink" className="min-h-[200px] sm:min-h-[224px]" title="One-tap top-up" sub="Sized to move liquidation 25% away" />
+          <Tile tone="bg-mist text-ink" className="col-span-2 min-h-[200px] sm:min-h-[224px]" title="Still staked, still voting" sub="Hedged ADA never leaves your wallet. Only margin moves." />
+          <Tile tone="bg-paper text-ink" className="col-span-2 min-h-[200px] sm:min-h-[224px]" title="Your wallet signs every move" sub="Deposits and withdrawals need your signature, and withdrawals only go back to your wallet." />
+        </div>
+      </section>
+
+      {/* Closing CTA */}
+      <section className="px-3 pb-20 sm:px-6 sm:pb-28">
+        <h2 className={`${wrap} display text-[40px] sm:text-[56px]`}>Protect what your business runs on</h2>
+        <Link
+          href={start}
+          className="mt-10 flex h-[120px] items-center justify-center rounded-full bg-cobalt text-[32px] text-paper transition-colors hover:bg-cobalt-deep sm:mt-14 sm:h-[220px] sm:text-[64px] lg:h-[296px]"
+        >
+          <span className="display">Get started</span>
+        </Link>
+        <p className="mt-14 text-center text-[14px] text-ink-3">Works with</p>
+        <ul className="mx-auto mt-6 flex max-w-[1100px] flex-wrap items-center justify-center gap-x-10 gap-y-4 text-[22px] text-ink sm:text-[26px]">
+          {["Strike", "Cardano", "Eternl", "Lace", "Vespr", "Koios"].map((n) => (
+            <li key={n} className="display">
+              {n}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <SiteFooter />
+    </>
+  );
+}
+
+function Tile({
+  tone,
+  title,
+  sub,
+  className = "",
+  children,
+}: {
+  tone: string;
+  title: string;
+  sub: string;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className={`flex flex-col rounded-[10px] p-4 sm:p-5 ${tone} ${className}`}>
+      <h3 className="display text-[22px] leading-tight sm:text-[28px]">{title}</h3>
+      {children}
+      <p className={`text-[12px] leading-snug opacity-70 sm:text-[13px] ${children ? "mt-4" : "mt-auto pt-6"}`}>{sub}</p>
     </div>
   );
 }

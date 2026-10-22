@@ -28,13 +28,7 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
             {p.type === "costs" && <li>The fuel plan is partial: local prices also move with exchange rates, taxes and policy.</li>}
             <li>Positions can be liquidated if margin runs out. Locke alerts you first, but can&apos;t top up without your signature.</li>
             <li>The deposit converts ADA to a USD balance on Strike, which slightly lowers the ADA you have staked.</li>
-            <li>
-              Strike has eligibility rules; check{" "}
-              <a className="text-ink underline underline-offset-4" href="https://docs.strikefinance.org" target="_blank" rel="noreferrer">
-                Strike&apos;s restricted persons policy
-              </a>
-              .
-            </li>
+            <li>Strike has eligibility rules; check that you&apos;re allowed to use it before you fund a plan.</li>
           </ul>
         </Card>
         <Card className="flex flex-col lg:col-span-4">

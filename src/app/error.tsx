@@ -9,6 +9,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
   }, [error]);
   const notConfigured = /isn't fully configured/.test(error.message);
   return (
+    <div className="mx-auto w-full max-w-[1240px] px-4 pb-28 pt-24 sm:px-6">
     <Card tone="danger" className="mt-6 px-6 py-16 sm:py-24">
       <Display
         lead={notConfigured ? "Locke isn't set up yet." : "Something broke."}
@@ -29,5 +30,6 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
         </LinkButton>
       </div>
     </Card>
+    </div>
   );
 }

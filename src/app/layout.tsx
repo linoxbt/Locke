@@ -6,7 +6,7 @@ import { optionalSession } from "@/lib/server/pageAuth";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const interTight = Inter_Tight({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-inter-tight" });
+const interTight = Inter_Tight({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-inter-tight" });
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
@@ -24,7 +24,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-dvh">
         <WalletProvider initialAddress={session?.addr ?? null}>
           <Header />
-          <main className="mx-auto w-full max-w-[1240px] px-4 pb-28 pt-24 sm:px-6">{children}</main>
+          <main>{children}</main>
         </WalletProvider>
       </body>
     </html>
