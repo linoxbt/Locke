@@ -72,3 +72,28 @@ describe("margin math", () => {
     expect(fundingPerDay(-10, 100, 0.0001)).toBeCloseTo(2.4);
   });
 });
+
+import { combinedLevel, distanceToLiquidation, isoForLiquidationAt, priceAtDistance } from "@/lib/domain/risk";
+
+describe("distance-based alerts", () => {
+  it("alerts on a 1x plan well before the ratio would", () => {
+    const s = -1000, entry = 0.2, iso = 250;
+    const liq = liquidationPrice(tiers, s, entry, iso)!;
+    const mark = liq / 1.08; // 8% from liquidation
+    const ratio = ratioAt(s, entry, iso, mark);
+    expect(ratio).toBeLessThan(0.1); // ratio alone says "ok"
+    expect(combinedLevel(ratio, distanceToLiquidation(s, mark, liq), "ok")).toBe("action");
+    expect(combinedLevel(ratio, distanceToLiquidation(s, liq / 1.15, liq), "ok")).toBe("watch");
+    expect(combinedLevel(ratio, distanceToLiquidation(s, liq / 1.21, liq), "watch")).toBe("watch");
+    expect(combinedLevel(ratio, distanceToLiquidation(s, liq / 1.3, liq), "watch")).toBe("ok");
+  });
+
+  it("finds the isolated balance for a target liquidation price", () => {
+    for (const [s, entry] of [[-1000, 0.2], [10, 100]] as const) {
+      const target = s < 0 ? entry * 1.6 : entry * 0.6;
+      const iso = isoForLiquidationAt(tiers, s, entry, target);
+      expect(liquidationPrice(tiers, s, entry, iso)).toBeCloseTo(target, 6);
+      expect(priceAtDistance(s, target, 0.1)).toBeCloseTo(s < 0 ? target / 1.1 : target / 0.9, 9);
+    }
+  });
+});

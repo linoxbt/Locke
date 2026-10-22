@@ -129,6 +129,50 @@ export const LEVEL_RANK: Record<RiskLevel, number> = {
   liquidation: 5,
 };
 
+/**
+ * Margin ratio only climbs steeply in the last few percent before liquidation, so on a
+ * low-leverage plan a ratio alert alone would fire too late for a Cardano deposit to land.
+ * Locke therefore also alerts on how far the mark is from the liquidation price.
+ */
+export const DISTANCE_LEVELS = { watch: 0.2, action: 0.1, watchExit: 0.22, target: 0.25 };
+
+/** Fractional distance from mark to liquidation in the adverse direction (0.1 = 10%). */
+export function distanceToLiquidation(signedSize: number, mark: number, liq: number | null): number | null {
+  if (liq == null || !(mark > 0)) return null;
+  return signedSize < 0 ? (liq - mark) / mark : (mark - liq) / mark;
+}
+
+/** Mark price at which the distance to liquidation equals `d`. */
+export function priceAtDistance(signedSize: number, liq: number | null, d: number): number | null {
+  if (liq == null) return null;
+  return signedSize < 0 ? liq / (1 + d) : liq / (1 - d);
+}
+
+/** Isolated balance that would put the liquidation price at `x`. */
+export function isoForLiquidationAt(tiers: MarginTier[], signedSize: number, entry: number, x: number): number {
+  const q = Math.abs(signedSize);
+  const { mmr, ma } = mmrFor(tiers, q * x);
+  return signedSize < 0 ? x * q * (1 + mmr) - q * entry - ma : q * entry - ma - x * q * (1 - mmr);
+}
+
+/** Worse of the ratio level and the distance level, each with its own hysteresis. */
+export function combinedLevel(
+  ratio: number,
+  distance: number | null,
+  prev: RiskLevel,
+  th: Thresholds = LOCKE_THRESHOLDS
+): RiskLevel {
+  const byRatio = riskLevel(ratio, prev, th);
+  let byDistance: RiskLevel = "ok";
+  if (distance != null) {
+    if (distance <= 0) byDistance = "liquidation";
+    else if (distance <= DISTANCE_LEVELS.action) byDistance = "action";
+    else if (distance <= DISTANCE_LEVELS.watch) byDistance = "watch";
+    else if (prev !== "ok" && distance <= DISTANCE_LEVELS.watchExit) byDistance = "watch";
+  }
+  return LEVEL_RANK[byDistance] > LEVEL_RANK[byRatio] ? byDistance : byRatio;
+}
+
 /** USD to add so the ratio returns to `target`. */
 export function suggestedTopUpUsd(mm: number, isoBalance: number, upnl: number, target: number): number {
   if (target <= 0) return 0;

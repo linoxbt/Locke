@@ -14,11 +14,17 @@ export const GET = route(async (req: Request) => {
     select * from plans where user_id = ${s.uid} and status <> 'draft'
     order by (status = 'closed'), created_at desc limit 50`) as unknown as PlanRow[];
   let positions: StrikePosition[] = [];
+  let liveError: string | null = null;
   if (rows.some((r) => r.status === "active" || r.status === "closing")) {
-    positions = await getPositions(await strikeKeysFor(s.uid));
+    try {
+      positions = await getPositions(await strikeKeysFor(s.uid));
+    } catch (e) {
+      // Show the portfolio from stored data rather than failing the whole page.
+      liveError = e instanceof Error ? e.message : "Strike is unreachable";
+    }
   }
   const plans = await Promise.all(rows.map((r) => planView(r, positions.find((p) => p.symbol === r.symbol))));
-  return NextResponse.json({ plans });
+  return NextResponse.json({ plans, liveError });
 });
 
 /** Create a draft and return its preview. Sizing happens here, from live Strike data. */

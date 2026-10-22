@@ -15,14 +15,18 @@ import {
   sizePlan,
 } from "../domain/plans";
 import {
+  combinedLevel,
   DEMO_THRESHOLDS,
+  DISTANCE_LEVELS,
+  distanceToLiquidation,
   fundingPerDay,
+  isoForLiquidationAt,
   liquidationPrice,
   LOCKE_THRESHOLDS,
   maintenanceMargin,
   marginRatio,
+  priceAtDistance,
   priceAtRatio,
-  riskLevel,
   suggestedTopUpUsd,
   type Thresholds,
 } from "../domain/risk";
@@ -184,6 +188,9 @@ export async function prepareDeposit(
 
   if (purpose === "open") {
     if (plan.status !== "draft" && plan.status !== "funding") throw new HttpError(409, "This plan is already open");
+    const [inFlight] = await db()`
+      select id from deposits where plan_id = ${plan.id} and purpose = 'open' and status = 'submitted'`;
+    if (inFlight) throw new HttpError(409, "Your deposit is still confirming on Cardano. Locke opens the plan when it lands.");
     const [clash] = await db()`
       select id from plans where user_id = ${userId} and symbol = ${plan.symbol}
         and status in ('funding','opening','active','closing') and id <> ${plan.id}`;
@@ -361,25 +368,35 @@ export async function syncPlan(userId: string, planId: string): Promise<PlanRow>
   if (plan.status === "opening") {
     if (pos) {
       const entry = parseFloat(pos.entry_price);
-      plan =
-        (await transition(plan.id, ["opening"], "active", { entry_price: entry, opened: true, status_note: null })) ?? plan;
-      await addEvent(plan.id, "info", `Hedge open on Strike at ${entry}`, { size: pos.size });
+      const won = await transition(plan.id, ["opening"], "active", { entry_price: entry, opened: true, status_note: null });
+      if (won) await addEvent(plan.id, "info", `Hedge open on Strike at ${entry}`, { size: pos.size });
+      plan = won ?? (await loadPlan(userId, planId));
     } else if (Date.now() - new Date(plan.updated_at).getTime() > OPEN_TIMEOUT_MS) {
-      plan = (await transition(plan.id, ["opening"], "funding", { status_note: "The order did not fill. Try opening again." })) ?? plan;
-      await addEvent(plan.id, "action", "The hedge order did not fill. Funds stay on your Strike balance; open again to retry.");
+      const won = await transition(plan.id, ["opening"], "funding", { status_note: "The order did not fill. Try opening again." });
+      if (won) await addEvent(plan.id, "action", "The hedge order did not fill. Funds stay on your Strike balance; open again to retry.");
+      plan = won ?? (await loadPlan(userId, planId));
     }
   }
 
   if (plan.status === "active" && pos) {
-    if (!plan.buffer_added && plan.sizing.bufferMarginUsd > 0) {
-      const available = await availableUsd(keys);
-      const amount = Math.min(plan.sizing.bufferMarginUsd, Math.max(0, available - 0.05));
-      if (amount >= 0.01) {
-        await addIsolatedMargin(keys, plan.symbol, amount);
-        await addEvent(plan.id, "info", `Added $${amount.toFixed(2)} buffer margin to this plan`);
-      }
-      await sql`update plans set buffer_added = true, updated_at = now() where id = ${plan.id}`;
+    // Claim the buffer step first so a concurrent sync (worker and browser) can't add it twice.
+    const [claimedBuffer] = plan.buffer_added
+      ? []
+      : await sql`update plans set buffer_added = true, updated_at = now()
+                  where id = ${plan.id} and buffer_added = false returning id`;
+    if (claimedBuffer) {
       plan.buffer_added = true;
+      try {
+        const available = await availableUsd(keys);
+        const amount = Math.min(plan.sizing.bufferMarginUsd, Math.max(0, available - 0.05));
+        if (amount >= 0.01) {
+          await addIsolatedMargin(keys, plan.symbol, amount);
+          await addEvent(plan.id, "info", `Added $${amount.toFixed(2)} buffer margin to this plan`);
+        }
+      } catch (e) {
+        await sql`update plans set buffer_added = false where id = ${plan.id}`;
+        throw e;
+      }
     }
     const topups = await sql`select * from deposits where plan_id = ${plan.id} and purpose = 'topup' and status = 'credited'`;
     for (const t of topups) {
@@ -397,12 +414,15 @@ export async function syncPlan(userId: string, planId: string): Promise<PlanRow>
 
   if ((plan.status === "active" || plan.status === "closing") && !pos) {
     const wasClosing = plan.status === "closing";
-    plan = (await transition(plan.id, ["active", "closing"], "closed", { closed: true, status_note: null })) ?? plan;
-    await addEvent(
-      plan.id,
-      wasClosing ? "info" : "liquidation",
-      wasClosing ? "Plan closed. Margin is back on your Strike balance." : "The position is no longer open on Strike (closed outside Locke or liquidated)."
-    );
+    const won = await transition(plan.id, ["active", "closing"], "closed", { closed: true, status_note: null });
+    if (won) {
+      await addEvent(
+        plan.id,
+        wasClosing ? "info" : "liquidation",
+        wasClosing ? "Plan closed. Margin is back on your Strike balance." : "The position is no longer open on Strike (closed outside Locke or liquidated)."
+      );
+    }
+    plan = won ?? (await loadPlan(userId, planId));
   }
   return plan;
 }
@@ -525,6 +545,8 @@ export interface PlanView {
     leverage: number;
   };
   ratio: number | null;
+  /** Fractional distance from mark to liquidation (0.1 = 10%). */
+  liquidationDistance: number | null;
   riskLevel: RiskLevel;
   headline: number;
   headlineUnit: string;
@@ -544,6 +566,7 @@ export async function planView(plan: PlanRow, pos: StrikePosition | null | undef
   let ratio: number | null = null;
   let suggested = 0;
   let alertPrice: number | null = null;
+  let distance: number | null = null;
   let headline: number;
 
   if (live && pos) {
@@ -565,16 +588,23 @@ export async function planView(plan: PlanRow, pos: StrikePosition | null | undef
       fundingToDate: funding,
       leverage: pos.leverage,
     };
-    suggested = suggestedTopUpUsd(mm, iso, upnl, th.target);
+    const liq = position.liquidationPrice;
+    distance = distanceToLiquidation(signed, mark.mark, liq);
+    // Enough to bring the ratio back to target AND push liquidation 25% away from the mark.
+    const liqTarget = signed < 0 ? mark.mark * (1 + DISTANCE_LEVELS.target) : mark.mark * (1 - DISTANCE_LEVELS.target);
+    const byDistance = Math.max(0, isoForLiquidationAt(rules.tiers, signed, entry, liqTarget) - iso);
+    suggested = Math.max(suggestedTopUpUsd(mm, iso, upnl, th.target), byDistance);
     if (config.demoAlerts) suggested = Math.min(suggested, MIN_DEPOSIT_USD);
-    alertPrice = priceAtRatio(rules.tiers, signed, entry, iso, th.action);
+    const byRatio = priceAtRatio(rules.tiers, signed, entry, iso, th.action);
+    const byDist = priceAtDistance(signed, liq, DISTANCE_LEVELS.action);
+    alertPrice = byRatio == null ? byDist : byDist == null ? byRatio : signed < 0 ? Math.min(byRatio, byDist) : Math.max(byRatio, byDist);
     headline = liveHeadline(plan.type, plan.inputs, Math.abs(signed), entry, mark.mark, funding);
   } else {
     const entry = plan.entry_price ?? mark.mark;
     headline = liveHeadline(plan.type, plan.inputs, plan.size, entry, mark.mark, 0);
   }
 
-  const level: RiskLevel = ratio == null ? "ok" : riskLevel(ratio, plan.risk_level, th);
+  const level: RiskLevel = ratio == null ? "ok" : combinedLevel(ratio, distance, plan.risk_level, th);
   const signedPlanned = plan.side === "sell" ? -plan.size : plan.size;
   return {
     id: plan.id,
@@ -593,6 +623,7 @@ export async function planView(plan: PlanRow, pos: StrikePosition | null | undef
     hourlyFundingRate: mark.fundingRate,
     position,
     ratio,
+    liquidationDistance: distance,
     riskLevel: level,
     headline,
     headlineUnit: plan.type === "holdings" ? "USD" : `${(plan.inputs as CostsInputs).currency}/L`,

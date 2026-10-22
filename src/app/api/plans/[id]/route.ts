@@ -13,7 +13,15 @@ export const GET = route(async (req: Request, ctx: Ctx) => {
   const { id } = await ctx.params;
   const plan = await loadPlan(s.uid, id);
   const live = plan.status === "active" || plan.status === "closing";
-  const pos = live ? await getPosition(await strikeKeysFor(s.uid), plan.symbol) : null;
+  let pos = null;
+  let liveError: string | null = null;
+  if (live) {
+    try {
+      pos = await getPosition(await strikeKeysFor(s.uid), plan.symbol);
+    } catch (e) {
+      liveError = e instanceof Error ? e.message : "Strike is unreachable";
+    }
+  }
   const sql = db();
   const [view, events, snapshots, deposits] = await Promise.all([
     planView(plan, pos),
@@ -24,5 +32,5 @@ export const GET = route(async (req: Request, ctx: Ctx) => {
         where plan_id = ${plan.id} order by created_at desc limit 20`,
   ]);
   const preview = plan.status === "draft" || plan.status === "funding" ? await previewFor(plan) : null;
-  return NextResponse.json({ plan: view, preview, events, snapshots, deposits });
+  return NextResponse.json({ plan: view, preview, events, snapshots, deposits, liveError });
 });

@@ -2,9 +2,11 @@
 // Pure functions: every price, rule and fee comes in as an argument.
 
 import {
+  DISTANCE_LEVELS,
   fundingPerDay,
   liquidationPrice,
   LOCKE_THRESHOLDS,
+  priceAtDistance,
   priceAtRatio,
 } from "./risk";
 import type {
@@ -173,7 +175,11 @@ export function buildPreview(
   const entry = sizing.price;
   const iso = sizing.marginUsd;
   const liq = liquidationPrice(rules.tiers, s, entry, iso);
-  const alert = priceAtRatio(rules.tiers, s, entry, iso, LOCKE_THRESHOLDS.action);
+  // Locke asks for a top-up at whichever comes first: its ratio level or 10% from liquidation.
+  const byRatio = priceAtRatio(rules.tiers, s, entry, iso, LOCKE_THRESHOLDS.action);
+  const byDistance = priceAtDistance(s, liq, DISTANCE_LEVELS.action);
+  const alert =
+    byRatio == null ? byDistance : byDistance == null ? byRatio : s < 0 ? Math.min(byRatio, byDistance) : Math.max(byRatio, byDistance);
   const liquidatedAt = (p: number) =>
     liq != null && (sizing.side === "sell" ? p >= liq : p <= liq);
 
@@ -217,11 +223,14 @@ export interface ReplayPoint {
   price: number;
   without: number;
   with: number;
+  /** Funding to this day if today's rate had held (USD; + received, − paid). Shown separately, not in `with`. */
+  funding: number;
 }
 
 /**
- * Replay a plan against daily closes. The hedge is rebased to the first close;
- * funding uses today's rate as a constant (labelled on screen as an assumption).
+ * Replay a plan against daily closes, with the hedge rebased to the first close.
+ * Strike publishes no funding-rate history, so the lines show price effects only and
+ * funding at today's rate is carried alongside as a labelled projection.
  */
 export function replay(
   type: PlanType,
@@ -232,17 +241,16 @@ export function replay(
 ): ReplayPoint[] {
   if (closes.length === 0) return [];
   const p0 = closes[0].close;
-  const side = PLAN_SIDE[type];
-  const s = side === "sell" ? -hedgeSize : hedgeSize;
-  const dailyFunding = fundingPerDay(s, p0, hourlyFundingRate);
+  const s = PLAN_SIDE[type] === "sell" ? -hedgeSize : hedgeSize;
+  let funding = 0;
   return closes.map(({ t, close }, i) => {
-    const funding = dailyFunding * i;
+    if (i > 0) funding += fundingPerDay(s, close, hourlyFundingRate);
     if (type === "holdings") {
       const o = holdingsOutcome(inputs as HoldingsInputs, hedgeSize, p0, close);
-      return { t, price: close, without: o.without, with: o.with + funding };
+      return { t, price: close, without: o.without, with: o.with, funding };
     }
-    const o = costsOutcome(inputs as CostsInputs, hedgeSize, p0, close, funding);
-    return { t, price: close, without: o.without, with: o.with };
+    const o = costsOutcome(inputs as CostsInputs, hedgeSize, p0, close);
+    return { t, price: close, without: o.without, with: o.with, funding };
   });
 }
 
