@@ -218,6 +218,9 @@ export function MarginBar({
   );
 }
 
+/** Clips long text to one line, then shows all of it while hovered. */
+export const REVEAL = "truncate hover:overflow-visible hover:whitespace-normal hover:[overflow-wrap:anywhere]";
+
 export function Stat({
   label,
   value,
@@ -234,7 +237,7 @@ export function Stat({
   return (
     <div className="min-w-0">
       <div className={`text-[13px] ${subtle}`}>{label}</div>
-      <div className={`num mt-1 truncate text-[17px] ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-danger" : ""}`}>{value}</div>
+      <div className={`num mt-1 ${REVEAL} text-[17px] ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-danger" : ""}`}>{value}</div>
       {sub && <div className={`mt-0.5 text-[12px] ${subtle}`}>{sub}</div>}
     </div>
   );

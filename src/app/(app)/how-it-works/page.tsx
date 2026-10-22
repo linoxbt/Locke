@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DropIn } from "@/components/DropIn";
 import { Arrow, Card, Display, Eyebrow, SUBTLE } from "@/components/ui";
 
 export const metadata: Metadata = { title: "How it works — Locke" };
@@ -67,7 +68,7 @@ export default function HowItWorksPage() {
             liquidation. Each plan has its own isolated margin, so trouble in one never touches the other.
           </p>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-7">
+        <DropIn className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-7">
           {LADDER.map((r) => (
             <Card key={r.k} tone={r.tone} className="flex min-h-[150px] flex-col">
               <Eyebrow className={SUBTLE[r.tone]}>{r.v}</Eyebrow>
@@ -75,7 +76,7 @@ export default function HowItWorksPage() {
               <p className={`mt-2 text-[14px] ${SUBTLE[r.tone]}`}>{r.d}</p>
             </Card>
           ))}
-        </div>
+        </DropIn>
       </section>
 
       <Card as="section" className="!mt-16 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { DropIn } from "./DropIn";
 import { PlanCard } from "./PlanCard";
 import { Arrow, Card, Display, ErrorNote, Eyebrow, LinkButton, Notice } from "./ui";
 import type { PlanView } from "@/lib/server/planService";
@@ -65,21 +66,21 @@ export function PortfolioView({ initial }: { initial: { plans: PlanView[]; liveE
       )}
 
       {live.length > 0 && (
-        <div className="mt-10 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <DropIn className="mt-10 grid grid-cols-1 gap-3 md:grid-cols-2">
           {live.map((p) => (
             <PlanCard key={p.id} p={p} />
           ))}
-        </div>
+        </DropIn>
       )}
 
       {closed.length > 0 && (
         <section className="mt-20">
           <h2 className="display text-[22px]">Closed</h2>
-          <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <DropIn className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {closed.map((p) => (
               <PlanCard key={p.id} p={p} />
             ))}
-          </div>
+          </DropIn>
         </section>
       )}
     </>

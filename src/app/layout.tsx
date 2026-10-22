@@ -23,6 +23,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const session = await optionalSession();
   return (
     <html lang="en" className={`${inter.variable} ${interTight.variable} ${jetbrains.variable}`}>
+      <head>
+        <noscript>
+          {/* Without JavaScript nothing waits to animate in. */}
+          <style>{`[data-drop] > * { opacity: 1 !important; } .replay-clip { transform: none !important; }`}</style>
+        </noscript>
+      </head>
       <body className="min-h-dvh">
         <WalletProvider initialAddress={session?.addr ?? null}>
           <Header />

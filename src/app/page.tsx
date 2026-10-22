@@ -1,11 +1,13 @@
 import Link from "next/link";
+import { DropIn } from "@/components/DropIn";
 import { Collage } from "@/components/landing/Collage";
+import { LiveDot, LivePrices } from "@/components/landing/LivePrices";
 import { PlanDemo } from "@/components/landing/PlanDemo";
 import { Showcase } from "@/components/landing/Showcase";
+import { ReplaySpark } from "@/components/landing/ReplaySpark";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { optionalSession } from "@/lib/server/pageAuth";
 import { getMarkPrice } from "@/lib/strike/client";
-import { pct, price } from "@/lib/ui/format";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +26,9 @@ export default async function HomePage() {
       {/* Hero: one card over a drifting collage. */}
       <section className="relative h-[100svh] min-h-[560px] overflow-hidden bg-mist">
         <Collage ada={ada?.mark ?? null} wti={wti?.mark ?? null} />
-        <div className="relative z-10 flex h-full items-center justify-center px-4">
-          <div className="w-full max-w-[520px] animate-rise rounded-[14px] bg-paper p-5 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.35)] sm:p-6">
+        {/* The overlay lets hover through to the collage; only the card itself takes the pointer. */}
+        <div className="pointer-events-none relative z-10 flex h-full items-center justify-center px-4">
+          <div className="pointer-events-auto w-full max-w-[520px] animate-rise rounded-[14px] bg-paper p-5 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.35)] sm:p-6">
             <h1 className="display text-[24px] leading-[1.04] sm:text-[32px]">
               Protect what your business holds. <span className="text-ink-3">Manage what it needs to buy, with hedges on Strike.</span>
             </h1>
@@ -65,35 +68,32 @@ export default async function HomePage() {
       {/* Bento */}
       <section className={`${wrap} py-16 sm:py-24`}>
         <h2 className="display text-[26px] sm:text-[34px]">Everything a protection plan needs</h2>
-        <div className="mt-8 grid grid-cols-2 gap-2 sm:mt-10 sm:gap-3 lg:grid-cols-4">
-          <Tile tone="bg-ink text-paper" className="col-span-2 row-span-2 min-h-[220px] sm:min-h-[340px]" title="Live Strike prices" sub="Sized from the mark price the moment you preview">
-            <dl className="mt-auto grid grid-cols-2 gap-4">
-              {(
-                [
-                  ["ADA-USD", ada],
-                  ["WTI-USD", wti],
-                ] as const
-              ).map(([s, m]) => (
-                <div key={s}>
-                  <dt className="num text-[12px] text-paper/50">{s}</dt>
-                  <dd className="num mt-1 text-[26px] leading-none sm:text-[38px]">{m ? price(m.mark) : "—"}</dd>
-                  <dd className="num mt-2 text-[12px] text-paper/50">funding {m ? `${pct(m.fundingRate * 24, 3)}/day` : "—"}</dd>
-                </div>
-              ))}
-            </dl>
+        <DropIn className="mt-8 grid grid-cols-2 gap-2 sm:mt-10 sm:gap-3 lg:grid-cols-4">
+          <Tile
+            tone="bg-ink text-paper"
+            className="col-span-2 row-span-2 min-h-[220px] sm:min-h-[340px]"
+            title={
+              <>
+                Live Strike prices
+                <LiveDot />
+              </>
+            }
+            sub="Sized from the mark price the moment you preview"
+          >
+            <LivePrices
+              ada={ada ? { mark: ada.mark, index: ada.index, fundingRate: ada.fundingRate } : null}
+              wti={wti ? { mark: wti.mark, index: wti.index, fundingRate: wti.fundingRate } : null}
+            />
           </Tile>
           <Tile tone="bg-cobalt text-paper" className="min-h-[150px] sm:min-h-[168px]" title="Isolated margin" sub="Trouble in one plan never touches another" />
           <Tile tone="bg-danger text-paper" className="min-h-[150px] sm:min-h-[168px]" title="Alerts before Strike's" sub="At 10% from liquidation, not after" />
           <Tile tone="bg-lime text-ink" className="min-h-[150px] sm:min-h-[168px]" title="Replay" sub="Your plan against 180 days of real prices">
-            <svg viewBox="0 0 100 40" className="mt-auto h-14 w-full" preserveAspectRatio="none" aria-hidden>
-              <path d="M0 26 L12 20 L24 28 L36 12 L48 18 L60 6 L72 14 L84 8 L100 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.5" />
-              <path d="M0 26 L12 25 L24 26 L36 23 L48 24 L60 21 L72 23 L84 22 L100 23" fill="none" stroke="currentColor" strokeWidth="2.5" />
-            </svg>
+            <ReplaySpark />
           </Tile>
           <Tile tone="bg-watch text-ink" className="min-h-[150px] sm:min-h-[168px]" title="One-tap top-up" sub="Sized to move liquidation 25% away" />
           <Tile tone="bg-mist text-ink" className="col-span-2 min-h-[150px] sm:min-h-[168px]" title="Still staked, still voting" sub="Hedged ADA never leaves your wallet. Only margin moves." />
           <Tile tone="bg-paper text-ink" className="col-span-2 min-h-[150px] sm:min-h-[168px]" title="Your wallet signs every move" sub="Deposits and withdrawals need your signature, and withdrawals only go back to your wallet." />
-        </div>
+        </DropIn>
       </section>
 
       {/* Closing CTA */}
@@ -131,7 +131,7 @@ function Tile({
   children,
 }: {
   tone: string;
-  title: string;
+  title: React.ReactNode;
   sub: string;
   className?: string;
   children?: React.ReactNode;

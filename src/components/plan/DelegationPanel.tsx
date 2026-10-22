@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/ui/api";
 import { num, shortAddr } from "@/lib/ui/format";
-import { Card, Eyebrow, Spinner } from "../ui";
+import { Card, Eyebrow, REVEAL, Spinner } from "../ui";
 
 interface Delegation {
   pool: string | null;
@@ -34,7 +34,7 @@ export function DelegationPanel({ q, hideCovered = false }: { q: number; hideCov
           </div>
           <div className="flex items-baseline justify-between gap-4">
             <dt className="text-[14px] text-ink-2">Voting through</dt>
-            <dd className="num truncate text-[15px]">{data?.drep ? shortAddr(data.drep) : "no DRep"}</dd>
+            <dd className={`num text-[15px] ${REVEAL}`}>{data?.drep ? shortAddr(data.drep) : "no DRep"}</dd>
           </div>
           <div className={`flex items-baseline justify-between gap-4 ${hideCovered ? "hidden" : ""}`}>
             <dt className="text-[14px] text-ink-2">Covered by this plan</dt>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { CostsInputs } from "@/lib/domain/types";
 import type { PlanView } from "@/lib/server/planService";
 import { local, signedUsd, usd } from "@/lib/ui/format";
-import { Arrow, Card, Eyebrow, MarginBar, StateChip, SUBTLE, type Tone } from "./ui";
+import { Arrow, Card, Eyebrow, MarginBar, REVEAL, StateChip, SUBTLE, type Tone } from "./ui";
 
 export function headlineText(p: PlanView): { value: string; caption: string } {
   if (p.type === "holdings") return { value: usd(p.headline, 0), caption: "Protected value" };
@@ -38,7 +38,9 @@ export function PlanCard({ p }: { p: PlanView }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <Eyebrow className={SUBTLE[tone]}>{p.type === "holdings" ? "Holdings" : "Operating costs"}</Eyebrow>
-            <div className="mt-2 truncate text-[17px] font-medium">{p.name}</div>
+            <div className={`mt-2 text-[17px] font-medium ${REVEAL} group-hover:whitespace-normal group-hover:[overflow-wrap:anywhere]`} title={p.name}>
+              {p.name}
+            </div>
           </div>
           <StateChip status={p.status} level={p.riskLevel} />
         </div>

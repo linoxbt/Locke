@@ -1,10 +1,14 @@
 // Hero backdrop: columns of Locke "product shots" drifting past, like a moving moodboard.
 // Pure markup (server-safe). Decorative, so hidden from assistive tech; motion stops under
-// prefers-reduced-motion via the global rule.
+// prefers-reduced-motion via the global rule. Tiles drop in on load in a diagonal wave, a column
+// pauses while hovered, and posters cropped at the tile edge pull back into full view on hover.
 
 import { price } from "@/lib/ui/format";
 
 type Tile = { h: string; node: React.ReactNode };
+
+// Poster type that sits cropped at the tile edge and settles fully inside it on hover.
+const POSTER = "display absolute transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]";
 
 function Spark({ up = false, color = "currentColor" }: { up?: boolean; color?: string }) {
   const d = up ? "M0 30 L12 26 L22 28 L34 18 L46 21 L58 10 L70 13 L82 4" : "M0 6 L12 9 L22 7 L34 16 L46 13 L58 22 L70 19 L82 28";
@@ -28,7 +32,7 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       )),
       t("h-72", (
         <div className="relative h-full overflow-hidden bg-ink">
-          <span className="display absolute -left-6 top-6 text-[104px] leading-[0.8] text-lime">hed<br />ge</span>
+          <span className={`${POSTER} -left-6 top-6 text-[104px] leading-[0.8] text-lime group-hover:left-4 group-hover:top-5 group-hover:text-[64px]`}>hed<br />ge</span>
         </div>
       )),
       t("h-44", (
@@ -42,7 +46,7 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
     [
       t("h-80", (
         <div className="relative h-full overflow-hidden bg-danger">
-          <span className="display absolute bottom-2 left-3 text-[60px] leading-none text-paper">−50%</span>
+          <span className={`${POSTER} bottom-2 left-3 text-[60px] leading-none text-paper group-hover:bottom-4 group-hover:left-4 group-hover:text-[44px]`}>−50%</span>
           <span className="eyebrow absolute left-4 top-4 text-paper/80">ADA moves</span>
         </div>
       )),
@@ -73,7 +77,7 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       )),
       t("h-72", (
         <div className="relative h-full overflow-hidden bg-paper">
-          <span className="display absolute -right-4 top-2 text-[104px] leading-[0.82] text-cobalt">ADA</span>
+          <span className={`${POSTER} -right-4 top-2 text-[104px] leading-[0.82] text-cobalt group-hover:right-4 group-hover:top-10 group-hover:text-[60px]`}>ADA</span>
           <span className="eyebrow absolute bottom-4 left-4 text-ink-2">Still staked · still voting</span>
         </div>
       )),
@@ -94,7 +98,7 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       )),
       t("h-80", (
         <div className="relative h-full overflow-hidden bg-lime">
-          <span className="display absolute -left-3 bottom-0 text-[120px] leading-[0.78] text-ink">WTI</span>
+          <span className={`${POSTER} -left-3 bottom-0 text-[120px] leading-[0.78] text-ink group-hover:bottom-4 group-hover:left-4 group-hover:text-[64px]`}>WTI</span>
           <span className="eyebrow absolute left-4 top-4 text-ink/60">Diesel · 2,000 L/month</span>
         </div>
       )),
@@ -140,11 +144,19 @@ export function Collage({ ada, wti }: { ada: number | null; wti: number | null }
       {cols.map((col, i) => (
         <div key={i} className={`overflow-hidden ${i >= 2 ? "hidden sm:block" : ""} ${i >= 3 ? "sm:hidden lg:block" : ""}`}>
           {/* Two copies stacked so a -50% translate loops seamlessly. */}
-          <div className={i % 2 ? "animate-drift-down" : "animate-drift-up"} style={{ animationDuration: `${48 + i * 9}s` }}>
+          <div
+            className={`${i % 2 ? "animate-drift-down" : "animate-drift-up"} hover:[animation-play-state:paused]`}
+            style={{ animationDuration: `${48 + i * 9}s` }}
+          >
             {[0, 1].map((copy) => (
               <div key={copy} className="flex flex-col gap-2 pb-2">
                 {col.concat(col).map((tile, k) => (
-                  <div key={k} className={`${tile.h} shrink-0 overflow-hidden rounded-[14px]`}>
+                  <div
+                    key={k}
+                    className={`group ${tile.h} shrink-0 animate-drop overflow-hidden rounded-[14px] transition-transform duration-300 hover:scale-[0.985]`}
+                    // Diagonal wave: column by column, row by row, ~0.7 s end to end.
+                    style={{ animationDelay: `${(i + k) * 70}ms` }}
+                  >
                     {tile.node}
                   </div>
                 ))}
