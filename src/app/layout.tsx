@@ -10,6 +10,8 @@ const interTight = Inter_Tight({ subsets: ["latin"], weight: ["400", "500"], var
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
+  // Netlify sets URL at build time; social images need an absolute base.
+  metadataBase: new URL(process.env.URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: "Locke — Protection plans on Strike",
   description: "Protect what your business holds. Manage what it needs to buy. Hedges on Strike, sized and watched for you.",
   openGraph: { title: "Locke", description: "Protect what your business holds. Manage what it needs to buy." },

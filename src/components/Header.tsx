@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { LockeMark } from "./Logo";
 import { useWallet } from "./WalletProvider";
 import { shortAddr } from "@/lib/ui/format";
 
@@ -114,17 +115,5 @@ export function Header() {
         </div>
       )}
     </>
-  );
-}
-
-export function LockeMark({ size = 40 }: { size?: number }) {
-  return (
-    <span className="grid place-items-center rounded-full bg-ink text-paper" style={{ width: size, height: size }} aria-hidden>
-      <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 20 20">
-        <rect x="3.5" y="9" width="13" height="8.5" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <circle cx="10" cy="13.2" r="1.3" fill="var(--color-lime)" />
-      </svg>
-    </span>
   );
 }

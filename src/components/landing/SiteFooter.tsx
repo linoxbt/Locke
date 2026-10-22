@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LockeLogoReverse } from "../Logo";
 
 const COLUMNS: { title: string; links: [string, string][] }[] = [
   { title: "Product", links: [["How it works", "/how-it-works"], ["Holdings plan", "/how-it-works#holdings"], ["Operating costs plan", "/how-it-works#costs"]] },
@@ -9,7 +10,10 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
 export function SiteFooter() {
   return (
     <footer className="bg-ink text-paper">
-      <div className="mx-auto grid max-w-[1440px] grid-cols-2 gap-x-6 gap-y-10 px-5 pb-10 pt-14 sm:px-14 md:grid-cols-4">
+      <div className="mx-auto max-w-[1440px] px-5 pt-14 sm:px-14">
+        <LockeLogoReverse height={36} />
+      </div>
+      <div className="mx-auto grid max-w-[1440px] grid-cols-2 gap-x-6 gap-y-10 px-5 pb-10 pt-10 sm:px-14 md:grid-cols-4">
         {COLUMNS.map((c) => (
           <div key={c.title}>
             <h2 className="text-[17px]">{c.title}</h2>
