@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "@/lib/ui/api";
 import { local, pct, usd } from "@/lib/ui/format";
 import { LineChart } from "./LineChart";
-import { Display, ErrorNote, Slider, Spinner } from "./ui";
+import { Slider } from "./form";
+import { Display, ErrorNote, Spinner } from "./ui";
 
 interface ReplayData {
   days: number;

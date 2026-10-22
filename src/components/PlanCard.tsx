@@ -21,12 +21,19 @@ export function toneFor(p: PlanView): Tone {
   return p.type === "holdings" ? "cobalt" : "lime";
 }
 
+/** Where a plan card leads: its next step while it isn't open yet, else its overview. */
+export function planHref(p: Pick<PlanView, "id" | "status">): string {
+  if (p.status === "draft") return `/plans/${p.id}/preview`;
+  if (p.status === "funding" || p.status === "opening") return `/plans/${p.id}/fund`;
+  return `/plans/${p.id}`;
+}
+
 export function PlanCard({ p }: { p: PlanView }) {
   const h = headlineText(p);
   const tone = toneFor(p);
   const dark = tone === "cobalt" || tone === "danger" || tone === "ink";
   return (
-    <Link href={`/plans/${p.id}`} className="group block">
+    <Link href={planHref(p)} className="group block">
       <Card tone={tone} className="flex min-h-[340px] flex-col transition-transform duration-300 group-hover:-translate-y-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

@@ -42,6 +42,32 @@ A plan leaves Watch only when the ratio falls below 45% and the distance rises a
 
 The distance check exists because margin ratio only rises steeply in the last few percent before liquidation. On a 1x plan, a 60% ratio alert would fire about 0.3% before liquidation, too late for a Cardano deposit to confirm. The suggested top-up is enough to bring the ratio back to 35% *and* push liquidation 25% away from the mark.
 
+## Pages
+
+Every feature is its own server-rendered route. Pages load their data on the server, guard by
+plan status (a draft can't open the top-up page, for example) and redirect with real HTTP status
+codes. A middleware gate sends signed-out visitors to `/connect?next=<page>` and brings them back.
+
+| Route | What it is |
+|---|---|
+| `/` | Home, with live ADA-USD and WTI-USD marks from Strike |
+| `/how-it-works` | The four steps, both plan types, the alert ladder |
+| `/connect` | Connect a CIP-30 wallet and sign in through Strike's builder connect |
+| `/portfolio` | Total value protected and one card per plan |
+| `/protect` | Choose what to protect |
+| `/protect/holdings`, `/protect/costs` | Describe the exposure; submitting creates a draft |
+| `/plans/[id]/preview` | Hedge, costs, scenarios, safety prices, disclosures |
+| `/plans/[id]/fund` | Sign the ADA deposit and follow it until the hedge is open |
+| `/plans/[id]` | Overview: headline number, margin health, stats, latest events |
+| `/plans/[id]/top-up` | Wallet-signed top-up, added to this plan's margin only |
+| `/plans/[id]/resize` | Holdings: new share or amount. Costs: close one month (S ÷ T) |
+| `/plans/[id]/close` | Reduce-only close at market |
+| `/plans/[id]/replay` | The plan against Strike's real price history |
+| `/plans/[id]/activity` | Full event log and margin-ratio history |
+| `/plans/[id]/strike` | Raw position fields and deposits with transaction links |
+| `/withdraw` | Free balance back to the connected wallet, wallet-signed |
+| `/account` | Wallet, stake pool and DRep, Strike balance, sign out |
+
 ## Architecture
 
 ```mermaid
@@ -83,7 +109,7 @@ flowchart LR
 | `src/lib/cardano/` | CIP-30 wallet, bech32, and a byte-preserving CBOR witness merge for Strike's deposit transactions |
 | `src/lib/server/planService.ts` | Plan lifecycle state machine (compare-and-set transitions, so two callers never place the same order) |
 | `src/app/api/` | Route handlers |
-| `src/app/` | Screens: connect, wizard, portfolio, plan detail |
+| `src/app/` | Pages (see the table above) and API route handlers |
 | `worker/index.ts` | Risk worker |
 | `db/schema.sql` | Schema (idempotent) |
 

@@ -1,0 +1,107 @@
+// Read models shared by API routes and server-rendered pages, so a page's first paint and
+// the JSON it later polls are always the same shape.
+
+import type { Preview } from "../domain/types";
+import { getPosition, getPositions, type StrikePosition } from "../strike/client";
+import { db } from "./db";
+import { strikeKeysFor } from "./keys";
+import { loadPlan, planView, previewFor, type PlanRow, type PlanView } from "./planService";
+
+export interface PlanEventRow {
+  id: number;
+  level: string;
+  message: string;
+  created_at: string;
+}
+
+export interface SnapshotRow {
+  mark: number;
+  ratio: number | null;
+  headline: number | null;
+  created_at: string;
+}
+
+export interface DepositRow {
+  id: string;
+  purpose: "open" | "topup";
+  status: string;
+  lovelace: number;
+  usd_value: number;
+  tx_hash: string | null;
+  created_at: string;
+}
+
+export interface PlanDetail {
+  plan: PlanView;
+  preview: Preview | null;
+  events: PlanEventRow[];
+  snapshots: SnapshotRow[];
+  deposits: DepositRow[];
+  /** Set when Strike couldn't be reached; the page renders stored data and says so. */
+  liveError: string | null;
+}
+
+const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : String(d));
+
+export async function getPlanDetail(userId: string, planId: string): Promise<PlanDetail> {
+  const plan = await loadPlan(userId, planId);
+  const live = plan.status === "active" || plan.status === "closing";
+  let pos: StrikePosition | null = null;
+  let liveError: string | null = null;
+  if (live) {
+    try {
+      pos = await getPosition(await strikeKeysFor(userId), plan.symbol);
+    } catch (e) {
+      liveError = e instanceof Error ? e.message : "Strike is unreachable";
+    }
+  }
+  const sql = db();
+  const [view, events, snapshots, deposits, preview] = await Promise.all([
+    planView(plan, pos),
+    sql`select id, level, message, created_at from plan_events where plan_id = ${plan.id} order by id desc limit 100`,
+    sql`select mark, ratio, headline, created_at from snapshots where plan_id = ${plan.id}
+        and created_at > now() - interval '7 days' order by created_at asc limit 2000`,
+    sql`select id, purpose, status, lovelace, usd_value, tx_hash, created_at from deposits
+        where plan_id = ${plan.id} order by created_at desc limit 20`,
+    plan.status === "draft" || plan.status === "funding" ? previewFor(plan) : Promise.resolve(null),
+  ]);
+  return {
+    plan: view,
+    preview,
+    events: events.map((e) => ({ id: Number(e.id), level: e.level, message: e.message, created_at: iso(e.created_at) })),
+    snapshots: snapshots.map((s) => ({ mark: Number(s.mark), ratio: s.ratio, headline: s.headline, created_at: iso(s.created_at) })),
+    deposits: deposits.map((d) => ({ ...(d as unknown as DepositRow), created_at: iso(d.created_at) })),
+    liveError,
+  };
+}
+
+export async function listPlanViews(userId: string): Promise<{ plans: PlanView[]; liveError: string | null }> {
+  const rows = (await db()`
+    select * from plans where user_id = ${userId} and status <> 'draft'
+    order by (status = 'closed'), created_at desc limit 50`) as unknown as PlanRow[];
+  let positions: StrikePosition[] = [];
+  let liveError: string | null = null;
+  if (rows.some((r) => r.status === "active" || r.status === "closing")) {
+    try {
+      positions = await getPositions(await strikeKeysFor(userId));
+    } catch (e) {
+      liveError = e instanceof Error ? e.message : "Strike is unreachable";
+    }
+  }
+  const plans = await Promise.all(rows.map((r) => planView(r, positions.find((p) => p.symbol === r.symbol))));
+  return { plans, liveError };
+}
+
+export interface AccountInfo {
+  address: string;
+  stakeAddress: string | null;
+  accountId: string | null;
+  createdAt: string;
+}
+
+export async function getAccountInfo(userId: string): Promise<AccountInfo | null> {
+  const [u] = await db()`select u.address, u.stake_address, u.created_at, l.account_id from users u
+                         left join strike_links l on l.user_id = u.id where u.id = ${userId}`;
+  if (!u) return null;
+  return { address: u.address, stakeAddress: u.stake_address, accountId: u.account_id, createdAt: iso(u.created_at) };
+}

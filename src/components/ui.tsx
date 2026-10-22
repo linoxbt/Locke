@@ -1,6 +1,6 @@
-"use client";
+// Server-safe primitives: no hooks, no handlers of their own. Client-only controls live in form.tsx.
 
-import { useEffect, useId } from "react";
+import Link from "next/link";
 import type { RiskLevel } from "@/lib/domain/types";
 
 // ── Layout ──
@@ -116,105 +116,34 @@ export function Button({
   );
 }
 
-/**
- * Label + control. Use `group` when the control is a set of buttons: a <label> would forward
- * clicks on its text to the first button and silently change the selection.
- */
-export function Field({
-  label,
-  hint,
-  group = false,
+/** A navigation that looks like a Button. Actions that are their own page use this. */
+export function LinkButton({
+  href,
   children,
+  variant = "primary",
+  size = "md",
+  className = "",
 }: {
-  label: React.ReactNode;
-  hint?: React.ReactNode;
-  group?: boolean;
+  href: string;
   children: React.ReactNode;
+  variant?: ButtonVariant;
+  size?: "md" | "lg";
+  className?: string;
 }) {
-  const id = useId();
-  const inner = (
-    <>
-      <span id={id} className="mb-2 block text-sm text-ink-2">
-        {label}
-      </span>
+  return (
+    <Link
+      href={href}
+      className={`inline-flex items-center justify-center gap-2 rounded-full font-medium transition-[background,color,box-shadow] duration-200 ${
+        size === "lg" ? "h-16 px-8 text-lg" : "h-12 px-6 text-[15px]"
+      } ${BUTTON[variant]} ${className}`}
+    >
       {children}
-      {hint && <span className="mt-2 block text-[13px] leading-snug text-ink-3">{hint}</span>}
-    </>
-  );
-  return group ? (
-    <div role="group" aria-labelledby={id} className="block">
-      {inner}
-    </div>
-  ) : (
-    <label className="block">{inner}</label>
+    </Link>
   );
 }
 
 export const inputCls =
   "num h-14 w-full rounded-2xl bg-mist px-4 text-lg text-ink outline-none ring-1 ring-transparent transition placeholder:text-ink-3 focus:bg-paper focus:ring-cobalt";
-
-/** Segmented pill control. */
-export function Segmented<T extends string | number>({
-  value,
-  options,
-  onChange,
-  label,
-}: {
-  value: T;
-  options: { value: T; label: React.ReactNode }[];
-  onChange(v: T): void;
-  label: string;
-}) {
-  return (
-    <div role="radiogroup" aria-label={label} className="flex gap-1 rounded-full bg-mist p-1">
-      {options.map((o) => (
-        <button
-          key={String(o.value)}
-          type="button"
-          role="radio"
-          aria-checked={value === o.value}
-          onClick={() => onChange(o.value)}
-          className={`h-12 flex-1 rounded-full text-[15px] transition ${value === o.value ? "bg-ink text-paper" : "text-ink-2 hover:text-ink"}`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function Slider({
-  value,
-  min,
-  max,
-  step = 1,
-  onChange,
-  label,
-  className = "text-cobalt",
-}: {
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  onChange(n: number): void;
-  label: string;
-  className?: string;
-}) {
-  const fill = ((value - min) / (max - min)) * 100;
-  return (
-    <input
-      type="range"
-      aria-label={label}
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className={`w-full ${className}`}
-      style={{ ["--fill" as string]: `${fill}%` }}
-    />
-  );
-}
 
 // ── Status ──
 
@@ -311,46 +240,7 @@ export function Stat({
   );
 }
 
-// ── Overlays and feedback ──
-
-export function Sheet({ open, onClose, title, children }: { open: boolean; onClose(): void; title: string; children: React.ReactNode }) {
-  const id = useId();
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [open, onClose]);
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-6" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={id}
-        className="max-h-[92dvh] w-full max-w-lg animate-rise overflow-y-auto rounded-t-[28px] bg-paper p-6 sm:rounded-[28px] sm:p-8"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <h2 id={id} className="display text-[28px]">
-            {title}
-          </h2>
-          <button onClick={onClose} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-mist text-ink-2 hover:text-ink" aria-label="Close">
-            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
-              <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
+// ── Feedback ──
 
 export function ErrorNote({ error }: { error: string | null }) {
   if (!error) return null;

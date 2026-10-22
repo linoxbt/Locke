@@ -1,30 +1,14 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/server/db";
 import { readJson, route } from "@/lib/server/http";
-import { strikeKeysFor } from "@/lib/server/keys";
-import { createDraft, planView, type PlanRow } from "@/lib/server/planService";
+import { createDraft } from "@/lib/server/planService";
+import { listPlanViews } from "@/lib/server/queries";
 import { requireSession } from "@/lib/server/session";
-import { getPositions, type StrikePosition } from "@/lib/strike/client";
 import type { PlanType } from "@/lib/domain/types";
 
 /** Portfolio: every non-draft plan with live numbers from one positions call. */
 export const GET = route(async (req: Request) => {
   const s = await requireSession(req);
-  const rows = (await db()`
-    select * from plans where user_id = ${s.uid} and status <> 'draft'
-    order by (status = 'closed'), created_at desc limit 50`) as unknown as PlanRow[];
-  let positions: StrikePosition[] = [];
-  let liveError: string | null = null;
-  if (rows.some((r) => r.status === "active" || r.status === "closing")) {
-    try {
-      positions = await getPositions(await strikeKeysFor(s.uid));
-    } catch (e) {
-      // Show the portfolio from stored data rather than failing the whole page.
-      liveError = e instanceof Error ? e.message : "Strike is unreachable";
-    }
-  }
-  const plans = await Promise.all(rows.map((r) => planView(r, positions.find((p) => p.symbol === r.symbol))));
-  return NextResponse.json({ plans, liveError });
+  return NextResponse.json(await listPlanViews(s.uid));
 });
 
 /** Create a draft and return its preview. Sizing happens here, from live Strike data. */

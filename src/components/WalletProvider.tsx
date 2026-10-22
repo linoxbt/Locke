@@ -44,8 +44,11 @@ function recall(): string | null {
   }
 }
 
-export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [me, setMe] = useState<Me | null>(null);
+/** `initialAddress` comes from the server's session so the header renders signed-in state on first paint. */
+export function WalletProvider({ children, initialAddress = null }: { children: React.ReactNode; initialAddress?: string | null }) {
+  const [me, setMe] = useState<Me | null>(
+    initialAddress ? { address: initialAddress, stakeAddress: null, accountId: null, balance: null } : null
+  );
   const [loading, setLoading] = useState(true);
   const [wallet, setWallet] = useState<ConnectedWallet | null>(null);
   const [wallets, setWallets] = useState<WalletOption[]>([]);
