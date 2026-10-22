@@ -1,67 +1,131 @@
 @import "tailwindcss";
 
+/*
+ * Locke design system. Editorial and light: a warm canvas, white and saturated bento
+ * cards, big tightly tracked grotesk display type, pill controls. Numbers are always mono.
+ */
 @theme {
-  --color-bg: #07090a;
-  --color-panel: #0d1112;
-  --color-panel-2: #121819;
-  --color-line: #1f2a2b;
-  --color-line-strong: #2d3b3c;
-  --color-text: #e6eeee;
-  --color-muted: #8a9a9a;
-  --color-faint: #5b6a6a;
-  --color-accent: #2dd4bf;
-  --color-accent-dim: #0f3d38;
-  --color-watch: #f59e0b;
-  --color-danger: #f43f5e;
-  --color-ok: #34d399;
+  --color-canvas: #f2f1ee;
+  --color-paper: #ffffff;
+  --color-mist: #e8e7e3;
+  --color-line: #dcdbd6;
+  --color-ink: #0c0c0d;
+  --color-ink-2: #6b6b70;
+  --color-ink-3: #9d9da2;
+  --color-cobalt: #2343ff;
+  --color-cobalt-deep: #1530d6;
+  --color-lime: #d6f36b;
+  --color-watch: #ffb020;
+  --color-danger: #ff3d24;
+  --color-ok: #10a35a;
+
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-inter-tight), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-card: 22px;
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-rise: rise 0.7s var(--ease-out-quint) both;
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: none; }
+  }
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
-html,
-body {
-  background: var(--color-bg);
-  color: var(--color-text);
+html {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
+  background: var(--color-canvas);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Plan cards: corner-bracket borders. */
-.bracket {
-  --b: var(--color-line-strong);
-  --l: 14px;
-  background:
-    linear-gradient(var(--b), var(--b)) top left / var(--l) 1px no-repeat,
-    linear-gradient(var(--b), var(--b)) top left / 1px var(--l) no-repeat,
-    linear-gradient(var(--b), var(--b)) top right / var(--l) 1px no-repeat,
-    linear-gradient(var(--b), var(--b)) top right / 1px var(--l) no-repeat,
-    linear-gradient(var(--b), var(--b)) bottom left / var(--l) 1px no-repeat,
-    linear-gradient(var(--b), var(--b)) bottom left / 1px var(--l) no-repeat,
-    linear-gradient(var(--b), var(--b)) bottom right / var(--l) 1px no-repeat,
-    linear-gradient(var(--b), var(--b)) bottom right / 1px var(--l) no-repeat,
-    var(--color-panel);
+.display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
 }
-.bracket.accent { --b: var(--color-accent); }
-.bracket.watch { --b: var(--color-watch); }
-.bracket.danger { --b: var(--color-danger); }
 
 .num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Range input: thin ink track, big thumb. */
 input[type="range"] {
-  accent-color: var(--color-accent);
+  appearance: none;
+  height: 28px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, currentColor var(--fill, 50%), var(--color-line) var(--fill, 50%));
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-line);
+}
+input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: currentColor;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  margin-top: -10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--color-paper);
+  border: 2px solid currentColor;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.12);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--color-paper);
+  border: 2px solid currentColor;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline: 2px solid var(--color-cobalt);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

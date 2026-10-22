@@ -1,8 +1,15 @@
 // Server configuration. Read lazily so `next build` works without secrets.
 
+/** A required setting is missing or malformed. Routes answer 503 with the variable's name (never its value). */
+export class ConfigError extends Error {
+  constructor(public variable: string, detail = "is not set") {
+    super(`Locke isn't fully configured: ${variable} ${detail}.`);
+  }
+}
+
 function required(name: string): string {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing environment variable ${name}`);
+  if (!v) throw new ConfigError(name);
   return v;
 }
 
@@ -22,7 +29,7 @@ export const config = {
   /** Per-order builder fee. A server constant, never taken from the browser. */
   get builderFeeBps() {
     const n = Math.floor(Number(process.env.STRIKE_BUILDER_FEE_BPS ?? "0"));
-    if (!isFinite(n) || n < 0 || n > 100) throw new Error("STRIKE_BUILDER_FEE_BPS must be 0..100");
+    if (!isFinite(n) || n < 0 || n > 100) throw new ConfigError("STRIKE_BUILDER_FEE_BPS", "must be 0..100");
     return n;
   },
   get networkId() {
@@ -36,12 +43,12 @@ export const config = {
   },
   get keyEnc() {
     const hex = required("LOCKE_KEY_ENC");
-    if (!/^[0-9a-f]{64}$/i.test(hex)) throw new Error("LOCKE_KEY_ENC must be 32 bytes of hex");
+    if (!/^[0-9a-f]{64}$/i.test(hex)) throw new ConfigError("LOCKE_KEY_ENC", "must be 32 bytes of hex");
     return Buffer.from(hex, "hex");
   },
   get sessionSecret() {
     const s = required("SESSION_SECRET");
-    if (s.length < 32) throw new Error("SESSION_SECRET must be at least 32 characters");
+    if (s.length < 32) throw new ConfigError("SESSION_SECRET", "must be at least 32 characters");
     return s;
   },
   get demoAlerts() {

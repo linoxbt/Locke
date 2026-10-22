@@ -5,54 +5,59 @@ import { usePathname, useRouter } from "next/navigation";
 import { useWallet } from "./WalletProvider";
 import { shortAddr, usd } from "@/lib/ui/format";
 
+const pill = "inline-flex h-10 items-center rounded-full px-4 text-[14px] transition";
+
 export function Header() {
   const { me, signOut } = useWallet();
   const path = usePathname();
   const router = useRouter();
-  const nav = (href: string, label: string) => (
-    <Link
-      href={href}
-      className={`rounded px-2 py-1 text-sm ${path.startsWith(href) ? "text-text" : "text-muted hover:text-text"}`}
-    >
-      {label}
-    </Link>
-  );
+  const nav = (href: string, label: string) => {
+    const on = path === href || (href !== "/" && path.startsWith(href));
+    return (
+      <Link key={href} href={href} aria-current={on ? "page" : undefined} className={`${pill} ${on ? "bg-ink text-paper" : "bg-paper/90 text-ink hover:bg-paper"}`}>
+        {label}
+      </Link>
+    );
+  };
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-bg/90 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
-        <Link href={me ? "/portfolio" : "/"} className="flex items-center gap-2">
+    <header className="fixed inset-x-0 top-0 z-40">
+      <div className="mx-auto flex h-[72px] max-w-[1240px] items-center gap-2 px-4 sm:px-6">
+        <Link href={me ? "/portfolio" : "/"} className="flex items-center gap-2.5" aria-label="Locke home">
           <LockeMark />
-          <span className="num text-sm font-semibold tracking-[0.2em]">LOCKE</span>
+          <span className="display hidden text-[22px] sm:inline">Locke</span>
         </Link>
+
         {me && (
-          <nav className="ml-2 flex items-center gap-1">
+          <nav className="mx-auto flex items-center gap-1 rounded-full bg-mist/70 p-1 backdrop-blur-md" aria-label="Main">
             {nav("/portfolio", "Portfolio")}
             {nav("/protect", "New plan")}
           </nav>
         )}
-        <div className="ml-auto flex items-center gap-3">
+
+        <div className={`flex items-center gap-1.5 ${me ? "" : "ml-auto"}`}>
           {me ? (
             <>
               {me.balance && (
-                <span className="num hidden text-xs text-muted sm:inline" title="Available on Strike">
-                  {usd(me.balance.available)} on Strike
+                <span className={`${pill} num hidden bg-paper/90 text-ink-2 backdrop-blur-md lg:inline-flex`} title="Free balance on Strike">
+                  {usd(me.balance.available)}
                 </span>
               )}
-              <span className="num hidden rounded border border-line px-2 py-1 text-xs text-muted md:inline">{shortAddr(me.address)}</span>
               <button
                 onClick={async () => {
                   await signOut();
                   router.push("/");
                 }}
-                className="text-xs text-muted hover:text-text"
+                className={`${pill} num bg-paper/90 text-ink-2 backdrop-blur-md hover:text-ink`}
+                title="Sign out"
               >
-                Sign out
+                <span className="hidden md:inline">{shortAddr(me.address)}</span>
+                <span className="md:hidden">Sign out</span>
               </button>
             </>
           ) : (
             path !== "/" && (
-              <Link href="/" className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-bg">
-                Connect
+              <Link href="/" className={`${pill} bg-cobalt text-paper hover:bg-cobalt-deep`}>
+                Connect wallet
               </Link>
             )
           )}
@@ -62,12 +67,14 @@ export function Header() {
   );
 }
 
-export function LockeMark({ size = 18 }: { size?: number }) {
+export function LockeMark({ size = 40 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="4" y="10" width="16" height="11" rx="1.5" fill="none" stroke="var(--color-accent)" strokeWidth="2" />
-      <path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="var(--color-accent)" strokeWidth="2" />
-      <path d="M12 14v3" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" />
-    </svg>
+    <span className="grid place-items-center rounded-full bg-ink text-paper" style={{ width: size, height: size }} aria-hidden>
+      <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 20 20">
+        <rect x="3.5" y="9" width="13" height="8.5" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="10" cy="13.2" r="1.3" fill="var(--color-lime)" />
+      </svg>
+    </span>
   );
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { PlanCard } from "@/components/PlanCard";
-import { Button, ErrorNote, Spinner } from "@/components/ui";
+import { Arrow, Button, Card, Display, ErrorNote, Eyebrow, Notice, Spinner } from "@/components/ui";
 import { useWallet } from "@/components/WalletProvider";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import type { PlanView } from "@/lib/server/planService";
@@ -44,53 +44,59 @@ export default function PortfolioPage() {
   if (!me) return null;
   const live = plans?.filter((p) => p.status !== "closed") ?? [];
   const closed = plans?.filter((p) => p.status === "closed") ?? [];
-  const protectedUsd = live
-    .filter((p) => p.status === "active")
-    .reduce((sum, p) => sum + (p.position ? p.position.size * p.mark : 0), 0);
+  const active = live.filter((p) => p.status === "active");
+  const protectedUsd = active.reduce((sum, p) => sum + (p.position ? p.position.size * p.mark : 0), 0);
+  const attention = active.filter((p) => p.riskLevel !== "ok").length;
 
   return (
-    <div>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="text-xs uppercase tracking-wider text-muted">Total value protected</div>
-          <div className="num mt-1 text-4xl font-semibold">{usd(protectedUsd, 0)}</div>
-          <div className="mt-1 text-xs text-faint">Hedge notional across active plans, at mark</div>
+    <div className="animate-rise">
+      <section className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+        <div className="lg:col-span-7">
+          <Eyebrow className="text-ink-2">Total value protected</Eyebrow>
+          <div className="num mt-4 text-[64px] leading-none tracking-tight sm:text-[104px]">{usd(protectedUsd, 0)}</div>
+          <p className="mt-4 text-[15px] text-ink-2">
+            Hedge value across {active.length} active plan{active.length === 1 ? "" : "s"}, at Strike mark price.
+            {attention > 0 && <span className="text-danger"> {attention} need{attention === 1 ? "s" : ""} attention.</span>}
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 lg:col-span-5 lg:items-end lg:justify-end">
+          <Link href="/protect" className="w-full lg:w-auto">
+            <Button size="lg" className="w-full justify-between gap-6">
+              New protection plan <Arrow />
+            </Button>
+          </Link>
           {me.balance && me.balance.available >= 5 && (
-            <Button variant="ghost" onClick={() => setWithdraw(true)}>
-              Withdraw {usd(me.balance.available)}
+            <Button variant="ghost" className="w-full lg:w-auto" onClick={() => setWithdraw(true)}>
+              Withdraw {usd(me.balance.available)} free balance
             </Button>
           )}
-          <Link href="/protect">
-            <Button>New protection plan</Button>
-          </Link>
         </div>
-      </div>
+      </section>
 
-      <div className="mt-6">
+      <div className="mt-8 space-y-2">
         <ErrorNote error={error} />
-        {liveError && <p className="text-xs text-watch">Live numbers unavailable right now ({liveError}). Showing stored plans.</p>}
+        {liveError && <Notice>Live numbers from Strike are unavailable right now ({liveError}). Showing stored plans.</Notice>}
       </div>
 
       {plans == null && !error && (
-        <div className="mt-16 flex justify-center">
+        <div className="mt-24 flex justify-center">
           <Spinner />
         </div>
       )}
 
       {plans && live.length === 0 && (
-        <div className="bracket mt-8 p-8 text-center">
-          <p className="text-lg">No protection plans yet.</p>
-          <p className="mt-1 text-sm text-muted">Protect the ADA your business holds, or the fuel it needs to buy.</p>
-          <Link href="/protect" className="mt-5 inline-block">
-            <Button>What do you want to protect?</Button>
+        <Card tone="ink" className="mt-10 px-6 py-16 text-center sm:py-24">
+          <Display as="h2" size="lg" lead="Nothing protected yet." rest="Start with what keeps you up at night." restClass="text-paper/45" className="mx-auto max-w-[16ch]" />
+          <Link href="/protect" className="mt-10 inline-block">
+            <Button variant="paper" size="lg">
+              What do you want to protect? <Arrow />
+            </Button>
           </Link>
-        </div>
+        </Card>
       )}
 
       {live.length > 0 && (
-        <div className="mt-8 grid gap-4 md:grid-cols-2">
+        <div className="mt-10 grid grid-cols-1 gap-3 md:grid-cols-2">
           {live.map((p) => (
             <PlanCard key={p.id} p={p} />
           ))}
@@ -98,14 +104,14 @@ export default function PortfolioPage() {
       )}
 
       {closed.length > 0 && (
-        <>
-          <h2 className="mt-12 text-xs uppercase tracking-wider text-muted">Closed</h2>
-          <div className="mt-3 grid gap-4 opacity-70 md:grid-cols-2">
+        <section className="mt-20">
+          <h2 className="display text-[28px]">Closed</h2>
+          <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {closed.map((p) => (
               <PlanCard key={p.id} p={p} />
             ))}
           </div>
-        </>
+        </section>
       )}
 
       {me.balance && <WithdrawSheet open={withdraw} onClose={() => setWithdraw(false)} available={me.balance.available} />}

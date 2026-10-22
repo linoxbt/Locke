@@ -2,7 +2,7 @@
 
 import { api } from "@/lib/ui/api";
 import { signAndSubmit, walletUtxos, type ConnectedWallet } from "@/lib/cardano/wallet";
-import { CARDANOSCAN } from "@/lib/ui/format";
+import { CARDANOSCAN, shortAddr } from "@/lib/ui/format";
 
 export type DepositStep = "quote" | "sign" | "submitted" | "confirmed" | "open";
 
@@ -36,41 +36,48 @@ export async function runDeposit(opts: {
   return { txHash };
 }
 
-const STEPS: { key: DepositStep; label: string }[] = [
-  { key: "quote", label: "Quote" },
-  { key: "sign", label: "Sign in wallet" },
-  { key: "submitted", label: "Submitted" },
-  { key: "confirmed", label: "Credited on Strike" },
-  { key: "open", label: "Hedge open" },
+const STEPS: { key: DepositStep; label: string; hint: string }[] = [
+  { key: "quote", label: "Quote", hint: "Strike prices the ADA deposit" },
+  { key: "sign", label: "Sign in your wallet", hint: "One transaction, margin only" },
+  { key: "submitted", label: "Submitted to Cardano", hint: "Usually 1–3 minutes to confirm" },
+  { key: "confirmed", label: "Credited on Strike", hint: "Isolated margin and leverage set" },
+  { key: "open", label: "Hedge open", hint: "Locke is watching it now" },
 ];
 
 export function StepTracker({ step, txHash, failed, skipDeposit }: { step: DepositStep; txHash?: string; failed?: boolean; skipDeposit?: boolean }) {
   const idx = STEPS.findIndex((s) => s.key === step);
-  const steps = skipDeposit ? STEPS.filter((s) => s.key === "quote" || s.key === "open") : STEPS;
+  const steps = skipDeposit ? STEPS.filter((s) => s.key === "quote" || s.key === "confirmed" || s.key === "open") : STEPS;
   return (
     <div>
-      <ol className="space-y-3">
+      <ol className="space-y-2">
         {steps.map((s) => {
           const i = STEPS.findIndex((x) => x.key === s.key);
           const done = i < idx || (i === idx && s.key === "open");
           const current = i === idx && !done;
           return (
-            <li key={s.key} className="flex items-center gap-3">
+            <li
+              key={s.key}
+              className={`flex items-center gap-4 rounded-2xl px-4 py-4 transition ${current ? (failed ? "bg-danger/10" : "bg-paper") : done ? "bg-paper/60" : ""}`}
+              aria-current={current ? "step" : undefined}
+            >
               <span
-                className={`num flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] ${
-                  done ? "border-accent bg-accent text-bg" : current ? (failed ? "border-danger text-danger" : "border-accent text-accent") : "border-line text-faint"
+                className={`num grid h-9 w-9 shrink-0 place-items-center rounded-full text-[13px] ${
+                  done ? "bg-ink text-lime" : current ? (failed ? "bg-danger text-paper" : "bg-cobalt text-paper") : "bg-mist text-ink-3"
                 }`}
               >
-                {done ? "✓" : current && !failed ? <span className="h-2 w-2 animate-pulse rounded-full bg-accent" /> : i + 1}
+                {done ? "✓" : current && !failed ? <span className="h-2 w-2 animate-pulse rounded-full bg-paper" /> : i + 1}
               </span>
-              <span className={done || current ? "text-text" : "text-faint"}>{s.label}</span>
+              <span className="min-w-0">
+                <span className={`block text-[16px] ${done || current ? "text-ink" : "text-ink-3"}`}>{s.label}</span>
+                <span className="block text-[13px] text-ink-3">{s.hint}</span>
+              </span>
             </li>
           );
         })}
       </ol>
       {txHash && (
-        <a className="num mt-4 block break-all text-xs text-accent underline" href={`${CARDANOSCAN}${txHash}`} target="_blank" rel="noreferrer">
-          tx {txHash}
+        <a className="num mt-4 inline-flex rounded-full bg-paper px-4 py-2 text-[13px] text-cobalt" href={`${CARDANOSCAN}${txHash}`} target="_blank" rel="noreferrer">
+          View transaction {shortAddr(txHash)} ↗
         </a>
       )}
     </div>
