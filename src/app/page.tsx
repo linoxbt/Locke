@@ -97,14 +97,17 @@ export default async function HomePage() {
       </section>
 
       {/* Closing CTA */}
-      <section className="px-3 pb-14 sm:px-6 sm:pb-20">
-        <h2 className={`${wrap} display text-[26px] sm:text-[34px]`}>Protect what your business runs on</h2>
-        <Link
-          href={start}
-          className="mt-8 flex h-[72px] items-center justify-center rounded-full bg-cobalt text-[24px] text-paper transition-colors hover:bg-cobalt-deep sm:mt-10 sm:h-[120px] sm:text-[38px] lg:h-[150px]"
-        >
-          <span className="display">Get started</span>
-        </Link>
+      <section className="pb-14 sm:pb-20">
+        <div className={`${wrap} flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between`}>
+          <h2 className="display text-[26px] sm:text-[34px]">Protect what your business runs on</h2>
+          {/* Same size and style as the header's Get started pill. */}
+          <Link
+            href={start}
+            className="inline-flex h-9 shrink-0 items-center rounded-full bg-cobalt px-3.5 text-[14px] text-paper transition-colors hover:bg-cobalt-deep"
+          >
+            Get started
+          </Link>
+        </div>
         <p className="mt-10 text-center text-[13px] text-ink-3">Works with</p>
         <ul className="mx-auto mt-6 flex max-w-[1100px] flex-wrap items-center justify-center gap-x-8 gap-y-3 text-[17px] text-ink sm:text-[19px]">
           {["Strike", "Cardano", "Eternl", "Lace", "Vespr", "Koios"].map((n) => (
