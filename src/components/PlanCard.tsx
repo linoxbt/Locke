@@ -34,7 +34,7 @@ export function PlanCard({ p }: { p: PlanView }) {
   const dark = tone === "cobalt" || tone === "danger" || tone === "ink";
   return (
     <Link href={planHref(p)} className="group block">
-      <Card tone={tone} className="flex min-h-[340px] flex-col transition-transform duration-300 group-hover:-translate-y-1">
+      <Card tone={tone} className="flex min-h-[220px] flex-col transition-transform duration-300 group-hover:-translate-y-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <Eyebrow className={SUBTLE[tone]}>{p.type === "holdings" ? "Holdings" : "Operating costs"}</Eyebrow>
@@ -42,8 +42,8 @@ export function PlanCard({ p }: { p: PlanView }) {
           </div>
           <StateChip status={p.status} level={p.riskLevel} />
         </div>
-        <div className="mt-auto pt-10">
-          <div className="num text-[44px] leading-none sm:text-[56px]">{h.value}</div>
+        <div className="mt-auto pt-8">
+          <div className="num text-[32px] leading-none sm:text-[38px]">{h.value}</div>
           <div className={`mt-2 flex items-center justify-between text-[14px] ${SUBTLE[tone]}`}>
             <span>{h.caption}</span>
             <span className="num">{p.label}</span>

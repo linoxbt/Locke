@@ -12,7 +12,7 @@ export function ActivityView() {
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
       <Card className="lg:col-span-7">
-        <h2 className="display text-[24px]">Everything that happened</h2>
+        <h2 className="display text-[20px]">Everything that happened</h2>
         <ol className="mt-6 divide-y divide-line">
           {d.events.length === 0 && <li className="py-4 text-[14px] text-ink-3">No events yet.</li>}
           {d.events.map((e) => (
@@ -29,7 +29,7 @@ export function ActivityView() {
         </ol>
       </Card>
       <Card className="lg:col-span-5">
-        <h2 className="display text-[24px]">Margin ratio</h2>
+        <h2 className="display text-[20px]">Margin ratio</h2>
         <p className="mt-1 text-[13px] text-ink-3">Recorded every minute by the risk worker. Strike&apos;s margin call is at 70%.</p>
         <div className="mt-6">
           <LineChart

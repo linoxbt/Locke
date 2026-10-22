@@ -31,7 +31,7 @@ export default function HowItWorksPage() {
           {STEPS.map(([t, d], i) => (
             <li key={t} className="bg-ink p-6 sm:p-8">
               <span className="num text-[13px] text-lime">0{i + 1}</span>
-              <h2 className="display mt-10 text-[28px]">{t}</h2>
+              <h2 className="display mt-10 text-[22px]">{t}</h2>
               <p className="mt-3 text-[15px] leading-relaxed text-paper/55">{d}</p>
             </li>
           ))}
@@ -41,7 +41,7 @@ export default function HowItWorksPage() {
       <section className="grid grid-cols-1 gap-3 pt-16 md:grid-cols-2">
         <Card tone="cobalt" id="holdings" className="scroll-mt-24">
           <Eyebrow className={SUBTLE.cobalt}>Holdings plan · ADA-USD · short</Eyebrow>
-          <h2 className="display mt-10 text-[36px]">Protect what you hold</h2>
+          <h2 className="display mt-10 text-[28px]">Protect what you hold</h2>
           <p className={`mt-4 text-[15px] leading-relaxed ${SUBTLE.cobalt}`}>
             Locke sells ADA on Strike against the share of your treasury you choose to protect. If ADA falls, the hedge gains what the
             treasury loses. It&apos;s a direct hedge: the only gaps are funding, fees and any share you leave unhedged. The ADA in your wallet
@@ -50,7 +50,7 @@ export default function HowItWorksPage() {
         </Card>
         <Card tone="lime" id="costs" className="scroll-mt-24">
           <Eyebrow className={SUBTLE.lime}>Operating costs plan · WTI-USD · long</Eyebrow>
-          <h2 className="display mt-10 text-[36px]">Manage what you buy</h2>
+          <h2 className="display mt-10 text-[28px]">Manage what you buy</h2>
           <p className={`mt-4 text-[15px] leading-relaxed ${SUBTLE.lime}`}>
             Locke buys crude on Strike for the part of your pump price you believe moves with oil. If crude rises, the hedge gains and pays
             down your fuel bill. It&apos;s a partial hedge: local prices also move with exchange rates, taxes and policy, which WTI doesn&apos;t
@@ -69,9 +69,9 @@ export default function HowItWorksPage() {
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-7">
           {LADDER.map((r) => (
-            <Card key={r.k} tone={r.tone} className="flex min-h-[200px] flex-col">
+            <Card key={r.k} tone={r.tone} className="flex min-h-[150px] flex-col">
               <Eyebrow className={SUBTLE[r.tone]}>{r.v}</Eyebrow>
-              <h3 className="display mt-auto pt-8 text-[28px]">{r.k}</h3>
+              <h3 className="display mt-auto pt-8 text-[22px]">{r.k}</h3>
               <p className={`mt-2 text-[14px] ${SUBTLE[r.tone]}`}>{r.d}</p>
             </Card>
           ))}

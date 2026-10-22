@@ -10,7 +10,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     href: "/how-it-works#costs",
     visual: (
       <div className="relative h-full bg-ink">
-        <span className="display absolute -bottom-3 left-3 text-[108px] leading-none text-lime">24/7</span>
+        <span className="display absolute -bottom-3 left-3 text-[72px] leading-none text-lime">24/7</span>
         <span className="num absolute right-4 top-4 rounded-full bg-paper/10 px-3 py-1 text-[12px] text-paper">diesel · WTI</span>
       </div>
     ),
@@ -21,8 +21,8 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     href: "/how-it-works#holdings",
     visual: (
       <div className="relative h-full bg-cobalt">
-        <span className="display absolute left-4 top-3 text-[96px] leading-[0.85] text-paper">ADA</span>
-        <span className="num absolute bottom-4 right-4 text-[34px] text-paper">−30% → 0%</span>
+        <span className="display absolute left-4 top-3 text-[64px] leading-[0.85] text-paper">ADA</span>
+        <span className="num absolute bottom-4 right-4 text-[26px] text-paper">−30% → 0%</span>
       </div>
     ),
   },
@@ -37,7 +37,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
             <span key={i} className="flex-1 rounded-t-md bg-ink" style={{ height: `${h}%`, opacity: 0.25 + i * 0.1 }} />
           ))}
         </div>
-        <span className="display absolute left-4 top-3 text-[40px] text-ink">NGN 1,250/L</span>
+        <span className="display absolute left-4 top-3 text-[30px] text-ink">NGN 1,250/L</span>
       </div>
     ),
   },
@@ -47,7 +47,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     href: "/how-it-works#holdings",
     visual: (
       <div className="relative h-full bg-paper">
-        <span className="display absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[64px] leading-none text-ink">
+        <span className="display absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[44px] leading-none text-ink">
           ₳ <span className="text-ink-3">→</span> $
         </span>
       </div>
@@ -85,11 +85,11 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
 
 export function Showcase() {
   return (
-    <div className="-mx-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-2 [scrollbar-width:none] sm:-mx-14 sm:px-14 lg:mx-0 lg:grid lg:grid-cols-3 lg:gap-x-8 lg:gap-y-12 lg:overflow-visible lg:px-0 [&::-webkit-scrollbar]:hidden">
+    <div className="-mx-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-2 [scrollbar-width:none] sm:-mx-14 sm:px-14 lg:mx-0 lg:grid lg:grid-cols-3 lg:gap-x-6 lg:gap-y-10 lg:overflow-visible lg:px-0 [&::-webkit-scrollbar]:hidden">
       {ITEMS.map((it) => (
-        <Link key={it.lead} href={it.href} className="group w-[78vw] max-w-[420px] shrink-0 snap-start lg:w-auto lg:max-w-none">
+        <Link key={it.lead} href={it.href} className="group w-[70vw] max-w-[340px] shrink-0 snap-start lg:w-auto lg:max-w-none">
           <div className="aspect-[5/3] overflow-hidden rounded-[10px] transition-transform duration-500 group-hover:scale-[1.01]">{it.visual}</div>
-          <p className="mt-3 text-[15px] sm:text-[17px]">
+          <p className="mt-3 text-[14px] sm:text-[15px]">
             {it.lead} <span className="text-ink-3">{it.rest}</span>
           </p>
         </Link>

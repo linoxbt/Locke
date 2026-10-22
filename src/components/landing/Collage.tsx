@@ -22,19 +22,19 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       t("h-56", (
         <div className="flex h-full flex-col bg-cobalt p-4 text-paper">
           <span className="eyebrow text-paper/70">Protected value</span>
-          <span className="num mt-auto text-[38px] leading-none">$12,480</span>
+          <span className="num mt-auto text-[28px] leading-none">$12,480</span>
           <span className="mt-3 h-2 rounded-full bg-paper/20"><span className="block h-full w-[18%] rounded-full bg-paper" /></span>
         </div>
       )),
       t("h-72", (
         <div className="relative h-full overflow-hidden bg-ink">
-          <span className="display absolute -left-6 top-6 text-[150px] leading-[0.8] text-lime">hed<br />ge</span>
+          <span className="display absolute -left-6 top-6 text-[104px] leading-[0.8] text-lime">hed<br />ge</span>
         </div>
       )),
       t("h-44", (
         <div className="flex h-full flex-col bg-paper p-4">
           <span className="num text-[12px] text-ink-3">ADA-USD · mark</span>
-          <span className="num mt-1 text-[30px]">{ada ? price(ada) : "0.2121"}</span>
+          <span className="num mt-1 text-[24px]">{ada ? price(ada) : "0.2121"}</span>
           <span className="mt-auto text-cobalt"><Spark /></span>
         </div>
       )),
@@ -42,14 +42,14 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
     [
       t("h-80", (
         <div className="relative h-full overflow-hidden bg-danger">
-          <span className="display absolute bottom-2 left-3 text-[88px] leading-none text-paper">−50%</span>
+          <span className="display absolute bottom-2 left-3 text-[60px] leading-none text-paper">−50%</span>
           <span className="eyebrow absolute left-4 top-4 text-paper/80">ADA moves</span>
         </div>
       )),
       t("h-52", (
         <div className="flex h-full flex-col bg-lime p-4 text-ink">
           <span className="eyebrow text-ink/60">Effective fuel price</span>
-          <span className="num mt-auto text-[34px] leading-none">NGN 1,250</span>
+          <span className="num mt-auto text-[26px] leading-none">NGN 1,250</span>
           <span className="mt-2 text-[13px] text-ink/60">per litre, held flat</span>
         </div>
       )),
@@ -67,20 +67,20 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       t("h-48", (
         <div className="flex h-full flex-col bg-ink p-4 text-paper">
           <span className="inline-flex w-fit rounded-full bg-danger px-3 py-1 text-[12px]">Action needed</span>
-          <span className="display mt-auto text-[26px]">Top up $48</span>
+          <span className="display mt-auto text-[22px]">Top up $48</span>
           <span className="mt-3 inline-flex h-9 w-fit items-center rounded-full bg-paper px-4 text-[13px] text-ink">Sign top-up →</span>
         </div>
       )),
       t("h-72", (
         <div className="relative h-full overflow-hidden bg-paper">
-          <span className="display absolute -right-4 top-2 text-[150px] leading-[0.82] text-cobalt">ADA</span>
+          <span className="display absolute -right-4 top-2 text-[104px] leading-[0.82] text-cobalt">ADA</span>
           <span className="eyebrow absolute bottom-4 left-4 text-ink-2">Still staked · still voting</span>
         </div>
       )),
       t("h-52", (
         <div className="flex h-full flex-col bg-watch p-4 text-ink">
           <span className="eyebrow text-ink/60">Watch</span>
-          <span className="display mt-auto text-[30px] leading-tight">20% from liquidation</span>
+          <span className="display mt-auto text-[24px] leading-tight">20% from liquidation</span>
         </div>
       )),
     ],
@@ -88,13 +88,13 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       t("h-44", (
         <div className="flex h-full flex-col bg-paper p-4">
           <span className="num text-[12px] text-ink-3">WTI-USD · mark</span>
-          <span className="num mt-1 text-[30px]">{wti ? price(wti) : "99.11"}</span>
+          <span className="num mt-1 text-[24px]">{wti ? price(wti) : "99.11"}</span>
           <span className="mt-auto text-ink"><Spark up /></span>
         </div>
       )),
       t("h-80", (
         <div className="relative h-full overflow-hidden bg-lime">
-          <span className="display absolute -left-3 bottom-0 text-[170px] leading-[0.78] text-ink">WTI</span>
+          <span className="display absolute -left-3 bottom-0 text-[120px] leading-[0.78] text-ink">WTI</span>
           <span className="eyebrow absolute left-4 top-4 text-ink/60">Diesel · 2,000 L/month</span>
         </div>
       )),
@@ -113,20 +113,20 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       t("h-64", (
         <div className="flex h-full flex-col bg-paper p-4">
           <span className="eyebrow text-ink-2">Fund this plan</span>
-          <span className="num mt-auto text-[30px] leading-none">3,756 ADA</span>
+          <span className="num mt-auto text-[24px] leading-none">3,756 ADA</span>
           <span className="mt-4 inline-flex h-10 items-center justify-center rounded-full bg-cobalt text-[14px] text-paper">Sign deposit →</span>
         </div>
       )),
       t("h-48", (
         <div className="relative h-full overflow-hidden bg-ink">
-          <span className="display absolute left-3 top-3 text-[64px] leading-none text-paper">+25%</span>
+          <span className="display absolute left-3 top-3 text-[44px] leading-none text-paper">+25%</span>
           <span className="eyebrow absolute bottom-4 left-4 text-lime">Crude rises · bill holds</span>
         </div>
       )),
       t("h-56", (
         <div className="flex h-full flex-col bg-danger p-4 text-paper">
           <span className="eyebrow text-paper/75">Margin call</span>
-          <span className="num mt-auto text-[52px] leading-none">70%</span>
+          <span className="num mt-auto text-[36px] leading-none">70%</span>
         </div>
       )),
     ],

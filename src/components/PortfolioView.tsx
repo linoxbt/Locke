@@ -37,7 +37,7 @@ export function PortfolioView({ initial }: { initial: { plans: PlanView[]; liveE
       <section className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <div className="lg:col-span-8">
           <Eyebrow className="text-ink-2">Total value protected</Eyebrow>
-          <div className="num mt-4 text-[64px] leading-none tracking-tight sm:text-[104px]">{usd(protectedUsd, 0)}</div>
+          <div className="num mt-4 text-[44px] leading-none tracking-tight sm:text-[68px]">{usd(protectedUsd, 0)}</div>
           <p className="mt-4 text-[15px] text-ink-2">
             Hedge value across {active.length} active plan{active.length === 1 ? "" : "s"}, at Strike mark price.
             {attention > 0 && <span className="text-danger"> {attention} need{attention === 1 ? "s" : ""} attention.</span>}
@@ -74,7 +74,7 @@ export function PortfolioView({ initial }: { initial: { plans: PlanView[]; liveE
 
       {closed.length > 0 && (
         <section className="mt-20">
-          <h2 className="display text-[28px]">Closed</h2>
+          <h2 className="display text-[22px]">Closed</h2>
           <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {closed.map((p) => (
               <PlanCard key={p.id} p={p} />

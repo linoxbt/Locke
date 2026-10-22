@@ -23,8 +23,8 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
           <li>Every deposit asks your wallet again.</li>
         </ul>
       </div>
-      <Card className="flex flex-col lg:col-span-6 lg:min-h-[420px]">
-        <h2 className="display text-[28px]">Choose your wallet</h2>
+      <Card className="flex flex-col lg:col-span-6 lg:min-h-[300px]">
+        <h2 className="display text-[22px]">Choose your wallet</h2>
         <p className="mt-2 text-[15px] text-ink-2">Cardano mainnet. Eternl, Lace, Vespr and other CIP-30 wallets work.</p>
         <div className="mt-auto pt-10">
           <ConnectPanel next={next} />

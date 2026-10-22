@@ -70,7 +70,7 @@ export function PlanForm({ type, adaPrice, wtiPrice }: { type: PlanType; adaPric
           {type === "holdings" ? <HoldingsFields v={holdings} set={setHoldings} walletBalance={walletBalance} /> : <CostsFields v={costs} set={setCosts} />}
         </Card>
         <div className="lg:col-span-5">
-          <Card tone={tone} className="flex flex-col lg:sticky lg:top-24 lg:min-h-[420px]">
+          <Card tone={tone} className="flex flex-col lg:sticky lg:top-24 lg:min-h-[300px]">
             <Eyebrow className={SUBTLE[tone]}>{type === "holdings" ? "You'll protect" : "Crude-linked spend"}</Eyebrow>
             <Summary type={type} holdings={holdings} costs={costs} adaPrice={adaPrice} wtiPrice={wtiPrice} />
             <div className="mt-auto space-y-3 pt-10">
@@ -190,7 +190,7 @@ function Summary({ type, holdings, costs, adaPrice, wtiPrice }: { type: PlanType
     const hedged = Math.floor((holdings.amountHeld * holdings.sharePct) / 100) || 0;
     return (
       <>
-        <div className="num mt-8 text-[56px] leading-none sm:text-[72px]">{num(hedged, 0)}</div>
+        <div className="num mt-8 text-[38px] leading-none sm:text-[48px]">{num(hedged, 0)}</div>
         <div className={`mt-2 text-[15px] ${SUBTLE.cobalt}`}>ADA hedged{adaPrice ? ` ≈ ${usd(hedged * adaPrice, 0)} at today's price` : ""}</div>
         <p className={`mt-8 text-[15px] leading-relaxed ${SUBTLE.cobalt}`}>
           {holdings.sharePct}% of {num(holdings.amountHeld || 0, 0)} ADA. Margin needed ≈{" "}
@@ -203,7 +203,7 @@ function Summary({ type, holdings, costs, adaPrice, wtiPrice }: { type: PlanType
   const exposureUsd = ((costs.crudeSharePct / 100) * monthly * costs.months) / (costs.fxRate || 1);
   return (
     <>
-      <div className="num mt-8 text-[56px] leading-none sm:text-[72px]">{usd(exposureUsd || 0, 0)}</div>
+      <div className="num mt-8 text-[38px] leading-none sm:text-[48px]">{usd(exposureUsd || 0, 0)}</div>
       <div className={`mt-2 text-[15px] ${SUBTLE.lime}`}>
         over {costs.months} month{costs.months === 1 ? "" : "s"}
         {wtiPrice ? ` ≈ ${num(exposureUsd / wtiPrice, 2)} WTI` : ""}

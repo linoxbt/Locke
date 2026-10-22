@@ -21,7 +21,7 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
       <PreviewCard type={p.type} inputs={p.inputs} preview={detail.preview} adaPrice={adaPrice} />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <Card tone="mist" className="lg:col-span-8">
-          <h2 className="display text-[24px]">Before you open a plan</h2>
+          <h2 className="display text-[20px]">Before you open a plan</h2>
           <ul className="mt-5 space-y-3 text-[15px] leading-relaxed text-ink-2">
             <li>Locke is a tool, not financial advice; you decide what to protect.</li>
             <li>Hedges can lose money on their own: a holdings hedge gives up upside, a fuel hedge loses if fuel prices fall.</li>
@@ -42,7 +42,7 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
                 Continue to funding <Arrow />
               </LinkButton>
             ) : (
-              <span aria-disabled className="flex h-16 w-full items-center justify-between rounded-full bg-mist px-8 text-lg text-ink-3">
+              <span aria-disabled className="flex h-14 w-full items-center justify-between rounded-full bg-mist px-8 text-[16px] text-ink-3">
                 Continue to funding <Arrow />
               </span>
             )}

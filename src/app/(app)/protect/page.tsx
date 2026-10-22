@@ -23,7 +23,7 @@ export default async function ProtectPage() {
 function Choice({ href, tone, n, title, line, body }: { href: string; tone: "cobalt" | "lime"; n: string; title: string; line: string; body: string }) {
   return (
     <Link href={href} className="group">
-      <Card tone={tone} className="flex min-h-[340px] flex-col transition-transform duration-300 group-hover:-translate-y-1 sm:min-h-[420px]">
+      <Card tone={tone} className="flex min-h-[240px] flex-col transition-transform duration-300 group-hover:-translate-y-1 sm:min-h-[260px]">
         <div className="flex items-center justify-between">
           <Eyebrow className={SUBTLE[tone]}>
             {n} · {title}
@@ -32,7 +32,7 @@ function Choice({ href, tone, n, title, line, body }: { href: string; tone: "cob
             <Arrow />
           </span>
         </div>
-        <span className="display mt-auto block pt-12 text-[40px] sm:text-[56px]">{line}</span>
+        <span className="display mt-auto block pt-8 text-[30px] sm:text-[38px]">{line}</span>
         <span className={`mt-4 block max-w-[40ch] text-[16px] ${SUBTLE[tone]}`}>{body}</span>
       </Card>
     </Link>

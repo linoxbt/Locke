@@ -37,7 +37,7 @@ export function WithdrawForm({ available }: { available: number | null }) {
   if (done) {
     return (
       <Card>
-        <h2 className="display text-[28px]">Withdrawal submitted.</h2>
+        <h2 className="display text-[22px]">Withdrawal submitted.</h2>
         <p className="mt-3 text-[15px] text-ink-2">ADA arrives in your connected wallet once Strike settles it.</p>
         <LinkButton href="/portfolio" className="mt-8">
           Back to portfolio <Arrow />

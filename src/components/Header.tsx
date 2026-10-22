@@ -7,7 +7,7 @@ import { LockeMark } from "./Logo";
 import { useWallet } from "./WalletProvider";
 import { shortAddr } from "@/lib/ui/format";
 
-const pill = "inline-flex h-10 shrink-0 items-center rounded-full px-4 text-[15px] backdrop-blur-md transition-colors";
+const pill = "inline-flex h-9 shrink-0 items-center rounded-full px-3.5 text-[14px] backdrop-blur-md transition-colors";
 const quiet = "bg-[#e6e5e1]/95 text-ink shadow-[0_1px_0_rgb(0_0_0/0.04)] hover:bg-paper";
 
 /**
@@ -48,9 +48,12 @@ export function Header() {
   return (
     <>
       <header className="pointer-events-none fixed inset-x-0 top-0 z-40">
-        <div className="mx-auto flex h-[72px] items-center gap-2 px-3 sm:px-4">
-          <Link href="/" aria-label="Locke home" className="pointer-events-auto shrink-0">
-            <LockeMark />
+        <div className="mx-auto flex h-16 items-center gap-2 px-3 sm:px-4">
+          <Link href="/" aria-label="Locke home" className="pointer-events-auto flex shrink-0 items-center gap-2 rounded-full bg-paper/90 py-1 pl-1 pr-3.5 backdrop-blur-md">
+            <LockeMark size={30} />
+            <span className="text-[17px] font-medium tracking-[-0.03em]" style={{ fontFamily: "var(--font-display)" }}>
+              Locke
+            </span>
           </Link>
 
           <nav aria-label="Main" className="pointer-events-auto mx-auto hidden items-center gap-1 md:flex">
@@ -78,7 +81,7 @@ export function Header() {
               onClick={() => setOpen(true)}
               aria-label="Open menu"
               aria-expanded={open}
-              className="grid h-10 w-10 place-items-center rounded-full bg-paper/90 backdrop-blur-md md:hidden"
+              className="grid h-9 w-9 place-items-center rounded-full bg-paper/90 backdrop-blur-md md:hidden"
             >
               <svg width="16" height="4" viewBox="0 0 16 4" aria-hidden>
                 <circle cx="2" cy="2" r="1.6" fill="currentColor" />
@@ -94,7 +97,12 @@ export function Header() {
         <div className="fixed inset-0 z-50 bg-ink/30 backdrop-blur-sm md:hidden" onClick={() => setOpen(false)}>
           <div role="dialog" aria-modal="true" aria-label="Menu" className="m-2 animate-rise rounded-[28px] bg-paper p-3" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-1">
-              <LockeMark />
+              <span className="flex items-center gap-2">
+                <LockeMark size={30} />
+                <span className="text-[17px] font-medium tracking-[-0.03em]" style={{ fontFamily: "var(--font-display)" }}>
+                  Locke
+                </span>
+              </span>
               <button onClick={() => setOpen(false)} aria-label="Close menu" className="grid h-10 w-10 place-items-center rounded-full bg-mist">
                 <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
                   <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -103,12 +111,12 @@ export function Header() {
             </div>
             <nav aria-label="Menu" className="mt-6 flex flex-col px-3 pb-4">
               {[...links, ...(me ? [{ href: "/account", label: "Account" }, { href: "/withdraw", label: "Withdraw" }] : [{ href: "/connect", label: "Connect a wallet" }])].map((l) => (
-                <Link key={l.href} href={l.href} className={`display border-b border-line py-3 text-[34px] ${isOn(l.href) ? "text-ink" : "text-ink-2"}`}>
+                <Link key={l.href} href={l.href} className={`display border-b border-line py-3 text-[26px] ${isOn(l.href) ? "text-ink" : "text-ink-2"}`}>
                   {l.label}
                 </Link>
               ))}
             </nav>
-            <Link href={me ? "/protect" : "/connect"} className="flex h-16 items-center justify-center rounded-full bg-cobalt text-lg text-paper">
+            <Link href={me ? "/protect" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
               {me ? "New protection plan" : "Get started"}
             </Link>
           </div>

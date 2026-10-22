@@ -41,7 +41,7 @@ export function PreviewCard({
             {s.symbol} · {s.side === "sell" ? "short" : "long"} · {s.leverage}x
           </span>
         </div>
-        <p className="display mt-10 max-w-[22ch] text-[32px] sm:text-[48px]">
+        <p className="display mt-10 max-w-[22ch] text-[26px] sm:text-[34px]">
           {words.lead} <span className={SUBTLE[tone]}>{words.rest}</span>
         </p>
         <div className={`mt-10 grid grid-cols-2 gap-6 border-t pt-6 sm:grid-cols-4 ${tone === "cobalt" ? "border-paper/20" : "border-ink/15"}`}>
@@ -60,7 +60,7 @@ export function PreviewCard({
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="display text-[24px]">{type === "holdings" ? "Treasury value" : "Monthly fuel bill"}</h3>
+            <h3 className="display text-[20px]">{type === "holdings" ? "Treasury value" : "Monthly fuel bill"}</h3>
             <span className="text-[13px] text-ink-3">{type === "holdings" ? "USD" : `${cur}, crude-share model`}</span>
           </div>
           <table className="num mt-6 w-full text-[15px]">
@@ -109,12 +109,12 @@ export function PreviewCard({
         <div className="grid grid-cols-1 gap-3">
           <Card tone="mist">
             <Eyebrow className="text-ink-2">Locke asks for a top-up at</Eyebrow>
-            <div className="num mt-6 text-[32px] leading-none">{preview.alertPrice == null ? "Not needed" : price(preview.alertPrice)}</div>
+            <div className="num mt-6 text-[26px] leading-none">{preview.alertPrice == null ? "Not needed" : price(preview.alertPrice)}</div>
             <p className="mt-2 text-[13px] text-ink-2">{preview.alertPrice == null ? "Margin covers any price move" : `${s.symbol} mark`}</p>
           </Card>
           <Card tone={preview.liquidationPrice == null ? "mist" : "ink"}>
             <Eyebrow className={preview.liquidationPrice == null ? "text-ink-2" : SUBTLE.ink}>Estimated liquidation</Eyebrow>
-            <div className={`num mt-6 text-[32px] leading-none ${preview.liquidationPrice == null ? "text-ok" : ""}`}>
+            <div className={`num mt-6 text-[26px] leading-none ${preview.liquidationPrice == null ? "text-ok" : ""}`}>
               {preview.liquidationPrice == null ? "None" : price(preview.liquidationPrice)}
             </div>
             <p className={`mt-2 text-[13px] ${preview.liquidationPrice == null ? "text-ink-2" : SUBTLE.ink}`}>

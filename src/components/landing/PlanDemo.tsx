@@ -42,7 +42,7 @@ export function PlanDemo({ ada, wti }: { ada: number; wti: number }) {
   const max = Math.max(without, withL) * 1.05;
 
   return (
-    <div className="mx-auto w-full max-w-[880px] rounded-[24px] bg-paper p-4 text-ink sm:p-8">
+    <div className="mx-auto w-full max-w-[760px] rounded-[20px] bg-paper p-4 text-ink sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 rounded-full bg-mist p-1" role="radiogroup" aria-label="Plan type">
           {(
@@ -65,14 +65,14 @@ export function PlanDemo({ ada, wti }: { ada: number; wti: number }) {
         <span className="num text-[13px] text-ink-3">{type === "holdings" ? "ADA" : "Crude"} moves {move > 0 ? "+" : ""}{move}%</span>
       </div>
 
-      <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {[
           { label: type === "holdings" ? "Treasury without Locke" : "Monthly bill without Locke", v: without, bar: "bg-mist", text: "text-ink-2" },
           { label: type === "holdings" ? "Treasury with Locke" : "Monthly bill with Locke", v: withL, bar: type === "holdings" ? "bg-cobalt" : "bg-lime", text: "text-ink" },
         ].map((r) => (
           <div key={r.label} className="rounded-2xl bg-canvas p-4 sm:p-5">
             <div className="text-[14px] text-ink-2">{r.label}</div>
-            <div className={`num mt-2 text-[34px] leading-none sm:text-[44px] ${r.text}`}>{fmt(r.v)}</div>
+            <div className={`num mt-2 text-[26px] leading-none sm:text-[32px] ${r.text}`}>{fmt(r.v)}</div>
             <div className="mt-4 h-2 rounded-full bg-paper">
               <div className={`h-full rounded-full ${r.bar} transition-[width] duration-300`} style={{ width: `${Math.max(2, (r.v / max) * 100)}%` }} />
             </div>

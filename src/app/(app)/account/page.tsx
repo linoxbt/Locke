@@ -37,7 +37,7 @@ export default async function AccountPage() {
       </div>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <Card className="lg:col-span-7">
-          <h2 className="display text-[24px]">Wallet</h2>
+          <h2 className="display text-[20px]">Wallet</h2>
           <div className="mt-6 space-y-5">
             <Stat label="Address" value={<span title={info?.address}>{info ? shortAddr(info.address) : "—"}</span>} />
             <Stat label="Stake address" value={info?.stakeAddress ? shortAddr(info.stakeAddress) : "Not shared by the wallet"} />
@@ -51,7 +51,7 @@ export default async function AccountPage() {
           <DelegationPanel q={0} hideCovered />
         </div>
         <Card tone="ink" className="lg:col-span-7">
-          <h2 className="display text-[24px]">Strike</h2>
+          <h2 className="display text-[20px]">Strike</h2>
           <div className="mt-6 grid grid-cols-2 gap-6">
             <Stat subtle="text-paper/55" label="Balance" value={balance ? usd(balance.wallet) : "—"} />
             <Stat subtle="text-paper/55" label="Free to withdraw" value={balance ? usd(balance.available) : "—"} />
@@ -63,7 +63,7 @@ export default async function AccountPage() {
           </LinkButton>
         </Card>
         <Card tone="mist" className="lg:col-span-5">
-          <h2 className="display text-[24px]">Security</h2>
+          <h2 className="display text-[20px]">Security</h2>
           <ul className="mt-5 space-y-3 text-[14px] leading-relaxed text-ink-2">
             <li>Locke holds one Strike API key for you, encrypted. It can place orders but can&apos;t withdraw.</li>
             <li>Withdrawals and deposits always need your wallet&apos;s signature.</li>

@@ -28,7 +28,7 @@ export default async function WithdrawPage() {
         </p>
         <div className="mt-8">
           <div className="text-[13px] text-ink-2">Free balance on Strike</div>
-          <div className="num mt-1 text-[48px] leading-none">{available == null ? "—" : usd(available)}</div>
+          <div className="num mt-1 text-[34px] leading-none">{available == null ? "—" : usd(available)}</div>
         </div>
       </div>
       <div className="space-y-3 lg:col-span-7">
