@@ -8,8 +8,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { txBodyHash } from "@/lib/cardano/txhash";
 
 const DB = process.env.TEST_DATABASE_URL;
+
+/** The id of the transaction Strike built for a prepared deposit (what the wallet would submit). */
+const txId = (dep: { unsignedTx?: string }) => txBodyHash(dep.unsignedTx!);
 
 // ── Mock Strike ──
 const state = {
@@ -99,8 +103,12 @@ const server = http.createServer((req, res) => {
         state.deposits.set(id, { usd });
         return json({ request_id: id, quote: { usd_value: usd.toFixed(2), expiration_at: Date.now() + 60_000 } });
       }
-      case "POST /v2/deposit/build-tx":
-        return json({ unsigned_tx: "84a0a0f5f6", format: "cardano_cbor", expires_at: Date.now() + 1e6 });
+      case "POST /v2/deposit/build-tx": {
+        // A distinct transaction per deposit: body {0: [], 1: [], 2: fee}, fee = the request number.
+        const n = Number(String(b.request_id).replace(/\D/g, ""));
+        const fee = n.toString(16).padStart(4, "0");
+        return json({ unsigned_tx: `84a3008001800219${fee}a0f5f6`, format: "cardano_cbor", expires_at: Date.now() + 1e6 });
+      }
       case "POST /v2/deposit": {
         const d = state.deposits.get(b.request_id)!;
         if (state.confirmFails) {
@@ -219,7 +227,9 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     expect(dep.usdValue!).toBeGreaterThanOrEqual(preview.sizing.requiredUsd);
     await expect(svc.prepareDeposit(userId, plan.id, "open", { address: "addr1test", utxos: ["8282"] })).resolves.toBeTruthy();
 
-    await svc.confirmDeposit(userId, dep.depositId!, "ab".repeat(32));
+    // Only the transaction Locke built can confirm the deposit.
+    await expect(svc.confirmDeposit(userId, dep.depositId!, "ab".repeat(32))).rejects.toThrow(/isn't the transaction Locke built/);
+    await svc.confirmDeposit(userId, dep.depositId!, txId(dep));
     expect((await svc.loadPlan(userId, plan.id)).status).toBe("funding");
     // A second open deposit while one is confirming is refused.
     await expect(svc.prepareDeposit(userId, plan.id, "open", { address: "addr1test", utxos: ["8282"] })).rejects.toThrow(/still confirming/);
@@ -255,7 +265,7 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
 
     // Top-up: deposit credited → added to this plan's isolated margin once.
     const top = await svc.prepareDeposit(userId, plan.id, "topup", { address: "addr1test", utxos: ["8282"], amountUsd: 20 });
-    await svc.confirmDeposit(userId, top.depositId!, "cd".repeat(32));
+    await svc.confirmDeposit(userId, top.depositId!, txId(top));
     await Promise.all([svc.syncPlan(userId, plan.id), svc.syncPlan(userId, plan.id)]);
     expect(state.isoAdds).toHaveLength(2);
     expect(state.isoAdds[1]).toBeGreaterThanOrEqual(19.9);
@@ -281,7 +291,7 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     const { plan } = await svc.createDraft(userId, "holdings", { amountHeld: 500, sharePct: 100, leverage: 1, bufferPct: 25 });
     await svc.acknowledgeRisks(userId, plan.id);
     const dep = await svc.prepareDeposit(userId, plan.id, "open", { address: "addr1test", utxos: ["8282"] });
-    await svc.confirmDeposit(userId, dep.depositId!, "ef".repeat(32));
+    await svc.confirmDeposit(userId, dep.depositId!, txId(dep));
 
     // Strike refuses the order outright: nothing pending, the plan waits in funding with the reason.
     state.orderRejected = true;
@@ -345,10 +355,10 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     // The confirm call fails although the ADA is on chain: the hash is kept, and the deposit is
     // matched from Strike's history by it.
     state.confirmFails = true;
-    await expect(svc.confirmDeposit(userId, dep.depositId!, "aa".repeat(32))).rejects.toThrow();
+    await expect(svc.confirmDeposit(userId, dep.depositId!, txId(dep))).rejects.toThrow();
     state.confirmFails = false;
     const [kept] = await sql`select status, tx_hash from deposits where id = ${dep.depositId}`;
-    expect(kept).toMatchObject({ status: "built", tx_hash: "aa".repeat(32) });
+    expect(kept).toMatchObject({ status: "built", tx_hash: txId(dep) });
 
     // Margin adds are sequenced, not applied: the buffer only counts once the position shows it.
     state.isoLagReads = 4; // the add only shows after the in-request checks (3 reads) and one more sync
@@ -368,7 +378,7 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
 
     // A top-up the engine silently rejects is not recorded as applied; after the verify window it's retried.
     const top = await svc.prepareDeposit(userId, plan.id, "topup", { address: "addr1test", utxos: ["8282"], amountUsd: 20 });
-    await svc.confirmDeposit(userId, top.depositId!, "bb".repeat(32));
+    await svc.confirmDeposit(userId, top.depositId!, txId(top));
     state.isoSilentlyRejected = true;
     await svc.syncPlan(userId, plan.id);
     let [t] = await sql`select status from deposits where id = ${top.depositId}`;
@@ -402,7 +412,7 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     await svc.acknowledgeRisks(userId, d2.plan.id);
     const dep2 = await svc.prepareDeposit(userId, d2.plan.id, "open", { address: "addr1test", utxos: ["8282"] });
     state.orderRejected = true; // keep it from opening
-    await svc.confirmDeposit(userId, dep2.depositId!, "cc".repeat(32));
+    await svc.confirmDeposit(userId, dep2.depositId!, txId(dep2));
     await svc.syncPlan(userId, d2.plan.id).catch(() => null);
     state.orderRejected = false;
     expect((await sql`select status from deposits where id = ${dep2.depositId}`)[0].status).toBe("credited");

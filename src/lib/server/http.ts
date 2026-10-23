@@ -13,7 +13,11 @@ export function route<A extends unknown[]>(fn: (...args: A) => Promise<Response>
     try {
       return await fn(...args);
     } catch (e) {
-      if (e instanceof HttpError) return NextResponse.json({ error: e.message }, { status: e.status });
+      if (e instanceof HttpError) {
+        // Some errors carry a code the browser acts on (e.g. utxos_required), not just words.
+        const code = (e as HttpError & { code?: unknown }).code;
+        return NextResponse.json(typeof code === "string" ? { error: e.message, code } : { error: e.message }, { status: e.status });
+      }
       if (e instanceof ConfigError) {
         // The variable's name goes to the logs only; visitors get no hint about the setup.
         console.error("[config]", e.message);

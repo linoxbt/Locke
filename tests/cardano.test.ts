@@ -83,3 +83,15 @@ describe("wallet addresses", () => {
     expect(stakeFromBaseAddress(enterprise)).toBeNull();
   });
 });
+
+describe("transaction id", () => {
+  it("is blake2b-256 of the body bytes, whatever the witnesses", async () => {
+    const { txBodyHash } = await import("@/lib/cardano/txhash");
+    const { blake2b } = await import("@noble/hashes/blake2.js");
+    const body = "a3008001800219002a";
+    const expected = Buffer.from(blake2b(Buffer.from(body, "hex"), { dkLen: 32 })).toString("hex");
+    expect(txBodyHash(`84${body}a0f5f6`)).toBe(expected);
+    expect(txBodyHash(`84${body}a10081825820${"11".repeat(32)}5840${"22".repeat(64)}f5f6`)).toBe(expected);
+    expect(() => txBodyHash("a0")).toThrow();
+  });
+});

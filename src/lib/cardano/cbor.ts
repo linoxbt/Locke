@@ -14,7 +14,7 @@ interface Head {
   headLen: number;
 }
 
-function readHead(buf: Uint8Array, off: number): Head {
+export function readHead(buf: Uint8Array, off: number): Head {
   if (off >= buf.length) throw new Error("CBOR: unexpected end");
   const ib = buf[off];
   const major = ib >> 5;

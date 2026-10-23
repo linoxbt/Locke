@@ -17,11 +17,12 @@ export const config = {
   get strikeApiUrl() {
     return (process.env.STRIKE_API_URL ?? "https://api.strikefinance.org").replace(/\/+$/, "");
   },
+  /** Streams default to the same host as STRIKE_API_URL, so pointing it at testnet moves them too. */
   get strikeUserWsUrl() {
-    return process.env.STRIKE_WS_USER_URL ?? "wss://api.strikefinance.org/ws/user-api";
+    return process.env.STRIKE_WS_USER_URL ?? `${this.strikeApiUrl.replace(/^http/, "ws")}/ws/user-api`;
   },
   get strikePriceWsUrl() {
-    return process.env.STRIKE_WS_PRICE_URL ?? "wss://api.strikefinance.org/ws/price";
+    return process.env.STRIKE_WS_PRICE_URL ?? `${this.strikeApiUrl.replace(/^http/, "ws")}/ws/price`;
   },
   get builderCode() {
     return required("STRIKE_BUILDER_CODE");

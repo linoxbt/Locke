@@ -39,6 +39,7 @@ import {
   unrealisedPnl,
   type Thresholds,
 } from "../domain/risk";
+import { txBodyHash } from "../cardano/txhash";
 import { FUELS } from "../domain/fuel";
 import { estimateFill, fillProblem, type FillEstimate } from "../domain/liquidity";
 import type { CostsInputs, HoldingsInputs, PlanInputs, PlanStatus, PlanType, Preview, RiskLevel, Side, Sizing } from "../domain/types";
@@ -599,9 +600,16 @@ export async function prepareDeposit(
   }
   const built = await depositBuildTx(keys, quote.request_id, p.address, p.utxos);
   const usdValue = parseFloat(quote.quote.usd_value);
+  // The id of the transaction Strike built: only that transaction can confirm this deposit.
+  let expected: string | null = null;
+  try {
+    expected = txBodyHash(built.unsigned_tx);
+  } catch {
+    console.error("[deposit] couldn't read the built transaction's body; confirm won't be bound to it");
+  }
   const [dep] = await db()`
-    insert into deposits (user_id, plan_id, purpose, request_id, lovelace, usd_value)
-    values (${userId}, ${plan.id}, ${purpose}, ${quote.request_id}, ${lovelace.toString()}, ${usdValue})
+    insert into deposits (user_id, plan_id, purpose, request_id, lovelace, usd_value, expected_tx_hash)
+    values (${userId}, ${plan.id}, ${purpose}, ${quote.request_id}, ${lovelace.toString()}, ${usdValue}, ${expected})
     returning id`;
   return {
     needed: true,
