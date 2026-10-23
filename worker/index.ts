@@ -14,21 +14,13 @@
 
 import http from "node:http";
 import WebSocket from "ws";
-import {
-  combinedLevel,
-  distanceToLiquidation,
-  LEVEL_RANK,
-  liquidationPrice,
-  maintenanceMargin,
-  marginRatio,
-  unrealisedPnl,
-} from "../src/lib/domain/risk";
-import { liveHeadline } from "../src/lib/domain/plans";
+import { LEVEL_RANK } from "../src/lib/domain/risk";
 import type { RiskLevel } from "../src/lib/domain/types";
 import { config } from "../src/lib/server/config";
 import { db } from "../src/lib/server/db";
 import { strikeKeysFor } from "../src/lib/server/keys";
-import { addEvent, syncPlan, thresholds, type PlanRow } from "../src/lib/server/planService";
+import { assessPlan, recordLevel, REPEAT_ALERT_MS, WORKER_LOCK } from "../src/lib/server/monitor";
+import { addEvent, syncPlan, type PlanRow } from "../src/lib/server/planService";
 import { getMarketRules, getPositions, serverNow, type ApiKeys, type StrikePosition } from "../src/lib/strike/client";
 import { signLogon } from "../src/lib/strike/sign";
 import { liquidationReason } from "../src/lib/strike/stream";
@@ -43,8 +35,6 @@ const RELOAD_PLANS_MS = 10_000;
 const POSITIONS_STALE_MS = 60_000;
 /** No mark for this long means the price stream is dead: reconnect, and report unhealthy. */
 const MARKS_STALE_MS = 30_000;
-/** While a plan sits at Strike's margin call or worse, the alert repeats this often. */
-const REPEAT_ALERT_MS = 15 * 60_000;
 const SYNC_CONCURRENCY = 4;
 const SNAPSHOT_RETENTION_DAYS = 90;
 const LOGON_TIMEOUT_MS = 15_000;
@@ -56,7 +46,6 @@ const SILENT_SOCKET_MS = 45_000;
 const EXIT_AFTER_UNHEALTHY_MS = 2 * 60_000;
 /** A plan whose positions can't be read this long gets an event telling the user it isn't being watched. */
 const DEGRADED_NOTICE_MS = 2 * 60_000;
-const WORKER_LOCK = 774_211_031; // pg advisory lock key: one active worker
 
 const marks = new Map<string, number>();
 const markAt = new Map<string, number>();
@@ -284,15 +273,6 @@ function markStale(userId: string) {
 
 // ── Risk evaluation ──
 
-const LEVEL_MESSAGES: Record<RiskLevel, (r: string) => string> = {
-  ok: (r) => `Margin health back to normal (${r}).`,
-  watch: (r) => `Margin health is weakening (${r}). No action needed yet.`,
-  action: (r) => `Action needed: this plan is close to liquidation (margin ratio ${r}). Top up to keep it safe.`,
-  margin_call: (r) => `Strike's margin call level reached (${r}). Top up now.`,
-  reduce_only: (r) => `Strike now blocks risk-increasing orders on this plan (${r}). Top up or reduce.`,
-  liquidation: (r) => `Liquidation level reached on Strike (${r}).`,
-};
-
 /**
  * Record a risk level and alert on a change (or a due repeat). The in-memory level changes only
  * after both writes succeed, so a failed write is retried on the next tick instead of losing the
@@ -304,15 +284,9 @@ async function setLevel(plan: PlanRow, level: RiskLevel, ratio: number | null, m
   // A change always alerts; at Strike's margin call or worse the alert also repeats until it's handled.
   const repeat = prev === level && LEVEL_RANK[level] >= LEVEL_RANK.margin_call && now - (lastAlert.get(plan.id) ?? 0) >= REPEAT_ALERT_MS;
   if (prev !== level || repeat) {
-    const pct = ratio != null ? `${(ratio * 100).toFixed(1)}%` : "n/a";
-    const text = `${config.demoAlerts ? "[Demo levels] " : ""}${repeat ? "Still at risk: " : ""}${message ?? LEVEL_MESSAGES[level](pct)}`;
-    await db().begin(async (tx) => {
-      await tx`update plans set risk_level = ${level}, last_ratio = ${ratio} where id = ${plan.id}`;
-      await tx`insert into plan_events (plan_id, level, message, detail)
-               values (${plan.id}, ${level}, ${text}, ${tx.json({ from: prev, to: level, ratio, demo: config.demoAlerts } as never)})`;
-    });
+    await recordLevel(plan.id, prev, level, ratio, { repeat, message });
     lastAlert.set(plan.id, now);
-    log(`[plan ${plan.id.slice(0, 8)}] ${prev} → ${level} ${pct}${repeat ? " (repeat)" : ""}`);
+    log(`[plan ${plan.id.slice(0, 8)}] ${prev} → ${level} ${ratio != null ? `${(ratio * 100).toFixed(1)}%` : "n/a"}${repeat ? " (repeat)" : ""}`);
   } else {
     await db()`update plans set risk_level = ${level}, last_ratio = ${ratio} where id = ${plan.id}`;
   }
@@ -375,15 +349,7 @@ async function evaluate(plan: PlanRow) {
   const pos = u.positions.find((p) => p.symbol === plan.symbol);
   if (!pos) return; // syncPlan decides whether the plan closed
   const rules = await getMarketRules(plan.symbol);
-  const signed = parseFloat(pos.size);
-  const entry = parseFloat(pos.entry_price);
-  const iso = parseFloat(pos.iso_balance);
-  const upnl = unrealisedPnl(signed, entry, mark);
-  const mm = maintenanceMargin(rules.tiers, signed, mark);
-  let ratio = marginRatio(mm, iso, upnl);
-  if (!isFinite(ratio)) ratio = 1;
-  const liq = parseFloat(pos.liquidation_price) || liquidationPrice(rules.tiers, signed, entry, iso);
-  const level = combinedLevel(ratio, distanceToLiquidation(signed, mark, liq), plan.risk_level, thresholds());
+  const { level, ratio, upnl, iso, funding, headline } = assessPlan(plan, pos, mark, rules);
 
   // Persist a level change (or a due repeat) at once; otherwise refresh last_ratio at most every 10 s.
   const now = Date.now();
@@ -398,8 +364,6 @@ async function evaluate(plan: PlanRow) {
 
   if (now - (lastSnapshot.get(plan.id) ?? 0) >= SNAPSHOT_EVERY_MS) {
     lastSnapshot.set(plan.id, now);
-    const funding = parseFloat(pos.accumulated_funding_fees) || 0;
-    const headline = liveHeadline(plan.type, plan.inputs, Math.abs(signed), entry, mark, funding);
     await db()`insert into snapshots (plan_id, mark, ratio, upnl, iso_balance, funding, headline)
                values (${plan.id}, ${mark}, ${ratio}, ${upnl}, ${iso}, ${funding}, ${headline})`;
   }

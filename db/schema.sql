@@ -184,3 +184,11 @@ begin
     revoke all on all tables in schema public from authenticated;
   end if;
 end $$;
+
+-- The scheduled sweep's last run (one row), for checking that monitoring is alive.
+create table if not exists monitor_heartbeat (
+  id      int primary key,
+  at      timestamptz not null,
+  result  jsonb
+);
+alter table monitor_heartbeat enable row level security;

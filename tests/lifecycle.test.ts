@@ -427,6 +427,48 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     await sql`update plans set status = 'closed' where id = ${d3.plan.id}`;
   }, 30_000);
 
+  it("sweeps every minute without the worker: alerts once on a real change, and stands down for the worker", async () => {
+    const { sweep, WORKER_LOCK } = await import("@/lib/server/monitor");
+    state.position = null;
+    await sql`update plans set status = 'closed' where user_id = ${userId} and status <> 'closed'`;
+    const { plan } = await svc.createDraft(userId, "holdings", { amountHeld: 1000, sharePct: 100, leverage: 1, bufferPct: 25 });
+    await svc.acknowledgeRisks(userId, plan.id);
+    const dep = await svc.prepareDeposit(userId, plan.id, "open", { address: "addr1test", utxos: ["8282"] });
+    await svc.confirmDeposit(userId, dep.depositId!, txId(dep));
+
+    // The sweep runs the lifecycle itself: deposit credited → hedge opened → buffer added.
+    let r = await sweep(20_000);
+    expect(r.synced).toBeGreaterThanOrEqual(1);
+    let p = await svc.loadPlan(userId, plan.id);
+    expect(p.status).toBe("active");
+    expect(p.risk_level).toBe("ok");
+
+    // Margin runs thin (mm ≈ $1 on a $200 short): ratio ≈ 0.67 → Action needed, alerted once.
+    state.position!.iso = 1.5;
+    r = await sweep(20_000);
+    expect(r.alerts).toBe(1);
+    p = await svc.loadPlan(userId, plan.id);
+    expect(p.risk_level).toBe("action");
+    r = await sweep(20_000);
+    expect(r.alerts).toBe(0); // same level: no repeat below Strike's margin call
+    const alerts = await sql`select message from plan_events where plan_id = ${plan.id} and level = 'action' and message like 'Action needed%'`;
+    expect(alerts).toHaveLength(1);
+    const snaps = await sql`select count(*)::int as n from snapshots where plan_id = ${plan.id}`;
+    expect(snaps[0].n).toBeGreaterThanOrEqual(3);
+    const [hb] = await sql`select result from monitor_heartbeat where id = 1`;
+    expect(hb.result.assessed).toBeGreaterThanOrEqual(1);
+
+    // While the real-time worker holds its lock, the sweep stands down (no double alerts).
+    const lock = await sql.reserve();
+    await lock`select pg_advisory_lock(${WORKER_LOCK})`;
+    expect((await sweep(20_000)).skipped).toMatch(/worker is active/);
+    await lock`select pg_advisory_unlock(${WORKER_LOCK})`;
+    lock.release();
+
+    state.position = null;
+    await sql`update plans set status = 'closed' where id = ${plan.id}`;
+  }, 60_000);
+
   it("refuses a second live plan on the same market", async () => {
     state.position = null;
     const a = await svc.createDraft(userId, "holdings", { amountHeld: 1000, sharePct: 100 });
