@@ -15,7 +15,7 @@ Every plan follows the same path: **describe exposure → preview scenarios and 
 
 Locke is not a trading terminal. Every screen is about an exposure the business already has.
 
-**Live:** https://locke-protect.netlify.app · builder code **LockeIn** (up to 20 bps registered; orders carry `STRIKE_BUILDER_FEE_BPS`).
+**Live:** https://trylocke.online · builder code **LockeIn** (up to 20 bps registered; orders carry `STRIKE_BUILDER_FEE_BPS`).
 
 ## What it does
 
