@@ -138,9 +138,6 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
   ];
 }
 
-// Rows per column that start on screen (tiles are 176–320px tall; the hero is one viewport).
-const FALL_ROWS = 5;
-
 export function Collage({ ada, wti }: { ada: number | null; wti: number | null }) {
   const cols = tiles(ada, wti);
   return (
@@ -154,22 +151,16 @@ export function Collage({ ada, wti }: { ada: number | null; wti: number | null }
           >
             {[0, 1].map((copy) => (
               <div key={copy} className="flex flex-col gap-2 pb-2">
-                {col.concat(col).map((tile, k) => {
-                  // Only tiles on screen at load fall: the first rows of the copy in view (drift-down
-                  // columns start at -50%, showing the second copy). Each column stacks from the
-                  // bottom up, so a falling tile never passes through one that has landed.
-                  const falls = copy === i % 2 && k < FALL_ROWS;
-                  const delay = i * 70 + (FALL_ROWS - 1 - k) * 80;
-                  return (
-                    <div
-                      key={k}
-                      className={`${falls ? "fall " : ""}group ${tile.h} shrink-0 overflow-hidden rounded-[14px] transition-transform duration-300 hover:scale-[0.985]`}
-                      style={falls ? ({ "--fall-delay": `${delay}ms` } as React.CSSProperties) : undefined}
-                    >
-                      {tile.node}
-                    </div>
-                  );
-                })}
+                {col.concat(col).map((tile, k) => (
+                  <div
+                    key={k}
+                    // Candidates to fall in: the copy in view at load (drift-down columns start at
+                    // -50%, showing the second copy). <FallIn> picks the ones actually on screen.
+                    className={`${copy === i % 2 ? "fall " : ""}group ${tile.h} shrink-0 overflow-hidden rounded-[14px] transition-transform duration-300 hover:scale-[0.985]`}
+                  >
+                    {tile.node}
+                  </div>
+                ))}
               </div>
             ))}
           </div>

@@ -42,12 +42,34 @@ export function DropIn({
 }
 
 /**
- * Hero wrapper: descendants marked `.fall` (with their own `--fall-delay`) fall in once, after the
- * page has mounted. Starting from an effect means the animation runs on the final DOM only.
+ * Hero wrapper: descendants marked `.fall` fall in once, after the page has mounted (so the
+ * animation runs on the final DOM only). Only tiles on screen fall: column by column, each column
+ * stacking from the bottom up so a falling tile never crosses one that has landed. Off-screen
+ * candidates are marked `data-still` and simply appear.
  */
 export function FallIn({ className = "", children, ...rest }: { className?: string; children: React.ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const cols = new Map<number, { el: HTMLElement; top: number }[]>();
+    for (const el of root.querySelectorAll<HTMLElement>(".fall")) {
+      const r = el.getBoundingClientRect();
+      if (r.top >= window.innerHeight || r.bottom <= 0) {
+        el.setAttribute("data-still", "");
+        continue;
+      }
+      const key = Math.round(r.left);
+      cols.set(key, [...(cols.get(key) ?? []), { el, top: r.top }]);
+    }
+    [...cols.keys()]
+      .sort((a, b) => a - b)
+      .forEach((key, c) =>
+        cols
+          .get(key)!
+          .sort((a, b) => b.top - a.top)
+          .forEach(({ el }, row) => el.style.setProperty("--fall-delay", `${c * 50 + row * 70}ms`)),
+      );
     // Two frames: let the hidden state paint before the fall starts.
     let b = 0;
     const a = requestAnimationFrame(() => {

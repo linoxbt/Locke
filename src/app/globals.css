@@ -129,7 +129,11 @@ body {
   opacity: 0;
 }
 [data-fall][data-in] .fall {
-  animation: fall 0.75s var(--fall-delay, 0ms) backwards;
+  animation: fall 0.6s var(--fall-delay, 0ms) backwards;
+}
+[data-fall] .fall[data-still] {
+  opacity: 1;
+  animation: none;
 }
 
 /* Range input: thin ink track, big thumb. */
