@@ -26,7 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <noscript>
           {/* Without JavaScript nothing waits to animate in. */}
-          <style>{`[data-drop] > * { opacity: 1 !important; } .replay-clip { transform: none !important; }`}</style>
+          <style>{`[data-drop] > *, [data-fall] .fall { opacity: 1 !important; } .replay-clip { transform: none !important; }`}</style>
         </noscript>
       </head>
       <body className="min-h-dvh">

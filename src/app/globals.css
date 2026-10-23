@@ -29,7 +29,6 @@
   --animate-rise: rise 0.7s var(--ease-out-quint) both;
   --animate-drift-up: drift-up 60s linear infinite;
   --animate-drift-down: drift-down 60s linear infinite;
-  --animate-drop: drop 0.5s var(--ease-out-quint) backwards;
   --animate-dash-march: dash-march 0.9s linear infinite;
   @keyframes drift-up {
     from { transform: translateY(0); }
@@ -83,29 +82,54 @@ body {
   text-transform: uppercase;
 }
 
-/* Cards dropping in, one after another. Keyframes live outside @theme so they're always emitted. */
-@keyframes drop {
-  from {
-    opacity: 0;
-    transform: translateY(-36px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
+/* Keyframes live outside @theme so they're always emitted. */
 @keyframes dash-march {
   to {
     stroke-dashoffset: -8;
   }
 }
 
-/* <DropIn>: children wait hidden until the container is seen, then drop with a stagger. */
+/* A card falling into place: accelerates down, lands, bounces once. */
+@keyframes fall {
+  0% {
+    transform: translateY(var(--fall-from, -110vh));
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  70% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0, 0.55, 0.45, 1);
+  }
+  84% {
+    transform: translateY(-10px);
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* <DropIn>: children wait hidden until the container is seen, then fall in one after another. */
 [data-drop]:not([data-in]) > * {
   opacity: 0;
 }
 [data-drop][data-in] > * {
-  animation: drop 0.45s var(--ease-out-quint) var(--drop-delay, 0ms) backwards;
+  --fall-from: -140px;
+  animation:
+    fall 0.7s var(--drop-delay, 0ms) backwards,
+    fade-in 0.2s var(--drop-delay, 0ms) backwards;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* <FallIn> (hero): tiles fall from above the screen once the page has mounted. */
+[data-fall]:not([data-in]) .fall {
+  opacity: 0;
+}
+[data-fall][data-in] .fall {
+  animation: fall 0.75s var(--fall-delay, 0ms) backwards;
 }
 
 /* Range input: thin ink track, big thumb. */
@@ -166,7 +190,8 @@ input[type="number"]::-webkit-outer-spin-button {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
-  [data-drop] > * {
+  [data-drop] > *,
+  [data-fall] .fall {
     opacity: 1 !important;
     animation: none !important;
   }

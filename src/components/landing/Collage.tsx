@@ -1,8 +1,9 @@
 // Hero backdrop: columns of Locke "product shots" drifting past, like a moving moodboard.
 // Pure markup (server-safe). Decorative, so hidden from assistive tech; motion stops under
-// prefers-reduced-motion via the global rule. Tiles drop in on load in a diagonal wave, a column
+// prefers-reduced-motion via the global rule. Tiles fall in on load in a diagonal wave, a column
 // pauses while hovered, and posters cropped at the tile edge pull back into full view on hover.
 
+import { FallIn } from "@/components/DropIn";
 import { price } from "@/lib/ui/format";
 
 type Tile = { h: string; node: React.ReactNode };
@@ -137,10 +138,13 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
   ];
 }
 
+// Rows per column that start on screen (tiles are 176–320px tall; the hero is one viewport).
+const FALL_ROWS = 5;
+
 export function Collage({ ada, wti }: { ada: number | null; wti: number | null }) {
   const cols = tiles(ada, wti);
   return (
-    <div aria-hidden className="absolute inset-0 grid grid-cols-2 gap-2 overflow-hidden p-2 sm:grid-cols-3 lg:grid-cols-5">
+    <FallIn aria-hidden className="absolute inset-0 grid grid-cols-2 gap-2 overflow-hidden p-2 sm:grid-cols-3 lg:grid-cols-5">
       {cols.map((col, i) => (
         <div key={i} className={`overflow-hidden ${i >= 2 ? "hidden sm:block" : ""} ${i >= 3 ? "sm:hidden lg:block" : ""}`}>
           {/* Two copies stacked so a -50% translate loops seamlessly. */}
@@ -150,21 +154,27 @@ export function Collage({ ada, wti }: { ada: number | null; wti: number | null }
           >
             {[0, 1].map((copy) => (
               <div key={copy} className="flex flex-col gap-2 pb-2">
-                {col.concat(col).map((tile, k) => (
-                  <div
-                    key={k}
-                    className={`group ${tile.h} shrink-0 animate-drop overflow-hidden rounded-[14px] transition-transform duration-300 hover:scale-[0.985]`}
-                    // Diagonal wave: column by column, row by row, ~0.7 s end to end.
-                    style={{ animationDelay: `${(i + k) * 70}ms` }}
-                  >
-                    {tile.node}
-                  </div>
-                ))}
+                {col.concat(col).map((tile, k) => {
+                  // Only tiles on screen at load fall: the first rows of the copy in view (drift-down
+                  // columns start at -50%, showing the second copy). Each column stacks from the
+                  // bottom up, so a falling tile never passes through one that has landed.
+                  const falls = copy === i % 2 && k < FALL_ROWS;
+                  const delay = i * 70 + (FALL_ROWS - 1 - k) * 80;
+                  return (
+                    <div
+                      key={k}
+                      className={`${falls ? "fall " : ""}group ${tile.h} shrink-0 overflow-hidden rounded-[14px] transition-transform duration-300 hover:scale-[0.985]`}
+                      style={falls ? ({ "--fall-delay": `${delay}ms` } as React.CSSProperties) : undefined}
+                    >
+                      {tile.node}
+                    </div>
+                  );
+                })}
               </div>
             ))}
           </div>
         </div>
       ))}
-    </div>
+    </FallIn>
   );
 }
