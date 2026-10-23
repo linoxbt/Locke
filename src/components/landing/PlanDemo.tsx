@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { costsOutcome, holdingsOutcome } from "@/lib/domain/plans";
 import type { CostsInputs, HoldingsInputs } from "@/lib/domain/types";
 import { local, usd } from "@/lib/ui/format";
@@ -18,31 +18,113 @@ const COST: CostsInputs = {
   bufferPct: 25,
 };
 
-/** Drag a price move and watch a plan hold. Uses Locke's own outcome functions. */
-export function PlanDemo({ ada, wti }: { ada: number; wti: number }) {
-  const [type, setType] = useState<"holdings" | "costs">("holdings");
-  const [move, setMove] = useState(-30);
-  const m = move / 100;
+type PlanKind = "holdings" | "costs";
 
-  let without: number;
-  let withL: number;
-  let fmt: (n: number) => string;
-  if (type === "holdings") {
-    const o = holdingsOutcome(HOLD, HOLD.amountHeld, ada, ada * (1 + m));
-    without = o.without;
-    withL = o.with;
-    fmt = (n) => usd(n, 0);
-  } else {
-    const size = (COST.litresPerMonth * COST.months * COST.pumpPrice) / COST.fxRate / wti;
-    const o = costsOutcome(COST, size, wti, wti * (1 + m));
-    without = o.without;
-    withL = o.with;
-    fmt = (n) => local(n, "NGN", 0);
-  }
-  const max = Math.max(without, withL) * 1.05;
+// Autoplay: the price glides between these moves (%), easing in and out, pausing at each one.
+const WAYPOINTS: Record<PlanKind, number[]> = {
+  holdings: [-30, -50, -15, 25, 0],
+  costs: [25, 45, 10, -20, 0],
+};
+const GLIDE_MS = 1_700;
+const HOLD_MS = 700;
+const RESUME_MS = 4_000;
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+function outcome(type: PlanKind, move: number, ada: number, wti: number) {
+  const m = move / 100;
+  if (type === "holdings") return holdingsOutcome(HOLD, HOLD.amountHeld, ada, ada * (1 + m));
+  const size = (COST.litresPerMonth * COST.months * COST.pumpPrice) / COST.fxRate / wti;
+  return costsOutcome(COST, size, wti, wti * (1 + m));
+}
+
+/**
+ * Drag a price move and watch a plan hold. Uses Locke's own outcome functions. While on screen it
+ * plays itself: the price glides through a few moves and the figures follow. Dragging takes over
+ * (autoplay resumes after a few idle seconds); the pause button stops it for good.
+ */
+export function PlanDemo({ ada, wti }: { ada: number; wti: number }) {
+  const [type, setType] = useState<PlanKind>("holdings");
+  const [move, setMove] = useState(-30);
+  const target = outcome(type, move, ada, wti);
+  // Displayed figures ease towards the target, so switching plans rolls the numbers over.
+  const [shown, setShown] = useState({ without: target.without, with: target.with });
+  const [visible, setVisible] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [idleUntil, setIdleUntil] = useState(0);
+  const [reduced, setReduced] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const live = useRef({ move, type, target, shown });
+  live.current = { move, type, target, shown };
+
+  useEffect(() => {
+    setReduced(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { threshold: 0.35 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  // Ease the displayed figures towards the current outcome: one loop that idles once settled.
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = Math.max(0, now - last);
+      last = now;
+      const { target: t, shown: s } = live.current;
+      if (s.without !== t.without || s.with !== t.with) {
+        const k = reduced ? 1 : 1 - Math.exp(-dt / 110);
+        let next = { without: s.without + (t.without - s.without) * k, with: s.with + (t.with - s.with) * k };
+        if (Math.abs(t.without - next.without) < 0.5 && Math.abs(t.with - next.with) < 0.5) next = { without: t.without, with: t.with };
+        live.current.shown = next;
+        setShown(next);
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [reduced]);
+
+  // Autoplay: glide the price from wherever it is through the plan's waypoints.
+  const autoplay = visible && !paused && !reduced;
+  useEffect(() => {
+    if (!autoplay) return;
+    const wait = idleUntil - Date.now();
+    let raf = 0;
+    let timer = 0;
+    const run = () => {
+      const points = WAYPOINTS[live.current.type];
+      let i = points.indexOf(Math.round(live.current.move));
+      i = i < 0 ? 0 : (i + 1) % points.length;
+      let from = live.current.move;
+      let start = performance.now();
+      const frame = (now: number) => {
+        if (document.hidden) start = now;
+        const p = Math.min(1, (now - start) / GLIDE_MS);
+        setMove(from + (points[i] - from) * easeInOut(p));
+        if (now - start >= GLIDE_MS + HOLD_MS) {
+          from = points[i];
+          i = (i + 1) % points.length;
+          start = now;
+        }
+        raf = requestAnimationFrame(frame);
+      };
+      raf = requestAnimationFrame(frame);
+    };
+    timer = window.setTimeout(run, Math.max(0, wait));
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(raf);
+    };
+  }, [autoplay, idleUntil, type]);
+
+  const fmt = type === "holdings" ? (n: number) => usd(n, 0) : (n: number) => local(n, "NGN", 0);
+  const max = Math.max(target.without, target.with) * 1.05;
+  const shownMove = Math.round(move);
 
   return (
-    <div className="mx-auto w-full max-w-[760px] rounded-[20px] bg-paper p-4 text-ink sm:p-6">
+    <div ref={ref} className="mx-auto w-full max-w-[760px] rounded-[20px] bg-paper p-4 text-ink sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 rounded-full bg-mist p-1" role="radiogroup" aria-label="Plan type">
           {(
@@ -62,19 +144,38 @@ export function PlanDemo({ ada, wti }: { ada: number; wti: number }) {
             </button>
           ))}
         </div>
-        <span className="num text-[13px] text-ink-3">{type === "holdings" ? "ADA" : "Crude"} moves {move > 0 ? "+" : ""}{move}%</span>
+        <div className="flex items-center gap-3">
+          <span className="num text-[13px] text-ink-3">
+            {type === "holdings" ? "ADA" : "Crude"} moves{" "}
+            <span className={`inline-block w-[4ch] text-right ${shownMove < 0 ? "text-danger" : shownMove > 0 ? "text-ok" : ""}`}>
+              {shownMove > 0 ? "+" : shownMove < 0 ? "−" : ""}
+              {Math.abs(shownMove)}%
+            </span>
+          </span>
+          {!reduced && (
+            <button
+              onClick={() => setPaused((v) => !v)}
+              aria-label={paused ? "Play the demo" : "Pause the demo"}
+              className="grid h-8 w-8 place-items-center rounded-full bg-mist text-ink-2 transition-colors hover:bg-line hover:text-ink"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+                {paused ? <path d="M2 1v8l7-4z" fill="currentColor" /> : <path d="M2 1h2v8H2zM6 1h2v8H6z" fill="currentColor" />}
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {[
-          { label: type === "holdings" ? "Treasury without Locke" : "Monthly bill without Locke", v: without, bar: "bg-mist", text: "text-ink-2" },
-          { label: type === "holdings" ? "Treasury with Locke" : "Monthly bill with Locke", v: withL, bar: type === "holdings" ? "bg-cobalt" : "bg-lime", text: "text-ink" },
+          { label: type === "holdings" ? "Treasury without Locke" : "Monthly bill without Locke", v: shown.without, bar: "bg-mist", text: "text-ink-2" },
+          { label: type === "holdings" ? "Treasury with Locke" : "Monthly bill with Locke", v: shown.with, bar: type === "holdings" ? "bg-cobalt" : "bg-lime", text: "text-ink" },
         ].map((r) => (
           <div key={r.label} className="rounded-2xl bg-canvas p-4 sm:p-5">
             <div className="text-[14px] text-ink-2">{r.label}</div>
             <div className={`num mt-2 text-[26px] leading-none sm:text-[32px] ${r.text}`}>{fmt(r.v)}</div>
             <div className="mt-4 h-2 rounded-full bg-paper">
-              <div className={`h-full rounded-full ${r.bar} transition-[width] duration-300`} style={{ width: `${Math.max(2, (r.v / max) * 100)}%` }} />
+              <div className={`h-full rounded-full ${r.bar}`} style={{ width: `${Math.min(100, Math.max(2, (r.v / max) * 100))}%` }} />
             </div>
           </div>
         ))}
@@ -86,9 +187,15 @@ export function PlanDemo({ ada, wti }: { ada: number; wti: number }) {
           type="range"
           min={-50}
           max={50}
-          step={5}
+          // "any" so autoplay can glide the thumb smoothly; your own input snaps to whole percents.
+          step="any"
           value={move}
-          onChange={(e) => setMove(Number(e.target.value))}
+          onChange={(e) => {
+            setMove(Math.round(Number(e.target.value)));
+            setIdleUntil(Date.now() + RESUME_MS);
+          }}
+          onPointerDown={() => setIdleUntil(Date.now() + RESUME_MS)}
+          onKeyDown={() => setIdleUntil(Date.now() + RESUME_MS)}
           className="w-full text-ink"
           style={{ ["--fill" as string]: `${((move + 50) / 100) * 100}%` }}
         />
