@@ -179,9 +179,49 @@ export function isMobileBrowser(): boolean {
   return typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 }
 
+/** The OKX app's built-in browser (its user agent carries "OKApp"). */
+export function isOkxApp(): boolean {
+  return typeof navigator !== "undefined" && /OKApp/i.test(navigator.userAgent);
+}
+
+/**
+ * Why OKX can't sign in to a Cardano site here, or null when it can. OKX supports Cardano sites in
+ * its desktop browser extension only: its app lists Cardano connections as "Coming Soon", and its
+ * extension refuses pages in mobile browsers before asking anyone (see OKX_FOCUS_BLOCK_MS).
+ */
+export function okxUnsupportedReason(): string | null {
+  if (isOkxApp()) return "The OKX app doesn't connect to Cardano sites yet (OKX lists it as coming soon).";
+  if (isMobileBrowser()) return "OKX Wallet connects to Cardano sites only from a desktop browser.";
+  return null;
+}
+
+/** A wallet app that can open a page in its own browser, where the page sees the wallet (CIP-30). */
+export interface WalletAppLink {
+  id: string;
+  name: string;
+  href: string;
+}
+
+/**
+ * Links that open `url` inside a Cardano wallet app's browser: how a phone signs in, since phone
+ * browsers run no wallet extensions. Vespr and Eternl take the CIP-158 link (web+cardano://browse);
+ * Yoroi and Begin publish their own https links, which also open their site when the app is missing.
+ * They must be followed straight from a tap: iOS ignores app links opened after async work.
+ */
+export function walletAppLinks(url: string): WalletAppLink[] {
+  const u = encodeURIComponent(url);
+  return [
+    // One standard link: the phone opens whichever of the two is installed, so they share a button.
+    { id: "cip158", name: "Vespr or Eternl", href: `web+cardano://browse/v1?uri=${u}` },
+    { id: "yoroi", name: "Yoroi", href: `https://yoroi-wallet.com/w1/browser/launch?dappUrl=${u}` },
+    { id: "begin", name: "Begin", href: `https://begin-wallet.app.link/browse?dappUrl=${u}` },
+  ];
+}
+
 function okxBlockedMessage(): string {
-  return isMobileBrowser()
-    ? "OKX Wallet blocked this before asking you: it only answers pages it thinks are in the focused browser window, and mobile browsers with extensions never pass that check. On a phone, open Locke in a Cardano wallet app's browser (Vespr or Eternl), or use OKX on a desktop browser."
+  const unsupported = okxUnsupportedReason();
+  return unsupported
+    ? `${unsupported} Open Locke in a Cardano wallet app (Vespr, Eternl, Yoroi or Begin), or use the OKX extension on a computer.`
     : "OKX Wallet blocked this before asking you: it only answers the page in the browser window it thinks is focused. Close other OKX windows, click anywhere on this page, then try again.";
 }
 
@@ -190,7 +230,10 @@ async function connect(id: string): Promise<ConnectedWallet> {
   if (!ns?.enable) throw new Error("Wallet not found. Install a Cardano wallet extension.");
   const started = Date.now();
   const api = await wallet("enable", ns.enable.bind(ns)).catch((e: WalletErr) => {
-    if (id === "okxwallet" && e.code === 4001 && Date.now() - started < OKX_FOCUS_BLOCK_MS) throw new Error(`${okxBlockedMessage()}${said(e)}`);
+    // Still asked where OKX doesn't support Cardano yet (it may start to); any refusal there is that, not the person.
+    if (id === "okxwallet" && (okxUnsupportedReason() || (e.code === 4001 && Date.now() - started < OKX_FOCUS_BLOCK_MS))) {
+      throw new Error(`${okxBlockedMessage()}${said(e)}`);
+    }
     if (!e.refused) throw e;
     throw new Error(`Your wallet refused the connection. ${STILL_OPEN}${said(e)}`);
   });

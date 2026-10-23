@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bech32Decode, bech32Encode } from "@/lib/cardano/bech32";
-import { enableWallet, sameAccount, signText, walletError, type ConnectedWallet } from "@/lib/cardano/wallet";
+import { enableWallet, okxUnsupportedReason, sameAccount, signText, walletAppLinks, walletError, type ConnectedWallet } from "@/lib/cardano/wallet";
 
 const okxDenied = { code: 4001, message: "Request Signature: User denied request signature." };
 const addressNotPk = { code: 2, info: "Address is not a key hash for this wallet" };
@@ -120,8 +120,22 @@ describe("OKX-style wallets", () => {
 
     vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Linux; Android 14) Mobile Safari/537.36" });
     okxLike({ refuseEnable: true });
-    await expect(enableWallet("okxwallet")).rejects.toThrow(/mobile browsers with extensions never pass that check.*Vespr or Eternl/);
+    await expect(enableWallet("okxwallet")).rejects.toThrow(/only from a desktop browser.*Vespr, Eternl, Yoroi or Begin/);
     vi.unstubAllGlobals();
+  });
+
+  it("explains that the OKX app doesn't do Cardano yet, whatever its refusal looks like", async () => {
+    // OKX lists Cardano connections for its app as "Coming Soon"; Locke still asks, in case it starts to.
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148 OKApp/(OKEx/6.120.0)" });
+    const okx = okxLike({ refuseEnable: true, slowEnable: 600 });
+    vi.useFakeTimers();
+    const attempt = expect(enableWallet("okxwallet")).rejects.toThrow(/OKX app doesn't connect to Cardano sites yet.*Vespr, Eternl, Yoroi or Begin/);
+    await vi.advanceTimersByTimeAsync(700);
+    await attempt;
+    expect(okx.enables()).toBe(1);
+    expect(okxUnsupportedReason()).toMatch(/coming soon/);
+    vi.unstubAllGlobals();
+    expect(okxUnsupportedReason()).toBeNull();
   });
 
   it("treats a slower refusal as the person declining in OKX's window, and doesn't ask again", async () => {
@@ -169,5 +183,17 @@ describe("same account", () => {
     expect(sameAccount(enterprise, enterprise)).toBe(true);
     expect(sameAccount(enterprise, BECH32)).toBe(false);
     expect(sameAccount("not an address", BECH32)).toBe(false);
+  });
+});
+
+describe("opening Locke in a wallet app (phones)", () => {
+  it("builds each wallet's documented link with the page URL encoded once", () => {
+    const page = "https://trylocke.online/connect?next=%2Fplans%2Fabc";
+    const links = Object.fromEntries(walletAppLinks(page).map((l) => [l.id, l.href]));
+    const enc = encodeURIComponent(page);
+    expect(links.cip158).toBe(`web+cardano://browse/v1?uri=${enc}`); // CIP-158: Vespr and Eternl
+    expect(links.yoroi).toBe(`https://yoroi-wallet.com/w1/browser/launch?dappUrl=${enc}`);
+    expect(links.begin).toBe(`https://begin-wallet.app.link/browse?dappUrl=${enc}`);
+    for (const href of Object.values(links)) expect(decodeURIComponent(href.split(/uri=|dappUrl=/)[1])).toBe(page);
   });
 });

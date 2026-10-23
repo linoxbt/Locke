@@ -31,6 +31,8 @@ interface Ctx {
 export type SignInStep = "approve" | "sign" | "finish";
 
 const WalletContext = createContext<Ctx | null>(null);
+/** How long to keep looking for injected wallets after load. */
+export const SCAN_FOR_MS = 6000;
 const LAST_WALLET = "locke.wallet";
 
 function remember(id: string | null) {
@@ -73,14 +75,23 @@ export function WalletProvider({ children, initialAddress = null }: { children: 
 
   useEffect(() => {
     void refreshMe();
-    // Wallet extensions inject window.cardano shortly after load.
-    const scan = () => setWallets(detectWallets());
+    // Extensions inject window.cardano shortly after load; wallet apps' in-app browsers on phones can
+    // take seconds. Keep looking for a while, and whenever the page regains focus (back from a wallet app).
+    const scan = () =>
+      setWallets((prev) => {
+        const found = detectWallets();
+        return found.length === prev.length && found.every((w, i) => w.id === prev[i].id) ? prev : found;
+      });
     scan();
-    const t1 = setTimeout(scan, 400);
-    const t2 = setTimeout(scan, 1500);
+    const started = Date.now();
+    const poll = setInterval(() => (Date.now() - started > SCAN_FOR_MS ? clearInterval(poll) : scan()), 300);
+    const onVisible = () => document.visibilityState === "visible" && scan();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", scan);
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", scan);
     };
   }, [refreshMe]);
 
