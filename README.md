@@ -23,7 +23,7 @@ Locke is not a trading terminal. Every screen is about an exposure the business 
 - **Preview before funding.** Locke shows the hedge in plain words, the margin to deposit (USD and ADA), the opening cost (Strike taker fee plus builder fee), funding per day at the live rate ("cost of protection"), and the outcome at −50/−25/−10/+10/+25/+50%. It also shows the price where Locke would ask for a top-up and the estimated liquidation price.
 - **Real hedges on Strike mainnet.** One signed ADA deposit, then isolated margin and leverage are set on the market and a market order goes out carrying Locke's builder fee. The buffer margin is added after the fill.
 - **Separate margin per plan.** Each plan is an isolated position on its own market, so trouble in one never draws on the other's collateral.
-- **Risk worker.** A long-running process streams mark prices and each user's Strike stream. It recomputes every plan's margin ratio once a second and alerts *before* Strike's own levels (details below).
+- **Risk worker.** A long-running process streams mark prices and each user's Strike stream. It recomputes every plan's margin ratio once a second and flags a plan *before* Strike's own levels (details below). Alerts are written to the plan and shown in Locke; nothing is sent outside the app yet.
 - **One-tap, wallet-signed top-up.** Locke suggests an amount, the wallet signs a Cardano deposit, and once Strike credits it Locke adds it to that plan's isolated margin only.
 - **Resize and close.** Holdings plans resize to a new share or ADA amount. Costs plans close one month's worth (S ÷ T) to match fuel used. Close is a reduce-only market order.
 - **Replay.** The plan runs against up to 180 days of Strike's daily mark prices, with and without Locke, animated over about 10 seconds with a scrubber.
@@ -172,15 +172,16 @@ TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration
 | Name | Where | Purpose |
 |---|---|---|
 | `STRIKE_API_URL` | app, worker | `https://api.strikefinance.org` |
-| `STRIKE_WS_USER_URL` | worker | `wss://api.strikefinance.org/ws/user-api` |
-| `STRIKE_WS_PRICE_URL` | worker | `wss://api.strikefinance.org/ws/price` |
+| `STRIKE_WS_USER_URL` | worker | Defaults to `STRIKE_API_URL`'s host + `/ws/user-api` |
+| `STRIKE_WS_PRICE_URL` | worker | Defaults to `STRIKE_API_URL`'s host + `/ws/price` |
 | `STRIKE_BUILDER_CODE` | app | Locke's builder code |
 | `STRIKE_BUILDER_FEE_BPS` | app, worker | **Required.** Fee per order in whole bps, 0 to `STRIKE_BUILDER_MAX_BPS`; the app and worker refuse to start without it |
 | `STRIKE_BUILDER_MAX_BPS` | app, worker | The builder code's registered maximum (default `20`, LockeIn's) |
 | `NEXT_PUBLIC_CARDANO_NETWORK_ID` | app | `1` mainnet (`0` with the testnet API) |
 | `KOIOS_URL` | app | `https://api.koios.rest/api/v1` |
 | `DATABASE_URL` | app, worker | Postgres URL (the Supabase pooler works; use the session pooler, port 5432, for the worker) |
-| `DATABASE_POOL_MAX` | app, worker | Connections per process (default `5`) |
+| `DATABASE_POOL_MAX` | app, worker | Connections per process (default `3`; keep 1–2 on Netlify with the transaction pooler) |
+| `DATABASE_PREPARE` | app, worker | `false` to force prepared statements off (they're off automatically on port 6543) |
 | `NEXT_PUBLIC_SITE_URL` | app | Public URL, also accepted by the same-origin check |
 | `PORT` | worker | Port for `/healthz` (Railway sets it) |
 | `LOCKE_KEY_ENC` | app, worker | 32 bytes hex; encrypts API wallet keys (`openssl rand -hex 32`) |
@@ -190,7 +191,7 @@ TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration
 ### Deploy
 
 - **App:** Netlify (`netlify.toml`, Next.js runtime). Set the variables above in the Netlify UI with the Functions scope and mark the secrets as secret.
-- **Worker:** create a Railway service from the same repo. `railway.json` runs `npm run worker`, with a health check at `/healthz`.
+- **Worker:** create a Railway service from the same repo with the same `DATABASE_URL` (the **session** pooler, port 5432, or a direct connection: the worker holds an advisory lock so only one instance is active), `LOCKE_KEY_ENC` (must equal the app's) and `STRIKE_BUILDER_FEE_BPS`. `railway.json` runs the schema migration before each deploy, starts `tsx worker/index.ts`, and gates deploys on `/healthz`. The worker exits after two minutes unhealthy so Railway restarts it.
 - **Database:** create a Supabase project, put its connection string in `DATABASE_URL`, and run `npm run db:migrate` (safe to re-run after every schema change).
 
 ## Security
@@ -213,6 +214,9 @@ TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration
 - **One plan per market per user.** This comes from isolated margin on the main account. Strike sub-accounts can't be created through the API.
 - **Top-ups need a signature.** Locke never moves funds on its own; it alerts early (and repeats every 15 minutes at margin call or worse) and makes the top-up one tap.
 - **Polling, not push, in the browser.** Plan pages poll every 5–10 s; the worker holds the WebSocket streams. Supabase Realtime isn't used.
+- **No alerts outside the app.** The worker flags plans and writes alerts (repeating at margin call or worse), and tells the user when it can't watch a plan, but there's no email, push or Telegram channel yet: a user sees alerts when they open Locke.
+- **Sub-accounts and funding history.** Strike sub-accounts (spec §6.6) aren't used; each plan is an isolated position on the main account. Funding to date comes from the position's `accumulated_funding_fees`, not `/v2/history/funding`.
+- **Dependencies.** `npm audit` still reports postcss inside Next 15 (build-time only); the fix is a Next 16 upgrade.
 - **API key lifetime.** Signing in again replaces the API key Locke stores and deletes the old one from Locke; Locke doesn't revoke it on Strike, so it lapses at its own expiry.
 
 ## Disclaimer

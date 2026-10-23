@@ -554,10 +554,7 @@ export async function prepareDeposit(
   p: { address: string; utxos: string[]; amountUsd?: number }
 ): Promise<PreparedDeposit> {
   const plan = await loadPlan(userId, planId);
-  const keys = await strikeKeysFor(userId);
-  const available = await spendableUsd(keys, userId, plan.id);
-  let usd: number;
-
+  // Every check that needs only Locke's own data runs before anything is asked of Strike.
   if (purpose === "open") {
     if (plan.status !== "draft" && plan.status !== "funding") throw new HttpError(409, "This plan is already open");
     if (!plan.risk_ack_at) throw new HttpError(409, RISK_ACK_REQUIRED);
@@ -568,6 +565,14 @@ export async function prepareDeposit(
       select id from plans where user_id = ${userId} and symbol = ${plan.symbol}
         and status in ('funding','opening','active','closing') and id <> ${plan.id}`;
     if (clash) throw new HttpError(409, `You already have a live plan on ${plan.symbol}. Close it first.`);
+  } else if (plan.status !== "active") {
+    throw new HttpError(409, "Top-ups are for open plans");
+  }
+  const keys = await strikeKeysFor(userId);
+  const available = await spendableUsd(keys, userId, plan.id);
+  let usd: number;
+
+  if (purpose === "open") {
     // Re-size at today's price so the deposit matches what will actually be ordered.
     const { sizing } = await sizeAtMarket(plan.type, plan.inputs, await feeBpsFor(userId));
     const [resized] = await db()`update plans set sizing = ${db().json(sizing as never)}, size = ${sizing.size}, updated_at = now()
@@ -577,7 +582,6 @@ export async function prepareDeposit(
     if (shortfall <= 0) return { needed: false, availableUsd: available };
     usd = Math.max(MIN_DEPOSIT_USD, shortfall);
   } else {
-    if (plan.status !== "active") throw new HttpError(409, "Top-ups are for open plans");
     const amt = Number(p.amountUsd);
     if (!isFinite(amt) || amt <= 0) throw new HttpError(400, "Enter a top-up amount");
     usd = Math.min(Math.max(MIN_DEPOSIT_USD, amt), 1_000_000);
