@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { isMobileBrowser } from "@/lib/cardano/wallet";
 import { api, errorMessage } from "@/lib/ui/api";
 import { Arrow, ErrorNote, Spinner } from "./ui";
 import { useWallet, type SignInStep } from "./WalletProvider";
@@ -21,11 +22,13 @@ function stageIndex(stage: Stage): number {
   return stage === "approve" ? 1 : stage === "sign" ? 2 : stage === "finish" || stage === "done" ? 3 : 0;
 }
 
-function tileStatus(stage: Stage, name: string): string {
+function tileStatus(stage: Stage, name: string, id: string): string {
   if (stage === "approve") return `Approve access in ${name}…`;
   if (stage === "sign") return `Sign the message in ${name}…`;
   if (stage === "finish") return "Checking with Strike…";
   if (stage === "done") return "Signed in";
+  // OKX's extension refuses Cardano sites in mobile browsers before asking (see lib/cardano/wallet).
+  if (id === "okxwallet" && isMobileBrowser()) return "Detected · works on desktop only";
   return "Detected";
 }
 
@@ -110,7 +113,7 @@ export function ConnectExperience({
         </ol>
         {/* The progress above is visual; screen readers hear each stage as it changes. */}
         <p className="sr-only" aria-live="polite">
-          {active && stage ? tileStatus(stage, wallets.find((w) => w.id === active)?.name ?? "your wallet") : ""}
+          {active && stage ? tileStatus(stage, wallets.find((w) => w.id === active)?.name ?? "your wallet", active) : ""}
         </p>
       </div>
 
@@ -146,7 +149,7 @@ export function ConnectExperience({
                   <span className="block truncate text-[14px] font-medium">{w.name}</span>
                   <span className={`flex items-center gap-1.5 text-[12px] ${mine ? "text-cobalt" : "text-ink-3"}`}>
                     {!mine && <span className="h-1.5 w-1.5 rounded-full bg-ok" />}
-                    {tileStatus(mine ? stage : null, w.name)}
+                    {tileStatus(mine ? stage : null, w.name, w.id)}
                   </span>
                 </span>
                 <span

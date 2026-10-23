@@ -111,8 +111,21 @@ describe("OKX-style wallets", () => {
     expect(okx.enables()).toBe(2);
   });
 
-  it("does not ask again when the wallet refuses the connection, and says why it might have", async () => {
+  it("recognises OKX's own focus block (an instant 4001, no window shown) and says what to do", async () => {
+    // Reproduced with the real OKX extension: with this tab outside the window OKX thinks is focused,
+    // enable() is rejected in ~4 ms with this exact error and no OKX window opens.
     const okx = okxLike({ refuseEnable: true });
+    await expect(enableWallet("okxwallet")).rejects.toThrow(/OKX Wallet blocked this before asking you.*Close other OKX windows/);
+    expect(okx.enables()).toBe(1);
+
+    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Linux; Android 14) Mobile Safari/537.36" });
+    okxLike({ refuseEnable: true });
+    await expect(enableWallet("okxwallet")).rejects.toThrow(/mobile browsers with extensions never pass that check.*Vespr or Eternl/);
+    vi.unstubAllGlobals();
+  });
+
+  it("treats a slower refusal as the person declining in OKX's window, and doesn't ask again", async () => {
+    const okx = okxLike({ refuseEnable: true, slowEnable: 600 });
     await expect(enableWallet("okxwallet")).rejects.toThrow(/refused the connection.*earlier wallet request may still be open.*User denied request signature/);
     expect(okx.enables()).toBe(1);
   });

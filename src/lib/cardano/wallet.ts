@@ -164,10 +164,33 @@ export function enableWallet(id: string): Promise<ConnectedWallet> {
   return p;
 }
 
+/**
+ * OKX Wallet (extension 4.21) runs every connect through a focus check before showing anything: its
+ * background compares chrome.tabs.query({active: true}) with chrome.windows.getLastFocused(), and if
+ * this page's tab isn't the active tab of the window it thinks is focused, it rejects at once with
+ * EVM's 4001 "Request Signature: User denied request signature." No window opens and nobody is asked.
+ * Mobile browsers that run extensions report tabs and windows in a way that fails this check every
+ * time. A person can't open OKX's window and press Reject this fast, so a 4001 inside this window of
+ * time is OKX's own block, not the user.
+ */
+const OKX_FOCUS_BLOCK_MS = 400;
+
+export function isMobileBrowser(): boolean {
+  return typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+function okxBlockedMessage(): string {
+  return isMobileBrowser()
+    ? "OKX Wallet blocked this before asking you: it only answers pages it thinks are in the focused browser window, and mobile browsers with extensions never pass that check. On a phone, open Locke in a Cardano wallet app's browser (Vespr or Eternl), or use OKX on a desktop browser."
+    : "OKX Wallet blocked this before asking you: it only answers the page in the browser window it thinks is focused. Close other OKX windows, click anywhere on this page, then try again.";
+}
+
 async function connect(id: string): Promise<ConnectedWallet> {
   const ns = provider(id);
   if (!ns?.enable) throw new Error("Wallet not found. Install a Cardano wallet extension.");
+  const started = Date.now();
   const api = await wallet("enable", ns.enable.bind(ns)).catch((e: WalletErr) => {
+    if (id === "okxwallet" && e.code === 4001 && Date.now() - started < OKX_FOCUS_BLOCK_MS) throw new Error(`${okxBlockedMessage()}${said(e)}`);
     if (!e.refused) throw e;
     throw new Error(`Your wallet refused the connection. ${STILL_OPEN}${said(e)}`);
   });
