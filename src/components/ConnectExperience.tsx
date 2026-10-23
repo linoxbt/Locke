@@ -35,12 +35,10 @@ function tileStatus(stage: Stage, name: string): string {
  */
 export function ConnectExperience({
   next,
-  builder,
   feeBps,
   reconnect = false,
 }: {
   next: string;
-  builder: string | null;
   feeBps: number | null;
   reconnect?: boolean;
 }) {
@@ -194,7 +192,7 @@ export function ConnectExperience({
             <p className="text-[12px] text-paper/60">You&apos;ll sign</p>
             {stage === "sign" && <span className="num rounded-full bg-lime px-2.5 py-0.5 text-[11px] text-ink">waiting for you</span>}
           </div>
-          <MessagePreview message={message} builder={builder} feePct={feePct} />
+          <MessagePreview message={message} feePct={feePct} />
         </div>
 
         <ul className="mt-4 flex flex-wrap gap-1.5">
@@ -209,16 +207,20 @@ export function ConnectExperience({
   );
 }
 
-/** Strike's challenge: the builder and fee lines up front, the full text (real once it arrives) behind a toggle. */
-function MessagePreview({ message, builder, feePct }: { message: string | null; builder: string | null; feePct: string | null }) {
+/**
+ * Strike's challenge: the connect and fee lines up front, the exact text (real once it arrives)
+ * behind a toggle. The headline leaves out the builder code; the full message shows it verbatim.
+ */
+function MessagePreview({ message, feePct }: { message: string | null; feePct: string | null }) {
   const lines = message
     ? message.split("\n").filter((l) => l.trim())
     : [
-        `Connect to Strike via builder "${builder ?? "Locke"}".`,
+        "Connect to Strike.",
         `This authorizes the builder to collect up to ${feePct ?? "a set"} fee on your trades.`,
         "By signing, you are entrusting your API wallet private key to this builder.",
         "Wallet: your address · Chain: cardano · API key: made for you · Nonce: one-time",
       ];
+  const headline = lines.slice(0, 2).map((l) => l.replace(/\s+via builder\s+"[^"]*"/i, ""));
   const line = (l: string, i: number) => (
     <p key={i} className={/fee/i.test(l) ? "text-lime" : /^(Wallet|Chain|API Key|Nonce|Timestamp):/.test(l) ? "text-paper/40" : ""}>
       {l}
@@ -226,13 +228,13 @@ function MessagePreview({ message, builder, feePct }: { message: string | null; 
   );
   return (
     <div className="num mt-2 break-words text-[12px] leading-relaxed text-paper/75">
-      <div className="space-y-1">{lines.slice(0, 2).map(line)}</div>
+      <div className="space-y-1">{headline.map(line)}</div>
       <details className="group mt-2">
         <summary className="cursor-pointer list-none text-[11px] text-paper/45 hover:text-paper/70">
           <span className="group-open:hidden">Full message +</span>
           <span className="hidden group-open:inline">Hide −</span>
         </summary>
-        <div className="mt-2 space-y-1">{lines.slice(2).map((l, i) => line(l, i + 2))}</div>
+        <div className="mt-2 space-y-1">{(message ? lines : lines.slice(2)).map((l, i) => line(l, i + 2))}</div>
       </details>
     </div>
   );
