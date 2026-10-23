@@ -41,7 +41,7 @@ export default async function AccountPage() {
           <div className="mt-6 space-y-5">
             <Stat label="Address" value={<span title={info?.address}>{info ? shortAddr(info.address) : "—"}</span>} />
             <Stat label="Stake address" value={info?.stakeAddress ? shortAddr(info.stakeAddress) : "Not shared by the wallet"} />
-            <Stat label="Member since" value={info ? new Date(info.createdAt).toLocaleDateString("en-GB", { dateStyle: "medium" }) : "—"} />
+            <Stat label="Member since" value={info ? new Date(info.createdAt).toLocaleDateString("en-GB", { dateStyle: "medium", timeZone: "UTC" }) : "—"} />
           </div>
           <div className="mt-6 border-t border-line pt-6">
             <SignOutButton />
@@ -67,7 +67,7 @@ export default async function AccountPage() {
           <ul className="mt-5 space-y-3 text-[13px] leading-relaxed text-ink-2">
             <li>Locke holds one Strike API key for you, encrypted. It can place orders but can&apos;t withdraw.</li>
             <li>Withdrawals and deposits always need your wallet&apos;s signature.</li>
-            <li>Signing in again replaces the API key and revokes the old one.</li>
+            <li>Signing in again replaces that key; Locke deletes the old one. Signing out ends your session on every device.</li>
           </ul>
         </Card>
       </div>

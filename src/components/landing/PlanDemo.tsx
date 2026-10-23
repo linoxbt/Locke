@@ -1,19 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { costsOutcome, holdingsOutcome } from "@/lib/domain/plans";
+import { calibratedCrudeShare, PUMP_PRICES } from "@/lib/domain/fuel";
+import { costsExposureUsd, costsOutcome, holdingsOutcome } from "@/lib/domain/plans";
 import type { CostsInputs, HoldingsInputs } from "@/lib/domain/types";
 import { local, usd } from "@/lib/ui/format";
 
 const HOLD: HoldingsInputs = { asset: "ADA", amountHeld: 50_000, sharePct: 100, leverage: 1, bufferPct: 25 };
+// Lagos diesel at the dated reference pump price, with the crude share Locke would calibrate for it
+// (filled in from the live WTI mark), sized exactly as a real plan is.
 const COST: CostsInputs = {
   fuelType: "diesel",
+  country: "NG",
   litresPerMonth: 2000,
-  pumpPrice: 1250,
+  pumpPrice: PUMP_PRICES.NG.diesel!.price,
   fxRate: 1530,
   currency: "NGN",
   months: 3,
-  crudeSharePct: 100,
+  crudeSharePct: 46,
   leverage: 1,
   bufferPct: 25,
 };
@@ -33,8 +37,8 @@ const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t 
 function outcome(type: PlanKind, move: number, ada: number, wti: number) {
   const m = move / 100;
   if (type === "holdings") return holdingsOutcome(HOLD, HOLD.amountHeld, ada, ada * (1 + m));
-  const size = (COST.litresPerMonth * COST.months * COST.pumpPrice) / COST.fxRate / wti;
-  return costsOutcome(COST, size, wti, wti * (1 + m));
+  const c = { ...COST, crudeSharePct: calibratedCrudeShare("diesel", wti, COST.fxRate, COST.pumpPrice) ?? COST.crudeSharePct };
+  return costsOutcome(c, costsExposureUsd(c) / wti, wti, wti * (1 + m));
 }
 
 /**

@@ -3,7 +3,8 @@
 import { LineChart } from "../LineChart";
 import { Card } from "../ui";
 import { usePlan } from "./PlanProvider";
-import { ago, pct } from "@/lib/ui/format";
+import { pct } from "@/lib/ui/format";
+import { Ago, When } from "../Time";
 
 const DOT: Record<string, string> = { info: "bg-cobalt", ok: "bg-ok", watch: "bg-watch" };
 
@@ -21,7 +22,7 @@ export function ActivityView() {
               <div className="min-w-0 flex-1">
                 <p className="text-[14px] leading-snug">{e.message}</p>
                 <p className="num mt-1 text-[12px] text-ink-3">
-                  {new Date(e.created_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })} · {ago(e.created_at)}
+                  <When iso={e.created_at} /> · <Ago iso={e.created_at} />
                 </p>
               </div>
             </li>

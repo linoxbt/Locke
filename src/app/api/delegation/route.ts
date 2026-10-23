@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { config } from "@/lib/server/config";
 import { db } from "@/lib/server/db";
+import { HttpError } from "@/lib/server/errors";
 import { route } from "@/lib/server/http";
 import { requireSession } from "@/lib/server/session";
 
@@ -15,7 +16,11 @@ export const GET = route(async (req: Request) => {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
-    }).then((r) => (r.ok ? r.json() : []));
+      signal: AbortSignal.timeout(8000),
+    }).then((r) => {
+      if (!r.ok) throw new HttpError(502, "Cardano data is unavailable right now");
+      return r.json();
+    });
   const [acct] = await post("/account_info", { _stake_addresses: [u.stake_address] });
   let poolTicker: string | null = null;
   if (acct?.delegated_pool) {

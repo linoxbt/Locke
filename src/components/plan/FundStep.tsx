@@ -3,11 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { runDeposit, StepTracker, type DepositStep } from "../DepositFlow";
-import { Arrow, Button, Card, Display, ErrorNote, LinkButton, Stat } from "../ui";
+import { Arrow, Button, Card, Display, ErrorNote, LinkButton, Notice, Stat } from "../ui";
 import { useWallet } from "../WalletProvider";
 import { usePlan } from "./PlanProvider";
+import { RiskCheckbox, RiskList } from "./PreviewStep";
 import { api, errorMessage } from "@/lib/ui/api";
-import { num, usd } from "@/lib/ui/format";
+import { CARDANOSCAN, num, shortAddr, usd } from "@/lib/ui/format";
 
 /** Fund a plan and follow it until the hedge is open on Strike. */
 export function FundStep({ adaPrice }: { adaPrice: number | null }) {
@@ -22,6 +23,11 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
   const [skipDeposit, setSkipDeposit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accepted, setAccepted] = useState(p.riskAcknowledged);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Deposits are listed newest first: the latest opening deposit failing means the user has to start again.
+  const lastOpen = detail.deposits.find((x) => x.purpose === "open");
+  const lastFailed = lastOpen?.status === "failed" ? lastOpen : null;
 
   // Status from the server wins over local progress once it moves on.
   const shown: DepositStep | null =
@@ -32,6 +38,7 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
     setBusy(true);
     setError(null);
     try {
+      if (!p.riskAcknowledged) await api(`/api/plans/${p.id}/ack`, { body: {} });
       const w = await ensureWallet();
       const dep = await runDeposit({
         wallet: w,
@@ -58,6 +65,10 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
   };
 
   const discard = async () => {
+    if (!confirmDiscard) {
+      setConfirmDiscard(true);
+      return;
+    }
     setBusy(true);
     try {
       await api(`/api/plans/${p.id}/close`, { body: {} });
@@ -102,21 +113,45 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
         {shown ? (
           <StepTracker step={shown} txHash={tx} failed={!!error} skipDeposit={skipDeposit} />
         ) : (
-          <p className="text-[14px] leading-relaxed text-ink-2">
-            Your wallet will ask you to sign one transaction that sends ADA to Strike as margin for this plan. Nothing else leaves your wallet.
-          </p>
+          <div className="space-y-4">
+            {lastFailed && (
+              <Notice tone="danger">
+                The last deposit wasn&apos;t credited by Strike, so the plan didn&apos;t open. If ADA left your wallet, check the transaction
+                below; otherwise just sign again.
+              </Notice>
+            )}
+            <p className="text-[14px] leading-relaxed text-ink-2">
+              Your wallet will ask you to sign one transaction that sends ADA to Strike as margin for this plan. Nothing else leaves your wallet.
+            </p>
+            {!p.riskAcknowledged && canStart && (
+              <div className="space-y-4 rounded-2xl bg-paper p-4">
+                <RiskList type={p.type} />
+                <RiskCheckbox checked={accepted} onChange={setAccepted} />
+              </div>
+            )}
+          </div>
+        )}
+        {!shown && lastFailed?.tx_hash && (
+          <a className="num mt-4 inline-flex rounded-full bg-paper px-4 py-2 text-[13px] text-cobalt" href={`${CARDANOSCAN}${lastFailed.tx_hash}`} target="_blank" rel="noreferrer">
+            View the last transaction {shortAddr(lastFailed.tx_hash)} ↗
+          </a>
         )}
         <div className="mt-6 space-y-3">
           <ErrorNote error={error} />
+          {confirmDiscard && canStart && (
+            <p role="alert" className="text-[13px] text-ink-2">
+              Discard this plan? Nothing has been deposited for it yet. Press Discard again to confirm.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             {canStart && (
-              <Button size="lg" busy={busy} onClick={start} className="justify-between gap-6">
+              <Button size="lg" busy={busy} disabled={!accepted} onClick={start} className="justify-between gap-6">
                 Sign deposit and open <Arrow />
               </Button>
             )}
             {canStart && (
-              <Button variant="ghost" size="lg" onClick={discard}>
-                Discard plan
+              <Button variant={confirmDiscard ? "danger" : "ghost"} size="lg" disabled={busy} onClick={discard}>
+                {confirmDiscard ? "Discard" : "Discard plan"}
               </Button>
             )}
             {shown === "open" && (

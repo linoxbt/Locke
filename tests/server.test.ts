@@ -58,9 +58,12 @@ describe("secrets and sessions", () => {
   });
 
   it("rejects forged or expired session cookies", async () => {
+    const U1 = "d4c55f6c-e759-498c-a3e0-c1019528c119";
     const { encodeSession, decodeSession } = await import("@/lib/server/session");
-    const tok = encodeSession({ uid: "u1", addr: "addr1x", v: 1 }, 1_000_000);
-    expect(decodeSession(tok, 1_000_000)).toMatchObject({ uid: "u1", v: 1 });
+    const tok = encodeSession({ uid: U1, addr: "addr1x", v: 1 }, 1_000_000);
+    expect(decodeSession(tok, 1_000_000)).toMatchObject({ uid: U1, v: 1 });
+    // Signed but not a user id (never issued by Locke): refused before it reaches the database.
+    expect(decodeSession(encodeSession({ uid: "u1", addr: "a", v: 1 }))).toBeNull();
     const [payload, mac] = tok.split(".");
     const forged = Buffer.from(JSON.stringify({ uid: "u2", addr: "a", v: 1, exp: 9e9 })).toString("base64url");
     expect(decodeSession(`${forged}.${mac}`)).toBeNull();
@@ -69,7 +72,7 @@ describe("secrets and sessions", () => {
     expect(decodeSession(`${payload}.${mac}`, 1_000_000 + 25 * 3600_000)).toBeNull();
     // Cookies from before versioning carry no version and no longer count.
     const { createHmac } = await import("node:crypto");
-    const old = Buffer.from(JSON.stringify({ uid: "u1", addr: "a", exp: 9e9 })).toString("base64url");
+    const old = Buffer.from(JSON.stringify({ uid: U1, addr: "a", exp: 9e9 })).toString("base64url");
     const oldMac = createHmac("sha256", "s".repeat(40)).update(old).digest("base64url");
     expect(decodeSession(`${old}.${oldMac}`)).toBeNull();
   });

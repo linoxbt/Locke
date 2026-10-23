@@ -17,6 +17,7 @@ export function toneFor(p: PlanView): Tone {
   if (p.status === "closed" || p.status === "failed") return "mist";
   if (p.status !== "active") return "paper";
   if (p.riskLevel === "watch") return "watch";
+  if (p.riskLevel === "ok" && p.liveUnavailable) return "paper"; // don't paint "healthy" without live numbers
   if (p.riskLevel !== "ok") return "danger";
   return p.type === "holdings" ? "cobalt" : "lime";
 }
@@ -26,6 +27,13 @@ export function planHref(p: Pick<PlanView, "id" | "status">): string {
   if (p.status === "draft") return `/plans/${p.id}/preview`;
   if (p.status === "funding" || p.status === "opening") return `/plans/${p.id}/fund`;
   return `/plans/${p.id}`;
+}
+
+const PENDING: Record<string, string> = { open: "Opening order on Strike…", close: "Closing order on Strike…", resize: "Resizing on Strike…" };
+
+/** What the plan is waiting on right now, if anything worth saying on a card. */
+export function pendingText(p: Pick<PlanView, "pendingAction">): string | null {
+  return p.pendingAction ? PENDING[p.pendingAction] : null;
 }
 
 export function PlanCard({ p }: { p: PlanView }) {
@@ -51,7 +59,12 @@ export function PlanCard({ p }: { p: PlanView }) {
             <span className="num">{p.label}</span>
           </div>
         </div>
-        {p.status === "active" ? (
+        {p.status === "active" && p.liveUnavailable ? (
+          <div className={`mt-6 flex items-center justify-between text-[13px] ${SUBTLE[tone]}`}>
+            <span className="line-clamp-1">{pendingText(p) ?? "Live numbers unavailable: Strike can't be reached right now"}</span>
+            <Arrow />
+          </div>
+        ) : p.status === "active" ? (
           <div className="mt-6 space-y-4">
             <MarginBar ratio={p.ratio} watch={p.thresholds.watch} action={p.thresholds.action} onDark={dark} />
             <div className={`grid grid-cols-2 gap-4 text-[13px] ${SUBTLE[tone]}`}>
@@ -67,7 +80,7 @@ export function PlanCard({ p }: { p: PlanView }) {
           </div>
         ) : (
           <div className={`mt-6 flex items-center justify-between text-[13px] ${SUBTLE[tone]}`}>
-            <span className="line-clamp-1">{p.statusNote ?? (p.status === "closed" ? "Plan closed" : "Waiting on Strike")}</span>
+            <span className="line-clamp-1">{pendingText(p) ?? p.statusNote ?? (p.status === "closed" ? "Plan closed" : "Waiting on Strike")}</span>
             <Arrow />
           </div>
         )}

@@ -256,11 +256,15 @@ export function ErrorNote({ error }: { error: string | null }) {
 
 export function Notice({ tone = "watch", children }: { tone?: "watch" | "danger" | "info"; children: React.ReactNode }) {
   const cls = { watch: "bg-watch/20 text-ink", danger: "bg-danger/10 text-danger", info: "bg-paper text-ink-2" }[tone];
-  return <div className={`rounded-2xl px-4 py-3 text-[13px] ${cls}`}>{children}</div>;
+  return (
+    <div role={tone === "danger" ? "alert" : "status"} className={`rounded-2xl px-4 py-3 text-[13px] ${cls}`}>
+      {children}
+    </div>
+  );
 }
 
 export function Spinner({ className = "" }: { className?: string }) {
-  return <span className={`inline-block h-5 w-5 animate-spin rounded-full border-2 border-cobalt border-t-transparent ${className}`} aria-label="Loading" />;
+  return <span role="status" className={`inline-block h-5 w-5 animate-spin rounded-full border-2 border-cobalt border-t-transparent ${className}`} aria-label="Loading" />;
 }
 
 export function Arrow({ className = "" }: { className?: string }) {

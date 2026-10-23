@@ -25,6 +25,7 @@ export function ReplayPanel({ planId, type, currency, litres }: { planId: string
   const [progress, setProgress] = useState(0);
   const [cursor, setCursor] = useState<number | undefined>();
   const [playing, setPlaying] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const raf = useRef<number | null>(null);
 
   useEffect(() => {
@@ -37,11 +38,17 @@ export function ReplayPanel({ planId, type, currency, litres }: { planId: string
     return () => {
       cancelled = true;
     };
-  }, [planId, days]);
+  }, [planId, days, attempt]);
 
   const play = () => {
     if (raf.current) cancelAnimationFrame(raf.current);
     setCursor(undefined);
+    // Reduced motion: show the finished replay instead of animating it.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setProgress(1);
+      setPlaying(false);
+      return;
+    }
     setPlaying(true);
     const start = performance.now();
     const run = (now: number) => {
@@ -70,7 +77,7 @@ export function ReplayPanel({ planId, type, currency, litres }: { planId: string
   const fmt = (n: number) => (type === "holdings" ? usd(n, 0) : local(n, currency, 0));
   const first = data?.points[0];
   const last = data?.points[data.points.length - 1];
-  const fmtDate = (t: number) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const fmtDate = (t: number) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
   const scrubValue = cursor ?? Math.max(0, Math.round(progress * (data?.points.length ?? 1)) - 1);
 
   return (
@@ -105,7 +112,14 @@ export function ReplayPanel({ planId, type, currency, litres }: { planId: string
       </div>
 
       <div className="mt-7">
-        {error && <ErrorNote error={error} />}
+        {error && (
+          <div className="space-y-3">
+            <ErrorNote error={error} />
+            <button onClick={() => setAttempt((n) => n + 1)} className="h-10 rounded-full bg-paper/10 px-4 text-[13px] text-paper hover:bg-paper/20">
+              Try again
+            </button>
+          </div>
+        )}
         {!data && !error && (
           <div className="flex h-60 items-center justify-center">
             <Spinner className="border-lime border-t-transparent" />

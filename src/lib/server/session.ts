@@ -7,6 +7,7 @@ import { HttpError } from "./errors";
 
 const COOKIE = "locke_session";
 const TTL_S = 24 * 3600;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface Session {
   uid: string;
@@ -35,7 +36,7 @@ export function decodeSession(token: string | undefined, now = Date.now()): Sess
   if (expected.length !== got.length || !timingSafeEqual(expected, got)) return null;
   try {
     const s = JSON.parse(Buffer.from(payload, "base64url").toString()) as Session;
-    if (typeof s.uid !== "string" || !s.uid || typeof s.v !== "number" || typeof s.exp !== "number" || s.exp * 1000 < now) return null;
+    if (typeof s.uid !== "string" || !UUID.test(s.uid) || typeof s.v !== "number" || typeof s.exp !== "number" || s.exp * 1000 < now) return null;
     return s;
   } catch {
     return null;

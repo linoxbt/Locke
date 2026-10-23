@@ -114,7 +114,8 @@ export function LivePrices({ ada, wti }: { ada: Mark; wti: Mark }) {
         const r = await fetch("/api/market", { cache: "no-store" });
         if (!r.ok) return;
         const d = (await r.json()) as { ada: Mark; wti: Mark };
-        if (!cancelled) setMarks({ ada: d.ada ?? null, wti: d.wti ?? null });
+        // A market that didn't answer this time keeps its last mark.
+        if (!cancelled) setMarks((prev) => ({ ada: d.ada ?? prev.ada, wti: d.wti ?? prev.wti }));
       } catch {
         // Keep showing the last mark; the next poll retries.
       }

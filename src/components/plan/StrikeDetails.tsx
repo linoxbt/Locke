@@ -3,12 +3,13 @@
 import { Card, Stat } from "../ui";
 import { usePlan } from "./PlanProvider";
 import { CARDANOSCAN, num, pct, price, shortAddr, usd } from "@/lib/ui/format";
+import { When } from "../Time";
 
 export function StrikeDetails() {
   const { detail: d } = usePlan();
   const p = d.plan;
   const pos = p.position;
-  const rows: [string, string][] = [
+  const rows: [string, React.ReactNode][] = [
     ["Market", p.symbol],
     ["Side", p.side === "sell" ? "Short" : "Long"],
     ["Size", pos ? num(pos.size, 4) : num(p.sizing.size, 4)],
@@ -22,7 +23,7 @@ export function StrikeDetails() {
     ["Liquidation", pos && pos.liquidationPrice == null ? "None" : price(pos?.liquidationPrice)],
     ["Funding rate", `${pct(p.hourlyFundingRate, 4)}/h`],
     ["Builder fee", `${p.builderFeeBps} bps`],
-    ["Opened", p.openedAt ? new Date(p.openedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "—"],
+    ["Opened", p.openedAt ? <When iso={p.openedAt} /> : "—"],
   ];
   return (
     <div className="space-y-3">

@@ -64,7 +64,11 @@ export function LineChart({
           <line key={f} x1={pad.l} x2={W - pad.r} y1={pad.t + f * (H - pad.t - pad.b)} y2={pad.t + f * (H - pad.t - pad.b)} stroke={grid} strokeWidth="1" />
         ))}
         {series.map((s) => {
-          const pts = s.values.slice(0, shown).map((v, i) => [x(i), y(v)] as const);
+          // Missing values (null/NaN from a gap in the data) are skipped rather than drawn as "NaN" coordinates.
+          const pts = s.values
+            .slice(0, shown)
+            .map((v, i) => [x(i), y(v)] as const)
+            .filter(([, py]) => Number.isFinite(py));
           const d = pts.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(" ");
           return (
             <g key={s.label}>

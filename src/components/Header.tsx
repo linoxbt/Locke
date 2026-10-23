@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LockeMark } from "./Logo";
 import { useWallet } from "./WalletProvider";
 import { shortAddr } from "@/lib/ui/format";
@@ -18,16 +18,35 @@ export function Header() {
   const { me } = useWallet();
   const path = usePathname();
   const [open, setOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
 
   useEffect(() => setOpen(false), [path]);
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const trigger = menuButton.current;
+    // Focus moves into the menu, Tab stays inside it, and Escape or closing returns focus to the button.
+    dialog.current?.querySelector<HTMLElement>("button, a")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return setOpen(false);
+      if (e.key !== "Tab" || !dialog.current) return;
+      const items = [...dialog.current.querySelectorAll<HTMLElement>("button, a[href]")];
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first?.focus();
+      }
+    };
     window.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
+      trigger?.focus();
     };
   }, [open]);
 
@@ -77,6 +96,7 @@ export function Header() {
               {cta.label}
             </Link>
             <button
+              ref={menuButton}
               type="button"
               onClick={() => setOpen(true)}
               aria-label="Open menu"
@@ -95,7 +115,7 @@ export function Header() {
 
       {open && (
         <div className="fixed inset-0 z-50 bg-ink/30 backdrop-blur-sm md:hidden" onClick={() => setOpen(false)}>
-          <div role="dialog" aria-modal="true" aria-label="Menu" className="m-2 animate-rise rounded-[28px] bg-paper p-3" onClick={(e) => e.stopPropagation()}>
+          <div ref={dialog} role="dialog" aria-modal="true" aria-label="Menu" className="m-2 animate-rise rounded-[28px] bg-paper p-3" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-1">
               <span className="flex items-center gap-2">
                 <LockeMark size={30} />

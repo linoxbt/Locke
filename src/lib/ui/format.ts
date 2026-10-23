@@ -47,4 +47,5 @@ export function ago(iso: string): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export const CARDANOSCAN = "https://cardanoscan.io/transaction/";
+/** Explorer link for a transaction on the network Locke runs on. */
+export const CARDANOSCAN = `https://${process.env.NEXT_PUBLIC_CARDANO_NETWORK_ID === "0" ? "preprod." : ""}cardanoscan.io/transaction/`;

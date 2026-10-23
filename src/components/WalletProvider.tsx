@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/ui/api";
+import { api, ApiError } from "@/lib/ui/api";
 import { detectWallets, enableWallet, signText, type ConnectedWallet, type WalletOption } from "@/lib/cardano/wallet";
 
 export interface Me {
@@ -58,10 +58,11 @@ export function WalletProvider({ children, initialAddress = null }: { children: 
 
   const refreshMe = useCallback(async () => {
     try {
-      const { user } = await api<{ user: Me | null }>("/api/me");
+      const { user } = await api<{ user: Me | null }>("/api/me", { quiet401: true });
       setMe(user);
-    } catch {
-      setMe(null);
+    } catch (e) {
+      // Only the server saying "signed out" clears the user; a network blip keeps what we had.
+      if (e instanceof ApiError && e.status === 401) setMe(null);
     } finally {
       setLoading(false);
     }
@@ -110,8 +111,9 @@ export function WalletProvider({ children, initialAddress = null }: { children: 
     return w;
   }, [wallet, me]);
 
+  /** Throws if the server couldn't end the session, so the UI never claims a sign-out that didn't happen. */
   const signOut = useCallback(async () => {
-    await api("/api/logout", { body: {} }).catch(() => {});
+    await api("/api/logout", { body: {}, quiet401: true });
     remember(null);
     setWallet(null);
     setMe(null);

@@ -39,7 +39,7 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       t("h-44", (
         <div className="flex h-full flex-col bg-paper p-4">
           <span className="num text-[12px] text-ink-3">ADA-USD · mark</span>
-          <span className="num mt-1 text-[24px]">{ada ? price(ada) : "0.2121"}</span>
+          <span className="num mt-1 text-[24px]">{ada ? price(ada) : "—"}</span>
           <span className="mt-auto text-cobalt"><Spark /></span>
         </div>
       )),
@@ -93,7 +93,7 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       t("h-44", (
         <div className="flex h-full flex-col bg-paper p-4">
           <span className="num text-[12px] text-ink-3">WTI-USD · mark</span>
-          <span className="num mt-1 text-[24px]">{wti ? price(wti) : "99.11"}</span>
+          <span className="num mt-1 text-[24px]">{wti ? price(wti) : "—"}</span>
           <span className="mt-auto text-ink"><Spark up /></span>
         </div>
       )),

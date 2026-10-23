@@ -15,10 +15,11 @@ interface Delegation {
 export function DelegationPanel({ q, hideCovered = false }: { q: number; hideCovered?: boolean }) {
   const [data, setData] = useState<Delegation | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     api<{ delegation: Delegation | null }>("/api/delegation")
       .then((r) => setData(r.delegation))
-      .catch(() => {})
+      .catch(() => setFailed(true))
       .finally(() => setLoaded(true));
   }, []);
   return (
@@ -26,6 +27,8 @@ export function DelegationPanel({ q, hideCovered = false }: { q: number; hideCov
       <Eyebrow className="text-ink-2">Your ADA, still working</Eyebrow>
       {!loaded ? (
         <Spinner className="mt-6" />
+      ) : failed ? (
+        <p className="mt-6 text-[14px] text-ink-2">Couldn&apos;t read your stake delegation from Cardano right now.</p>
       ) : (
         <dl className="mt-6 space-y-4">
           <div className="flex items-baseline justify-between gap-4">
@@ -37,7 +40,7 @@ export function DelegationPanel({ q, hideCovered = false }: { q: number; hideCov
             <dd className={`num text-[14px] ${REVEAL}`}>{data?.drep ? shortAddr(data.drep) : "no DRep"}</dd>
           </div>
           <div className={`flex items-baseline justify-between gap-4 ${hideCovered ? "hidden" : ""}`}>
-            <dt className="text-[13px] text-ink-2">Covered by this plan</dt>
+            <dt className="text-[13px] text-ink-2">Hedged by this plan</dt>
             <dd className="num text-[14px]">{num(q, 0)} ADA</dd>
           </div>
         </dl>

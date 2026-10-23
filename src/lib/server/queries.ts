@@ -43,7 +43,8 @@ export interface PlanDetail {
 
 const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : String(d));
 
-export async function getPlanDetail(userId: string, planId: string): Promise<PlanDetail> {
+/** `withPreview: false` skips re-pricing the preview (order book, fees) for polls that already have one. */
+export async function getPlanDetail(userId: string, planId: string, { withPreview = true } = {}): Promise<PlanDetail> {
   const plan = await loadPlan(userId, planId);
   const live = plan.status === "active" || plan.status === "closing";
   // null = no position; undefined = Strike couldn't be read (the view then says the numbers aren't live).
@@ -66,7 +67,7 @@ export async function getPlanDetail(userId: string, planId: string): Promise<Pla
         and created_at > now() - interval '7 days' order by created_at desc limit 2000) recent order by created_at asc`,
     sql`select id, purpose, status, lovelace, usd_value, tx_hash, created_at from deposits
         where plan_id = ${plan.id} order by created_at desc limit 20`,
-    plan.status === "draft" || plan.status === "funding" ? previewFor(plan) : Promise.resolve(null),
+    withPreview && (plan.status === "draft" || plan.status === "funding") ? previewFor(plan) : Promise.resolve(null),
   ]);
   return {
     plan: view,
