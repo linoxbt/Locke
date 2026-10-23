@@ -106,6 +106,22 @@ export async function strikeRequest(
 
 // ── Builder connect (public) ──
 
+/**
+ * Strike's connect refusals, in words a business owner can act on. Strike won't connect the
+ * account that registered a builder code through that same code, so the builder's own wallet
+ * has to use a different wallet to sign in.
+ */
+function explainConnectError(e: unknown): never {
+  if (e instanceof StrikeError && /own builder code/i.test(e.message)) {
+    throw new StrikeError(
+      "This wallet registered Locke's builder code, and Strike doesn't let a builder connect through its own code. Sign in with a different wallet or account.",
+      409,
+      e.body
+    );
+  }
+  throw e;
+}
+
 export function requestBuilderSignature(p: {
   address: string;
   publicKey: string;
@@ -117,7 +133,7 @@ export function requestBuilderSignature(p: {
     code: config.builderCode,
     fee_share_bps: p.feeShareBps,
     public_key: p.publicKey,
-  });
+  }).catch(explainConnectError);
 }
 
 export function verifyBuilderSignature(p: { nonce: string; walletSignature: string }): Promise<{
@@ -126,7 +142,7 @@ export function verifyBuilderSignature(p: { nonce: string; walletSignature: stri
   api_wallet_expired_at?: number | string;
   fee_share_bps?: number;
 }> {
-  return publicPost("/auth/builder/verify-signature", { nonce: p.nonce, wallet_signature: p.walletSignature });
+  return publicPost("/auth/builder/verify-signature", { nonce: p.nonce, wallet_signature: p.walletSignature }).catch(explainConnectError);
 }
 
 // ── Market data (public, cached) ──

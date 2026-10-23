@@ -49,3 +49,17 @@ describe("secrets and sessions", () => {
     expect(decodeSession(`${payload}.${mac}`, 1_000_000 + 8 * 86400_000)).toBeNull();
   });
 });
+
+describe("Strike connect errors", () => {
+  it("explains that a builder's own wallet can't connect through its code", async () => {
+    const { verifyBuilderSignature } = await import("@/lib/strike/client");
+    const real = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: "cannot connect an account to its own builder code" }), { status: 400 })) as typeof fetch;
+    try {
+      await expect(verifyBuilderSignature({ nonce: "n", walletSignature: "a:b" })).rejects.toThrow(/registered Locke's builder code/);
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+});
