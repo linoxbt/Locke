@@ -237,6 +237,15 @@ async function connect(id: string): Promise<ConnectedWallet> {
     if (!e.refused) throw e;
     throw new Error(`Your wallet refused the connection. ${STILL_OPEN}${said(e)}`);
   });
+  // OKX resolves enable() with null instead of refusing when the account picked in its window has
+  // no Cardano address (an EVM private-key import, for one).
+  if (!api) {
+    throw new Error(
+      id === "okxwallet"
+        ? "The account you picked in OKX Wallet has no Cardano address. Switch to an account that has an ADA address in OKX, then try again."
+        : `Your wallet didn't give Locke access. ${WORKING}`
+    );
+  }
   for (const m of ["getNetworkId", "getUtxos", "signData", "signTx", "submitTx"] as const) {
     if (typeof api[m] !== "function") throw new Error(`This wallet can't do what Locke needs (${m} is missing). ${WORKING}`);
   }

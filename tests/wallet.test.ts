@@ -7,7 +7,7 @@ const addressNotPk = { code: 2, info: "Address is not a key hash for this wallet
 const BECH32 = "addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x";
 
 /** Behaves like OKX's documented Cardano provider: bech32 addresses, a string network id, signs only for its own address string. */
-function okxLike({ refuseEnable = false, wrongForm = addressNotPk as unknown, slowEnable = 0 } = {}) {
+function okxLike({ refuseEnable = false, wrongForm = addressNotPk as unknown, slowEnable = 0, noCardano = false } = {}) {
   let enables = 0;
   const signedWith: string[] = [];
   const api = {
@@ -27,7 +27,7 @@ function okxLike({ refuseEnable = false, wrongForm = addressNotPk as unknown, sl
     enables += 1;
     if (slowEnable) await new Promise((r) => setTimeout(r, slowEnable));
     if (refuseEnable) throw okxDenied;
-    return api;
+    return noCardano ? null : api;
   };
   (globalThis as { window?: unknown }).window = { cardano: { okxwallet: { name: "OKX Wallet", enable } } };
   return { signedWith, enables: () => enables };
@@ -142,6 +142,12 @@ describe("OKX-style wallets", () => {
     const okx = okxLike({ refuseEnable: true, slowEnable: 600 });
     await expect(enableWallet("okxwallet")).rejects.toThrow(/refused the connection.*earlier wallet request may still be open.*User denied request signature/);
     expect(okx.enables()).toBe(1);
+  });
+
+  it("explains an OKX account without a Cardano address instead of crashing", async () => {
+    // OKX 4.21's enable() resolves null (no error) when the picked account has no Cardano address.
+    okxLike({ noCardano: true });
+    await expect(enableWallet("okxwallet")).rejects.toThrow(/account you picked in OKX Wallet has no Cardano address/);
   });
 
   it("prefers window.okxwallet.cardano over window.cardano.okxwallet", async () => {
