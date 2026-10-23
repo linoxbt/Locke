@@ -1,5 +1,5 @@
 import { createHash, createPublicKey, verify } from "node:crypto";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { signLogon, signRequestHeaders } from "@/lib/strike/sign";
 
 beforeAll(() => {
@@ -140,6 +140,28 @@ describe("Strike connect errors", () => {
     try {
       await expect(verifyBuilderSignature({ nonce: "n", walletSignature: "a:b" })).rejects.toThrow(/registered Locke's builder code/);
     } finally {
+      globalThis.fetch = real;
+    }
+  });
+});
+
+describe("Strike price cache", () => {
+  it("rides out a brief outage on the last mark, but never serves one minutes old as live", async () => {
+    const { getMarkPrice } = await import("@/lib/strike/client");
+    const real = globalThis.fetch;
+    let up = true;
+    globalThis.fetch = (async () =>
+      up ? new Response(JSON.stringify({ p: "0.5", i: "0.5", r: "0.00001", T: 0 })) : new Response("down", { status: 503 })) as typeof fetch;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      expect((await getMarkPrice("STALE-USD")).mark).toBe(0.5);
+      up = false;
+      vi.setSystemTime(Date.now() + 10_000);
+      expect((await getMarkPrice("STALE-USD")).mark).toBe(0.5); // a few seconds old: still served
+      vi.setSystemTime(Date.now() + 5 * 60_000);
+      await expect(getMarkPrice("STALE-USD")).rejects.toThrow(); // minutes old: refused, so views say "not live"
+    } finally {
+      vi.useRealTimers();
       globalThis.fetch = real;
     }
   });

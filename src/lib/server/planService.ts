@@ -89,6 +89,8 @@ const AUTO_OPEN_ATTEMPTS = 3;
 /** Deposits that never move on expire: built but unsigned, and submitted but never seen by Strike. */
 const BUILT_TTL_MS = 2 * 3600_000;
 const SUBMITTED_TTL_MS = 6 * 3600_000;
+/** Start of the note a plan carries while a credited top-up waits for free balance (cleared when it lands). */
+const TOPUP_WAITING = "A credited top-up of";
 
 type OrderAction = "open" | "close" | "resize";
 
@@ -252,14 +254,19 @@ async function availableUsd(keys: ApiKeys): Promise<number> {
   return parseFloat(acct.available_balance ?? "0") || 0;
 }
 
-/** USD credited on Strike for the user's other live plans and not yet applied: this plan can't spend it. */
-async function reservedForOthers(userId: string, planId: string): Promise<number> {
+/**
+ * USD credited on Strike for the user's live plans and not yet applied (except `exceptPlanId`'s):
+ * it's spoken for, so other plans and withdrawals can't spend it.
+ */
+export async function reservedUsd(userId: string, exceptPlanId: string | null = null): Promise<number> {
   const [r] = await db()`
     select coalesce(sum(d.usd_value), 0)::float8 as usd from deposits d join plans p on p.id = d.plan_id
-    where d.user_id = ${userId} and d.status = 'credited' and d.plan_id <> ${planId}
+    where d.user_id = ${userId} and d.status = 'credited' and d.plan_id is distinct from ${exceptPlanId}
       and p.status in ('draft','funding','opening','active','closing')`;
   return Number(r.usd) || 0;
 }
+
+const reservedForOthers = (userId: string, planId: string) => reservedUsd(userId, planId);
 
 /** A plan that closed no longer reserves what was credited for it: that money is free again. */
 async function releaseDeposits(planId: string) {
@@ -287,6 +294,10 @@ async function marginLanded(plan: PlanRow, m: MarginPending) {
     await db()`update deposits set status = 'applied', applied_usd = ${m.amount}, updated_at = now()
                where id = ${m.depositId!} and status = 'credited'`;
     await db()`update plans set margin_pending = null, updated_at = now() where id = ${plan.id}`;
+    if (plan.status_note?.startsWith(TOPUP_WAITING)) {
+      await db()`update plans set status_note = null where id = ${plan.id} and status_note = ${plan.status_note}`;
+      plan.status_note = null;
+    }
     await safeEvent(plan.id, "info", `Top-up of $${m.amount.toFixed(2)} added to this plan's margin only`);
   }
   plan.margin_pending = null;
@@ -445,6 +456,14 @@ async function resolvePending(keys: ApiKeys, plan: PlanRow, pos: StrikePosition 
       return won ?? loadPlanById(plan.id);
     }
     if (!(await clearOrder(plan.id, clientId))) return loadPlanById(plan.id);
+    if (pos) {
+      // The order reads as failed (lookup missed it, or a cancel reported no fill), but a position is
+      // there: it is this hedge. Sending it back to funding would leave a live position nobody watches,
+      // and openPlan would then refuse to open over it.
+      const won = await activate({ ...plan, pending_order: null }, pos, clientId);
+      if (won) await safeEvent(plan.id, "watch", `${r.reason}, but the position is open on Strike, so Locke is treating the hedge as open.`);
+      return won ?? loadPlanById(plan.id);
+    }
     const note = `${r.reason}. Your funds stay on Strike; open again to retry.`;
     const won = await transition(plan.id, ["opening"], "funding", { status_note: note });
     if (won) await safeEvent(plan.id, "action", note);
@@ -703,7 +722,11 @@ async function reconcileDeposits(userId: string, keys: ApiKeys) {
       (h) => (dep.tx_hash && (h.tx_hash ?? "").toLowerCase() === dep.tx_hash) || (h.request_id && h.request_id === dep.request_id)
     );
     if (tx && (tx.status === "completed" || tx.status === "settled")) {
-      const credited = Math.abs(parseFloat(tx.amount)) || Number(dep.usd_value);
+      // Strike's history amount is taken as USD. A figure far from the quote (another unit, or a bad
+      // read) would skew reservations and top-ups, so the quoted USD is kept instead.
+      const quoted = Number(dep.usd_value);
+      const reported = Math.abs(parseFloat(tx.amount));
+      const credited = reported > 0 && (!(quoted > 0) || Math.abs(reported / quoted - 1) <= 0.25) ? reported : quoted;
       const [won] = await sql`update deposits set status = 'credited', usd_value = ${credited},
                                 tx_hash = coalesce(tx_hash, ${(tx.tx_hash ?? "").toLowerCase() || null}), updated_at = now()
                               where id = ${dep.id} and status in ('built','submitted') returning id`;
@@ -923,8 +946,12 @@ async function applyTopUps(keys: ApiKeys, plan: PlanRow) {
   const want = Number(t.usd_value);
   const spendable = await spendableUsd(keys, plan.user_id, plan.id).catch(() => 0);
   const amount = Math.min(want, Math.max(0, spendable - 0.05));
-  // Strike credits a little under the quote after conversion; anything far short means the money isn't there yet.
-  if (amount < want * 0.9) return;
+  // Strike credits a little under the quote after conversion; anything far short means the money isn't there
+  // (not yet, or it was withdrawn). Say so instead of waiting silently.
+  if (amount < want * 0.9) {
+    await noteOnce(plan, `${TOPUP_WAITING} $${want.toFixed(2)} is waiting for free balance on Strike to reach this plan's margin.`, "action");
+    return;
+  }
   await addMargin(keys, plan, "topup", amount, t.id);
 }
 

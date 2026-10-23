@@ -33,10 +33,13 @@ vi.mock("@/lib/strike/client", async (orig) => ({
   requestBuilderSignature: vi.fn(),
   verifyBuilderSignature: vi.fn(),
   withdrawConfirm: vi.fn(),
+  withdrawQuote: vi.fn(),
+  getAccount: vi.fn(),
 }));
 vi.mock("@/lib/server/planService", () => ({
   prepareDeposit: vi.fn(async () => ({ needed: false, availableUsd: 0 })),
   syncPlan: vi.fn(async () => ({ status: "active", status_note: null })),
+  reservedUsd: vi.fn(async () => 0),
 }));
 
 const strike = await import("@/lib/strike/client");
@@ -64,6 +67,9 @@ beforeEach(() => {
   vi.mocked(strike.requestBuilderSignature).mockReset();
   vi.mocked(strike.verifyBuilderSignature).mockReset();
   vi.mocked(strike.withdrawConfirm).mockReset();
+  vi.mocked(strike.withdrawQuote).mockReset();
+  vi.mocked(strike.getAccount).mockReset();
+  vi.mocked(planService.reservedUsd).mockReset().mockResolvedValue(0);
   vi.mocked(planService.prepareDeposit).mockClear();
 });
 
@@ -242,6 +248,30 @@ describe("rate limits on authenticated routes", () => {
     for (let i = 0; i < 32; i++) statuses.push((await POST(post(`/api/plans/${PLAN}/sync`, {}), ctx(PLAN))).status);
     expect(statuses.slice(0, 30).every((s) => s === 200)).toBe(true);
     expect(statuses[30]).toBe(429);
+  });
+});
+
+describe("POST /api/withdraw/quote", () => {
+  it("won't withdraw money credited for a plan's funding or a pending top-up", async () => {
+    const { encryptSecret } = await import("@/lib/server/secrets");
+    const enc = encryptSecret("cafe", "pub");
+    const addr = await signIn();
+    h.state.answer = (q) =>
+      sessionRows(q) ??
+      (/from strike_links/.test(q.text) ? [{ account_id: "a", api_wallet_public_key: "pub", api_wallet_secret_enc: enc, fee_share_bps: 10, expires_at: null }] : []);
+    vi.mocked(strike.getAccount).mockResolvedValue({ wallet_balance: "100", available_balance: "100" });
+    vi.mocked(planService.reservedUsd).mockResolvedValue(70);
+    vi.mocked(strike.withdrawQuote).mockResolvedValue({ withdraw_id: "w1", fee: "1", message_to_sign: "aa" });
+    const { POST } = await import("@/app/api/withdraw/quote/route");
+
+    const refused = await POST(post("/api/withdraw/quote", { usd: 50 }));
+    expect(refused.status).toBe(409);
+    expect((await refused.json()).error).toMatch(/Only \$30\.00 is free.*\$70\.00 .*set aside/);
+    expect(strike.withdrawQuote).not.toHaveBeenCalled();
+
+    const ok = await POST(post("/api/withdraw/quote", { usd: 30 }));
+    expect(ok.status).toBe(200);
+    expect(vi.mocked(strike.withdrawQuote).mock.calls[0].slice(1)).toEqual([30, addr]);
   });
 });
 

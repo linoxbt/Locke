@@ -3,6 +3,7 @@ import { Display, Eyebrow, Notice } from "@/components/ui";
 import { WithdrawForm } from "@/components/WithdrawForm";
 import { strikeKeysFor } from "@/lib/server/keys";
 import { requirePageSession } from "@/lib/server/pageAuth";
+import { reservedUsd } from "@/lib/server/planService";
 import { getAccount } from "@/lib/strike/client";
 import { usd } from "@/lib/ui/format";
 
@@ -12,8 +13,12 @@ export const dynamic = "force-dynamic";
 export default async function WithdrawPage() {
   const s = await requirePageSession("/withdraw");
   let available: number | null = null;
+  let reserved = 0;
   try {
-    available = parseFloat((await getAccount(await strikeKeysFor(s.uid))).available_balance) || 0;
+    const [acct, r] = await Promise.all([getAccount(await strikeKeysFor(s.uid)), reservedUsd(s.uid)]);
+    reserved = r;
+    // Credited money a plan is still waiting to use isn't free: the quote route refuses it too.
+    available = Math.max(0, (parseFloat(acct.available_balance) || 0) - reserved);
   } catch {
     available = null;
   }
@@ -29,6 +34,9 @@ export default async function WithdrawPage() {
         <div className="mt-6">
           <div className="text-[13px] text-ink-2">Free balance on Strike</div>
           <div className="num mt-1 text-[26px] leading-none">{available == null ? "—" : usd(available)}</div>
+          {available != null && reserved > 0 && (
+            <p className="mt-2 text-[13px] text-ink-3">{usd(reserved)} more is set aside for your plans&apos; funding and top-ups.</p>
+          )}
         </div>
       </div>
       <div className="space-y-3 lg:col-span-7">

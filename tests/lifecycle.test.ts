@@ -46,6 +46,8 @@ const state = {
   emptyReads: 0,
   /** POST /v2/deposit fails (500) although the transaction is on chain. */
   confirmFails: false,
+  /** GET /v2/order can't find an order although it was placed (a lookup that misses). */
+  orderLookupMisses: false,
 };
 const MARK = 0.2;
 const SPKI = Buffer.from("302a300506032b6570032100", "hex");
@@ -134,7 +136,7 @@ const server = http.createServer((req, res) => {
       case "POST /v2/leverage":
         return json({ symbol: b.symbol, leverage: b.leverage });
       case "GET /v2/order": {
-        const o = state.byClientId.get(url.searchParams.get("client_order_id") ?? "");
+        const o = state.orderLookupMisses ? undefined : state.byClientId.get(url.searchParams.get("client_order_id") ?? "");
         if (!o) return json({ error: "order not found" }, 404);
         const full = o.filled === o.size;
         return json({ ClientOrderID: url.searchParams.get("client_order_id"), Status: full ? "filled" : "cancelled", Size: o.size, Filled: o.filled, CloseReason: full ? "" : "price_bound" });
@@ -469,8 +471,61 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     await sql`update plans set status = 'closed' where id = ${plan.id}`;
   }, 60_000);
 
+  it("never strands a live position: an open whose order reads as lost but left a position is active", async () => {
+    state.position = null;
+    await sql`update plans set status = 'closed' where user_id = ${userId} and status <> 'closed'`;
+    const { plan } = await svc.createDraft(userId, "holdings", { amountHeld: 800, sharePct: 100, leverage: 1, bufferPct: 25 });
+    await svc.acknowledgeRisks(userId, plan.id);
+    const dep = await svc.prepareDeposit(userId, plan.id, "open", { address: "addr1test", utxos: ["8282"] });
+    await svc.confirmDeposit(userId, dep.depositId!, txId(dep));
+
+    // The order is placed (a position appears) but its response is lost and Strike's lookup can't find it.
+    state.orderLosesResponse = true;
+    state.orderLookupMisses = true;
+    await svc.syncPlan(userId, plan.id);
+    state.orderLosesResponse = false;
+    let p = await svc.loadPlan(userId, plan.id);
+    expect(p.status).toBe("opening");
+    expect(p.pending_order).not.toBeNull();
+    expect(state.position).not.toBeNull();
+
+    // Past the lookup grace the order counts as "never received", yet the position is there: it's this hedge.
+    await sql`update plans set pending_since = now() - interval '3 minutes' where id = ${plan.id}`;
+    p = await svc.syncPlan(userId, plan.id);
+    state.orderLookupMisses = false;
+    expect(p.status).toBe("active");
+    expect(p.pending_order).toBeNull();
+    expect(Number(p.size)).toBe(800);
+    const opens = state.orders.filter((o) => o.client_order_id.includes(`${plan.id}-open-`));
+    expect(opens).toHaveLength(1);
+    const msgs = (await sql`select message from plan_events where plan_id = ${plan.id}`).map((e: any) => e.message);
+    expect(msgs.some((m: string) => /never received the order, but the position is open/.test(m))).toBe(true);
+
+    // A credited top-up whose money left Strike (withdrawn) isn't waited on silently, and the note clears once it lands.
+    await svc.syncPlan(userId, plan.id); // buffer
+    const top = await svc.prepareDeposit(userId, plan.id, "topup", { address: "addr1test", utxos: ["8282"], amountUsd: 20 });
+    await svc.confirmDeposit(userId, top.depositId!, txId(top));
+    const saved = state.available;
+    state.available = 1;
+    await svc.syncPlan(userId, plan.id); // credits the deposit, but the money isn't on Strike any more
+    expect(await svc.reservedUsd(userId)).toBeGreaterThan(19);
+    expect(await svc.reservedUsd(userId, plan.id)).toBe(0);
+    p = await svc.loadPlan(userId, plan.id);
+    expect(p.status_note).toMatch(/^A credited top-up of \$\d+\.\d\d is waiting for free balance/);
+    expect((await sql`select status from deposits where id = ${top.depositId}`)[0].status).toBe("credited");
+    state.available = saved;
+    await svc.syncPlan(userId, plan.id);
+    p = await svc.loadPlan(userId, plan.id);
+    expect((await sql`select status from deposits where id = ${top.depositId}`)[0].status).toBe("applied");
+    expect(p.status_note).toBeNull();
+    expect(await svc.reservedUsd(userId)).toBe(0);
+    await sql`update plans set status = 'closed' where id = ${plan.id}`;
+    state.position = null;
+  }, 30_000);
+
   it("refuses a second live plan on the same market", async () => {
     state.position = null;
+    await sql`update plans set status = 'closed' where user_id = ${userId} and status <> 'closed'`;
     const a = await svc.createDraft(userId, "holdings", { amountHeld: 1000, sharePct: 100 });
     await sql`update plans set status = 'active' where id = ${a.plan.id}`;
     const b = await svc.createDraft(userId, "holdings", { amountHeld: 2000, sharePct: 50 });

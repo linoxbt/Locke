@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { isMobileBrowser } from "@/lib/cardano/wallet";
+import { isMobileBrowser, okxUnsupportedReason, walletAppLinks, type WalletAppLink } from "@/lib/cardano/wallet";
 import { api, errorMessage } from "@/lib/ui/api";
 import { Arrow, ErrorNote, Spinner } from "./ui";
 import { useWallet, type SignInStep } from "./WalletProvider";
@@ -22,13 +22,21 @@ function stageIndex(stage: Stage): number {
   return stage === "approve" ? 1 : stage === "sign" ? 2 : stage === "finish" || stage === "done" ? 3 : 0;
 }
 
-function tileStatus(stage: Stage, name: string, id: string): string {
+/** What this browser can do, read after mount (the server render can't know, and must match the first paint). */
+interface Device {
+  mobile: boolean;
+  /** Why OKX can't sign in to a Cardano site here (its app, or a mobile browser), or null. */
+  okxUnsupported: string | null;
+  /** Links that open this page in a wallet app's browser. */
+  appLinks: WalletAppLink[];
+}
+
+function tileStatus(stage: Stage, name: string, unsupported: boolean): string {
   if (stage === "approve") return `Approve access in ${name}…`;
   if (stage === "sign") return `Sign the message in ${name}…`;
   if (stage === "finish") return "Checking with Strike…";
   if (stage === "done") return "Signed in";
-  // OKX's extension refuses Cardano sites in mobile browsers before asking (see lib/cardano/wallet).
-  if (id === "okxwallet" && isMobileBrowser()) return "Detected · works on desktop only";
+  if (unsupported) return "Detected · no Cardano sign-in here yet";
   return "Detected";
 }
 
@@ -53,8 +61,11 @@ export function ConnectExperience({
   const [error, setError] = useState<string | null>(null);
   // Extensions inject window.cardano a moment after load; don't say "none" before they've had the chance.
   const [scanned, setScanned] = useState(false);
+  const [device, setDevice] = useState<Device>({ mobile: false, okxUnsupported: null, appLinks: [] });
   useEffect(() => {
-    const t = setTimeout(() => setScanned(true), 1700);
+    const t = setTimeout(() => setScanned(true), 3000);
+    // The link back into Locke keeps ?next=, so signing in inside the wallet app lands on the same page.
+    setDevice({ mobile: isMobileBrowser(), okxUnsupported: okxUnsupportedReason(), appLinks: walletAppLinks(window.location.href) });
     return () => clearTimeout(t);
   }, []);
 
@@ -86,6 +97,10 @@ export function ConnectExperience({
   const at = stageIndex(stage);
   const feePct = feeBps == null ? null : `${(feeBps / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
   const missing = INSTALL.filter((w) => !wallets.some((d) => d.id === w.id || d.name.toLowerCase().includes(w.id)));
+  const unsupported = (id: string) => id === "okxwallet" && !!device.okxUnsupported;
+  // On a phone, a browser with no wallet that can sign in (none, or only OKX) is a dead end: offer the wallet apps.
+  const usable = wallets.filter((w) => !unsupported(w.id));
+  const offerApps = device.mobile && usable.length === 0 && (scanned || wallets.length > 0);
 
   return (
     <section className="grid min-h-[100svh] grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_1fr]">
@@ -113,7 +128,7 @@ export function ConnectExperience({
         </ol>
         {/* The progress above is visual; screen readers hear each stage as it changes. */}
         <p className="sr-only" aria-live="polite">
-          {active && stage ? tileStatus(stage, wallets.find((w) => w.id === active)?.name ?? "your wallet", active) : ""}
+          {active && stage ? tileStatus(stage, wallets.find((w) => w.id === active)?.name ?? "your wallet", false) : ""}
         </p>
       </div>
 
@@ -127,9 +142,10 @@ export function ConnectExperience({
               <Spinner /> Looking for wallets…
             </div>
           )}
-          {wallets.length === 0 && scanned && (
+          {wallets.length === 0 && scanned && !device.mobile && (
             <div className="rounded-[14px] bg-paper p-4 text-[13px] leading-relaxed text-ink-2">No Cardano wallet found. Install one below, then reload.</div>
           )}
+          {offerApps && <OpenInWalletApp links={device.appLinks} okxUnsupported={wallets.some((w) => unsupported(w.id)) ? device.okxUnsupported : null} />}
           {wallets.map((w) => {
             const mine = active === w.id;
             const muted = !!active && !mine;
@@ -148,8 +164,8 @@ export function ConnectExperience({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-medium">{w.name}</span>
                   <span className={`flex items-center gap-1.5 text-[12px] ${mine ? "text-cobalt" : "text-ink-3"}`}>
-                    {!mine && <span className="h-1.5 w-1.5 rounded-full bg-ok" />}
-                    {tileStatus(mine ? stage : null, w.name, w.id)}
+                    {!mine && <span className={`h-1.5 w-1.5 rounded-full ${unsupported(w.id) ? "bg-watch" : "bg-ok"}`} />}
+                    {tileStatus(mine ? stage : null, w.name, unsupported(w.id))}
                   </span>
                 </span>
                 <span
@@ -211,6 +227,36 @@ export function ConnectExperience({
         </ul>
       </div>
     </section>
+  );
+}
+
+/**
+ * Phones run no wallet extensions, so a phone signs in from inside a wallet app's own browser. Plain
+ * links, followed straight from the tap: iOS ignores app links opened after any async work.
+ */
+function OpenInWalletApp({ links, okxUnsupported }: { links: WalletAppLink[]; okxUnsupported: string | null }) {
+  return (
+    <div className="rounded-[14px] bg-paper p-4">
+      <p className="text-[14px] font-medium">Open Locke in your wallet app</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-ink-2">
+        {okxUnsupported ? `${okxUnsupported} ` : "Phone browsers can't reach a Cardano wallet. "}
+        Open this page in your wallet app&apos;s browser and sign in there.
+      </p>
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {links.map((l) => (
+          <a
+            key={l.id}
+            href={l.href}
+            className="flex h-11 items-center justify-between gap-2 rounded-[12px] bg-ink px-4 text-[13px] text-paper transition-colors hover:bg-cobalt"
+          >
+            {l.name} <Arrow className="h-3.5 w-3.5" />
+          </a>
+        ))}
+      </div>
+      <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
+        Nothing happens? That wallet isn&apos;t installed: get one below, or open Locke on a computer with a wallet extension.
+      </p>
+    </div>
   );
 }
 
