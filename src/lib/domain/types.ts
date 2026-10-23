@@ -68,6 +68,8 @@ export interface MarketRules {
   stepSize: number;
   minQty: number;
   minNotional: number;
+  /** Largest market order Strike accepts (MARKET_LOT_SIZE.maxQty); undefined when Strike doesn't say. */
+  maxQty?: number;
   tiers: MarginTier[];
 }
 

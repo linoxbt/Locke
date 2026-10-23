@@ -148,3 +148,39 @@ create table if not exists withdrawals (
 );
 create index if not exists withdrawals_user_idx on withdrawals(user_id, created_at desc);
 alter table withdrawals enable row level security;
+
+-- ── Second audit (2026-10-23). Idempotent. ──
+
+-- Times are compared against the database clock (now()), never a server's local clock.
+-- Close orders: when the last one was sent and how many times, so retries are timed on their own
+-- (risk writes don't touch this) and stop after a cap with a note to close in Strike.
+alter table plans add column if not exists close_sent_at  timestamptz;
+alter table plans add column if not exists close_attempts int not null default 0;
+-- One isolated-margin add in flight per plan, verified against the position before it counts:
+-- {kind: 'buffer'|'topup', depositId?, amount, baseIso, at}. Strike's 200 only means "sequenced".
+alter table plans add column if not exists margin_pending jsonb;
+-- The client order id that opened the hedge (shown on the opening tracker).
+alter table plans add column if not exists open_order_id text;
+-- Costs plans close one month's share at most once per 30 days.
+alter table plans add column if not exists last_month_reduce_at timestamptz;
+
+-- Deposits: the hash of the transaction Locke built (blake2b-256 of its body), so a confirm can
+-- only claim that transaction; and 'released' for money no longer reserved (its plan closed).
+alter table deposits add column if not exists expected_tx_hash text;
+alter table deposits drop constraint if exists deposits_status_check;
+alter table deposits add constraint deposits_status_check
+  check (status in ('built', 'submitted', 'credited', 'applied', 'failed', 'released'));
+
+-- The exact challenge Strike issued, so sign-in can verify the wallet signed this message.
+alter table connect_challenges add column if not exists message text;
+
+-- Defense in depth: the app connects as a server role; the public API roles get nothing.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on all tables in schema public from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on all tables in schema public from authenticated;
+  end if;
+end $$;

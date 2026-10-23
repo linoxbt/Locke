@@ -164,12 +164,30 @@ export function verifyBuilderSignature(p: { nonce: string; walletSignature: stri
 // ── Market data (public, cached) ──
 
 const cache = new Map<string, { at: number; value: unknown }>();
+const loading = new Map<string, Promise<unknown>>();
+/** How long an expired entry may still be served when a refresh fails (Strike briefly down). */
+const STALE_OK_MS = 30 * 60_000;
+
+/** Cached loader: concurrent callers share one request, and a failed refresh serves the last value for a while. */
 async function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < ttlMs) return hit.value as T;
-  const value = await load();
-  cache.set(key, { at: Date.now(), value });
-  return value;
+  let p = loading.get(key) as Promise<T> | undefined;
+  if (!p) {
+    p = load()
+      .then((value) => {
+        cache.set(key, { at: Date.now(), value });
+        return value;
+      })
+      .finally(() => loading.delete(key));
+    loading.set(key, p);
+  }
+  try {
+    return await p;
+  } catch (e) {
+    if (hit && Date.now() - hit.at < ttlMs + STALE_OK_MS) return hit.value as T;
+    throw e;
+  }
 }
 
 export interface MarkPrice {
@@ -215,21 +233,24 @@ export async function getMarketRules(symbol: string): Promise<MarketRules> {
   const filter = (t: string) => (s.filters as any[]).find((f) => f.filterType === t) ?? {};
   const lot = filter("MARKET_LOT_SIZE").stepSize ? filter("MARKET_LOT_SIZE") : filter("LOT_SIZE");
   const tiers: MarginTier[] = markets.markets?.[symbol]?.margin_tiers ?? [];
+  const maxQty = parseFloat(lot.maxQty);
   return {
     symbol,
     stepSize: parseFloat(lot.stepSize ?? "1"),
     minQty: parseFloat(lot.minQty ?? "0"),
     minNotional: parseFloat(filter("MIN_NOTIONAL").notional ?? "10"),
+    maxQty: Number.isFinite(maxQty) && maxQty > 0 ? maxQty : undefined,
     tiers,
   };
 }
 
-export async function getFeeRates(): Promise<FeeRates> {
+/** Taker fee plus the builder fee; `builderBps` overrides the server setting (a user's approved cap). */
+export async function getFeeRates(builderBps: number = config.builderFeeBps): Promise<FeeRates> {
   const tiers = await cached("feeTiers", 10 * 60_000, () => publicGet("/v2/fee-tiers")).catch(() => null);
   const t0 = tiers?.feeTiers?.find((t: any) => t.Tier === 0);
   // Coerce: a string here would turn every fee sum into string concatenation.
   const taker = Number(t0?.TakerRate);
-  return { takerRate: Number.isFinite(taker) && taker >= 0 && taker < 0.01 ? taker : 0.0005, builderBps: config.builderFeeBps };
+  return { takerRate: Number.isFinite(taker) && taker >= 0 && taker < 0.01 ? taker : 0.0005, builderBps };
 }
 
 /** Daily mark closes. */
@@ -364,7 +385,8 @@ export interface StrikeTransaction {
 }
 
 export async function getDepositHistory(keys: ApiKeys): Promise<StrikeTransaction[]> {
-  const d = await strikeRequest(keys, "GET", "/v2/history/transaction?type=1&limit=50");
+  // Enough history to cover every deposit Locke still waits on (rows expire after 6 hours).
+  const d = await strikeRequest(keys, "GET", "/v2/history/transaction?type=1&limit=200");
   return d.transactions ?? [];
 }
 

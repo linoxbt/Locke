@@ -7,9 +7,11 @@
 // - Orders are tracked: at most one in flight per plan, with a deterministic client id
 //   locke-{planId}-{action}-{n}. When the outcome of a send is unclear (timeout, 5xx), Locke never
 //   re-sends: it asks Strike about that exact id and settles the plan from the order's real status.
-// - Margin adds are verified against the position's isolated balance before they're retried, so a
-//   lost response can't add margin twice or drop a top-up.
-// - Money credited for one plan is reserved for it: other plans can't spend it.
+// - Margin adds are tracked like orders: one in flight per plan, and it only counts once the
+//   position's isolated balance shows it (Strike's 200 means "sequenced", not "applied").
+// - Money credited for one live plan is reserved for it: other plans can't spend it. A plan that
+//   closes releases what it hadn't used.
+// - Every age (order in flight, missing position, close retry) is measured on the database clock.
 
 import {
   buildPreview,
@@ -34,6 +36,7 @@ import {
   priceAtDistance,
   priceAtRatio,
   suggestedTopUpUsd,
+  unrealisedPnl,
   type Thresholds,
 } from "../domain/risk";
 import { FUELS } from "../domain/fuel";
@@ -73,8 +76,13 @@ const DEPOSIT_CUSHION = 1.03;
 const ORDER_LOOKUP_GRACE_MS = 2 * 60_000;
 /** A live plan's position must be missing this long (two reads apart) before the plan is closed. */
 const MISSING_GRACE_MS = 60_000;
-/** How often a plan stuck in closing re-sends its reduce-only close. */
+/** How often a plan stuck in closing re-sends its reduce-only close, and how many times before asking the user. */
 const CLOSE_RETRY_MS = 30_000;
+const CLOSE_ATTEMPTS = 8;
+/** A margin add that hasn't shown up in the position after this long didn't land. */
+const MARGIN_VERIFY_MS = 2 * 60_000;
+/** Costs plans close one month's share at most this often. */
+const MONTH_MS = 30 * 86_400_000;
 /** The worker stops auto-opening a plan after this many orders; the user can still open by hand. */
 const AUTO_OPEN_ATTEMPTS = 3;
 /** Deposits that never move on expire: built but unsigned, and submitted but never seen by Strike. */
@@ -82,6 +90,21 @@ const BUILT_TTL_MS = 2 * 3600_000;
 const SUBMITTED_TTL_MS = 6 * 3600_000;
 
 type OrderAction = "open" | "close" | "resize";
+
+interface MarginPending {
+  kind: "buffer" | "topup";
+  depositId?: string;
+  amount: number;
+  /** Isolated balance just before the add: the add counts once the balance has grown by ~amount. */
+  baseIso: number;
+  at: string;
+}
+
+/** Milliseconds since `t`, on the database clock the row was read with. */
+function age(plan: Pick<PlanRow, "db_now">, t: Date | string | null | undefined): number {
+  if (!t) return Infinity;
+  return new Date(plan.db_now).getTime() - new Date(t).getTime();
+}
 
 export interface PlanRow {
   id: string;
@@ -102,10 +125,17 @@ export interface PlanRow {
   order_seq: number;
   pending_order: string | null;
   pending_action: OrderAction | null;
-  pending_meta: { inputs?: PlanInputs; target?: number; name?: string; from?: number } | null;
+  pending_meta: { inputs?: PlanInputs; target?: number; name?: string; from?: number; month?: boolean } | null;
   pending_since: Date | null;
   missing_since: Date | null;
   risk_ack_at: Date | null;
+  close_sent_at: Date | null;
+  close_attempts: number;
+  margin_pending: MarginPending | null;
+  open_order_id: string | null;
+  last_month_reduce_at: Date | null;
+  /** The database's now() when the row was read: ages are measured against it, not the local clock. */
+  db_now: Date;
   opened_at: Date | null;
   closed_at: Date | null;
   created_at: Date;
@@ -140,7 +170,7 @@ async function noteOnce(plan: PlanRow, note: string, level: "watch" | "action" =
 
 export async function loadPlan(userId: string, planId: string): Promise<PlanRow> {
   if (!/^[0-9a-f-]{36}$/i.test(planId)) throw new HttpError(404, "Plan not found");
-  const [row] = await db()`select * from plans where id = ${planId} and user_id = ${userId}`;
+  const [row] = await db()`select *, now() as db_now from plans where id = ${planId} and user_id = ${userId}`;
   if (!row) throw new HttpError(404, "Plan not found");
   return row as unknown as PlanRow;
 }
@@ -163,7 +193,8 @@ async function transition(
       missing_since = null,
       updated_at = now()
     where id = ${planId} and status in ${db()(from)}
-    returning *`;
+    returning *, now() as db_now`;
+  if (row && to === "closed") await releaseDeposits(planId);
   return (row as unknown as PlanRow) ?? null;
 }
 
@@ -197,9 +228,16 @@ async function assertFillable(symbol: string, side: Side, size: number) {
   if (problem) throw new ThinBookError(problem);
 }
 
-async function sizeAtMarket(type: PlanType, inputs: PlanInputs) {
+/** The builder fee this user's orders carry: the server setting, capped at the share they approved. */
+async function feeBpsFor(userId: string): Promise<number> {
+  const [link] = await db()`select fee_share_bps from strike_links where user_id = ${userId}`.catch(() => []);
+  const approved = Number(link?.fee_share_bps);
+  return Number.isFinite(approved) ? Math.min(config.builderFeeBps, approved) : config.builderFeeBps;
+}
+
+async function sizeAtMarket(type: PlanType, inputs: PlanInputs, builderBps?: number) {
   const symbol = PLAN_MARKET[type];
-  const [mark, rules, fees] = await Promise.all([getMarkPrice(symbol), getMarketRules(symbol), getFeeRates()]);
+  const [mark, rules, fees] = await Promise.all([getMarkPrice(symbol), getMarketRules(symbol), getFeeRates(builderBps)]);
   const sizing = sizePlan(type, inputs, mark.mark, rules, fees);
   return { mark, rules, sizing };
 }
@@ -213,12 +251,18 @@ async function availableUsd(keys: ApiKeys): Promise<number> {
   return parseFloat(acct.available_balance ?? "0") || 0;
 }
 
-/** USD credited on Strike for the user's other plans and not yet applied: this plan can't spend it. */
+/** USD credited on Strike for the user's other live plans and not yet applied: this plan can't spend it. */
 async function reservedForOthers(userId: string, planId: string): Promise<number> {
   const [r] = await db()`
-    select coalesce(sum(usd_value), 0)::float8 as usd from deposits
-    where user_id = ${userId} and status = 'credited' and plan_id is distinct from ${planId}`;
+    select coalesce(sum(d.usd_value), 0)::float8 as usd from deposits d join plans p on p.id = d.plan_id
+    where d.user_id = ${userId} and d.status = 'credited' and d.plan_id <> ${planId}
+      and p.status in ('draft','funding','opening','active','closing')`;
   return Number(r.usd) || 0;
+}
+
+/** A plan that closed no longer reserves what was credited for it: that money is free again. */
+async function releaseDeposits(planId: string) {
+  await db()`update deposits set status = 'released', updated_at = now() where plan_id = ${planId} and status = 'credited'`;
 }
 
 /** Free balance this plan may use: Strike's available balance minus other plans' reservations. */
@@ -227,21 +271,76 @@ async function spendableUsd(keys: ApiKeys, userId: string, planId: string): Prom
   return Math.max(0, available - reserved);
 }
 
+// ── Verified margin adds ──
+
+const isoOf = (p: StrikePosition | null) => (p ? parseFloat(p.iso_balance) || 0 : 0);
+
+/** Finish a margin add that has shown up in the position: mark what it paid for as done. */
+async function marginLanded(plan: PlanRow, m: MarginPending) {
+  if (m.kind === "buffer") {
+    await db()`update plans set buffer_added = true, margin_pending = null, updated_at = now() where id = ${plan.id}`;
+    plan.buffer_added = true;
+    if (plan.status_note) await db()`update plans set status_note = null where id = ${plan.id}`;
+    await safeEvent(plan.id, "info", `Added $${m.amount.toFixed(2)} buffer margin to this plan`);
+  } else {
+    await db()`update deposits set status = 'applied', applied_usd = ${m.amount}, updated_at = now()
+               where id = ${m.depositId!} and status = 'credited'`;
+    await db()`update plans set margin_pending = null, updated_at = now() where id = ${plan.id}`;
+    await safeEvent(plan.id, "info", `Top-up of $${m.amount.toFixed(2)} added to this plan's margin only`);
+  }
+  plan.margin_pending = null;
+}
+
 /**
- * Add isolated margin and confirm it landed. If the call fails, the position is read again: if the
- * isolated balance grew by the amount, it did land (the response was lost). Returns false only
- * when the margin is not there, so the caller can safely retry later.
+ * Settle the plan's margin add in flight: done once the isolated balance has grown by ~the amount
+ * (funding can nudge it a little), or given up after MARGIN_VERIFY_MS so it is tried again.
+ * Returns true while it is still waiting.
  */
-async function addMarginVerified(keys: ApiKeys, plan: PlanRow, amount: number, before: StrikePosition): Promise<boolean> {
+async function checkMarginPending(plan: PlanRow, pos: StrikePosition | null): Promise<boolean> {
+  const m = plan.margin_pending;
+  if (!m) return false;
+  if (pos && isoOf(pos) - m.baseIso >= m.amount * 0.9) {
+    await marginLanded(plan, m);
+    return false;
+  }
+  if (age(plan, m.at) < MARGIN_VERIFY_MS) return true;
+  await db()`update plans set margin_pending = null where id = ${plan.id}`;
+  plan.margin_pending = null;
+  await safeEvent(plan.id, "watch", `Strike didn't apply the $${m.amount.toFixed(2)} ${m.kind === "buffer" ? "buffer" : "top-up"} margin. Locke will try again.`);
+  return false;
+}
+
+/**
+ * Add isolated margin through the plan's single margin slot. The balance is read fresh right
+ * before the add, so it's compared against the right baseline; the add counts only when the
+ * position shows it (now, or on a later sync).
+ */
+async function addMargin(keys: ApiKeys, plan: PlanRow, kind: MarginPending["kind"], amount: number, depositId?: string): Promise<void> {
+  const before = await getPosition(keys, plan.symbol);
+  if (!before) return;
+  const m: MarginPending = { kind, amount, depositId, baseIso: isoOf(before), at: "" };
+  const [row] = await db()`
+    update plans set margin_pending = jsonb_set(${db().json(m as never)}::jsonb, '{at}', to_jsonb(now())), updated_at = now()
+    where id = ${plan.id} and margin_pending is null returning margin_pending, now() as db_now`;
+  if (!row) return; // another caller is adding margin to this plan
+  plan.margin_pending = row.margin_pending as MarginPending;
+  plan.db_now = row.db_now;
   try {
     await addIsolatedMargin(keys, plan.symbol, amount);
-    return true;
   } catch (e) {
-    const after = await getPosition(keys, plan.symbol).catch(() => null);
-    const grew = after ? parseFloat(after.iso_balance) - parseFloat(before.iso_balance) : 0;
-    if (grew >= amount * 0.9) return true;
-    console.error("[margin]", plan.id, e instanceof Error ? e.message : e);
-    return false;
+    if (e instanceof StrikeError && e.status >= 400 && e.status < 500) {
+      // Refused outright: nothing was sequenced.
+      await db()`update plans set margin_pending = null where id = ${plan.id}`;
+      plan.margin_pending = null;
+      console.error("[margin] refused", plan.id, e.message);
+      return;
+    }
+    // Unclear (timeout, 5xx): it may still land; the slot stays until the position says.
+  }
+  for (let i = 0; i < 3 && plan.margin_pending; i++) {
+    await sleep(700);
+    const pos = await getPosition(keys, plan.symbol).catch(() => null);
+    if (pos && isoOf(pos) - m.baseIso >= amount * 0.9) await marginLanded(plan, plan.margin_pending);
   }
 }
 
@@ -262,9 +361,12 @@ async function claimOrder(planId: string, action: OrderAction, meta: PlanRow["pe
   return (row?.pending_order as string) ?? null;
 }
 
-async function clearOrder(planId: string, clientId: string) {
-  await db()`update plans set pending_order = null, pending_action = null, pending_meta = null, pending_since = null, updated_at = now()
-             where id = ${planId} and pending_order = ${clientId}`;
+/** Free the order slot. True only for the caller that freed it: only that caller applies the order's effects. */
+async function clearOrder(planId: string, clientId: string): Promise<boolean> {
+  const [row] = await db()`
+    update plans set pending_order = null, pending_action = null, pending_meta = null, pending_since = null, updated_at = now()
+    where id = ${planId} and pending_order = ${clientId} returning id`;
+  return !!row;
 }
 
 /**
@@ -294,9 +396,8 @@ type OrderOutcome = "working" | "filled" | "partial" | "failed";
 /** What happened to the plan's pending order, from Strike. Null while it's too early to tell. */
 async function pendingOutcome(keys: ApiKeys, plan: PlanRow): Promise<{ outcome: OrderOutcome; reason: string } | null> {
   if (!plan.pending_order) return null;
-  const age = Date.now() - new Date(plan.pending_since ?? plan.updated_at).getTime();
   const o = await getOrderByClientId(keys, plan.symbol, plan.pending_order);
-  if (!o) return age < ORDER_LOOKUP_GRACE_MS ? null : { outcome: "failed", reason: "Strike never received the order" };
+  if (!o) return age(plan, plan.pending_since ?? plan.updated_at) < ORDER_LOOKUP_GRACE_MS ? null : { outcome: "failed", reason: "Strike never received the order" };
   if (o.Status === "pending" || o.Status === "open" || o.Status === "untriggered") return { outcome: "working", reason: "" };
   if (o.Status === "filled") return { outcome: "filled", reason: "" };
   const filled = parseFloat(o.Filled) || 0;
@@ -305,14 +406,19 @@ async function pendingOutcome(keys: ApiKeys, plan: PlanRow): Promise<{ outcome: 
 }
 
 /** Activate an opening plan from its position, and consume the deposits that funded it. */
-async function activate(plan: PlanRow, pos: StrikePosition): Promise<PlanRow | null> {
+async function activate(plan: PlanRow, pos: StrikePosition, clientId?: string): Promise<PlanRow | null> {
   const entry = parseFloat(pos.entry_price);
   const size = Math.abs(parseFloat(pos.size));
   const won = await transition(plan.id, ["opening"], "active", { entry_price: entry, opened: true, size, status_note: null });
   if (!won) return null;
+  if (clientId) await db()`update plans set open_order_id = ${clientId} where id = ${plan.id}`;
   await db()`update deposits set status = 'applied', applied_usd = usd_value, updated_at = now()
              where plan_id = ${plan.id} and purpose = 'open' and status = 'credited'`;
-  await safeEvent(plan.id, "info", `Hedge open on Strike: ${size} ${plan.symbol} at ${entry}`, { size: pos.size });
+  await safeEvent(plan.id, "info", `Hedge open on Strike: ${size} ${plan.symbol} at ${entry}`, { size: pos.size, clientOrderId: clientId });
+  // Strike applies leverage changes asynchronously; say so if the hedge opened at a different one.
+  if (Number(pos.leverage) && Number(pos.leverage) !== plan.sizing.leverage) {
+    await safeEvent(plan.id, "watch", `Strike opened this hedge at ${pos.leverage}x, not the ${plan.sizing.leverage}x in the plan. Its margin and liquidation price follow ${pos.leverage}x.`);
+  }
   return won;
 }
 
@@ -328,17 +434,16 @@ async function resolvePending(keys: ApiKeys, plan: PlanRow, pos: StrikePosition 
       // The position can trail the fill by a moment; wait for it rather than guess, but not forever:
       // after 5 minutes the slot is freed and syncPlan's opening timeout decides.
       if (!pos) {
-        const age = Date.now() - new Date(plan.pending_since ?? plan.updated_at).getTime();
-        if (age < 5 * 60_000) return plan;
+        if (age(plan, plan.pending_since ?? plan.updated_at) < 5 * 60_000) return plan;
         await clearOrder(plan.id, clientId);
         return loadPlanById(plan.id);
       }
-      await clearOrder(plan.id, clientId);
-      const won = await activate({ ...plan, pending_order: null }, pos);
-      if (r.outcome === "partial") await safeEvent(plan.id, "watch", `The hedge filled partly: ${Math.abs(parseFloat(pos.size))} of ${plan.size}.`);
+      if (!(await clearOrder(plan.id, clientId))) return loadPlanById(plan.id);
+      const won = await activate({ ...plan, pending_order: null }, pos, clientId);
+      if (won && r.outcome === "partial") await safeEvent(plan.id, "watch", `The hedge filled partly: ${Math.abs(parseFloat(pos.size))} of ${plan.size}.`);
       return won ?? loadPlanById(plan.id);
     }
-    await clearOrder(plan.id, clientId);
+    if (!(await clearOrder(plan.id, clientId))) return loadPlanById(plan.id);
     const note = `${r.reason}. Your funds stay on Strike; open again to retry.`;
     const won = await transition(plan.id, ["opening"], "funding", { status_note: note });
     if (won) await safeEvent(plan.id, "action", note);
@@ -346,16 +451,24 @@ async function resolvePending(keys: ApiKeys, plan: PlanRow, pos: StrikePosition 
   }
 
   if (action === "close") {
-    await clearOrder(plan.id, clientId);
+    if (!(await clearOrder(plan.id, clientId))) return loadPlanById(plan.id);
+    if (r.outcome === "filled" && !pos) {
+      // Two independent signals agree (the close filled, the position is gone): closed now. An
+      // unexplained missing position, with no filled close behind it, waits out a grace period instead.
+      const won = await transition(plan.id, ["closing"], "closed", { closed: true, status_note: null });
+      if (won) await safeEvent(plan.id, "info", "Plan closed. Margin is back on your Strike balance.");
+      return won ?? loadPlanById(plan.id);
+    }
     if (r.outcome !== "filled") await safeEvent(plan.id, "watch", `${r.reason}. Locke will try the close again.`);
     return loadPlanById(plan.id); // syncPlan finishes the close (or re-sends it) from the position
   }
 
   // resize
   const meta = plan.pending_meta ?? {};
-  await clearOrder(plan.id, clientId);
+  if (!(await clearOrder(plan.id, clientId))) return loadPlanById(plan.id);
   if (r.outcome === "filled" && meta.inputs && meta.target != null) {
     await db()`update plans set inputs = ${db().json(meta.inputs as never)}, size = ${meta.target}, name = ${meta.name ?? plan.name},
+               last_month_reduce_at = case when ${!!meta.month} then now() else last_month_reduce_at end,
                updated_at = now() where id = ${plan.id}`;
     await safeEvent(plan.id, "info", `Hedge resized from ${meta.from} to ${meta.target}`);
   } else if (r.outcome === "partial" && pos) {
@@ -368,15 +481,19 @@ async function resolvePending(keys: ApiKeys, plan: PlanRow, pos: StrikePosition 
 }
 
 async function loadPlanById(planId: string): Promise<PlanRow> {
-  const [row] = await db()`select * from plans where id = ${planId}`;
+  const [row] = await db()`select *, now() as db_now from plans where id = ${planId}`;
   return row as unknown as PlanRow;
 }
 
-/** After sending, give Strike a few seconds to settle the order so the user sees the result at once. */
+/**
+ * After sending, give Strike a moment to settle the order so the user usually sees the result at
+ * once. Kept short so a route stays well inside the function time limit; polling and the worker
+ * finish anything still settling.
+ */
 async function settleSoon(keys: ApiKeys, planId: string): Promise<PlanRow> {
   let plan = await loadPlanById(planId);
-  for (let i = 0; i < 4 && plan.pending_order; i++) {
-    await sleep(800);
+  for (let i = 0; i < 2 && plan.pending_order; i++) {
+    await sleep(700);
     const pos = await getPosition(keys, plan.symbol).catch(() => null);
     plan = await resolvePending(keys, plan, pos);
   }
@@ -388,7 +505,7 @@ async function settleSoon(keys: ApiKeys, planId: string): Promise<PlanRow> {
 export async function createDraft(userId: string, type: PlanType, raw: Record<string, unknown>) {
   if (type !== "holdings" && type !== "costs") throw new PlanInputError("Unknown plan type");
   const inputs = parseInputs(type, raw);
-  const { mark, rules, sizing } = await sizeAtMarket(type, inputs);
+  const { mark, rules, sizing } = await sizeAtMarket(type, inputs, await feeBpsFor(userId));
   const preview = buildPreview(type, inputs, sizing, rules, mark.fundingRate);
   preview.execution = await executionFor(sizing);
   const sql = db();
@@ -402,7 +519,7 @@ export async function createDraft(userId: string, type: PlanType, raw: Record<st
 }
 
 export async function previewFor(plan: PlanRow): Promise<Preview> {
-  const { mark, rules, sizing } = await sizeAtMarket(plan.type, plan.inputs);
+  const { mark, rules, sizing } = await sizeAtMarket(plan.type, plan.inputs, await feeBpsFor(plan.user_id));
   const preview = buildPreview(plan.type, plan.inputs, sizing, rules, mark.fundingRate);
   preview.execution = await executionFor(sizing);
   return preview;
@@ -451,7 +568,7 @@ export async function prepareDeposit(
         and status in ('funding','opening','active','closing') and id <> ${plan.id}`;
     if (clash) throw new HttpError(409, `You already have a live plan on ${plan.symbol}. Close it first.`);
     // Re-size at today's price so the deposit matches what will actually be ordered.
-    const { sizing } = await sizeAtMarket(plan.type, plan.inputs);
+    const { sizing } = await sizeAtMarket(plan.type, plan.inputs, await feeBpsFor(userId));
     const [resized] = await db()`update plans set sizing = ${db().json(sizing as never)}, size = ${sizing.size}, updated_at = now()
                where id = ${plan.id} and status in ('draft','funding') returning id`;
     if (!resized) throw new HttpError(409, "This plan is already opening");
@@ -465,13 +582,11 @@ export async function prepareDeposit(
     usd = Math.min(Math.max(MIN_DEPOSIT_USD, amt), 1_000_000);
   }
 
-  if (
-    !Array.isArray(p.utxos) ||
-    p.utxos.length === 0 ||
-    p.utxos.length > 300 ||
-    p.utxos.some((u) => typeof u !== "string" || u.length > 20_000 || !/^[0-9a-f]+$/i.test(u))
-  ) {
-    throw new HttpError(400, "Wallet UTxOs are required for a Cardano deposit");
+  if (!Array.isArray(p.utxos) || p.utxos.length === 0) {
+    throw new CodedHttpError(400, "utxos_required", "This plan needs a deposit, and your wallet has no spendable ADA.");
+  }
+  if (p.utxos.length > 300 || p.utxos.some((u) => typeof u !== "string" || u.length > 20_000 || !/^[0-9a-f]+$/i.test(u))) {
+    throw new HttpError(400, "Your wallet sent UTxOs Locke can't read");
   }
   const ada = await getMarkPrice("ADA-USD");
   let lovelace = BigInt(Math.ceil((usd / ada.mark) * 1_000_000));
@@ -501,6 +616,17 @@ export async function prepareDeposit(
 
 const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === "23505";
 
+/** An HttpError the browser can act on by its code, not its wording. */
+export class CodedHttpError extends HttpError {
+  constructor(
+    status: number,
+    public code: string,
+    message: string
+  ) {
+    super(status, message);
+  }
+}
+
 export async function confirmDeposit(userId: string, depositId: string, txHash: string) {
   if (!/^[0-9a-f]{64}$/i.test(txHash)) throw new HttpError(400, "Invalid transaction hash");
   if (!/^[0-9a-f-]{36}$/i.test(depositId)) throw new HttpError(404, "Deposit not found");
@@ -512,20 +638,28 @@ export async function confirmDeposit(userId: string, depositId: string, txHash: 
     if (dep.tx_hash && dep.tx_hash !== hash) throw new HttpError(409, "This deposit was already confirmed with another transaction");
     return { status: dep.status };
   }
+  // Only the transaction Locke built for this deposit can confirm it.
+  if (dep.expected_tx_hash && dep.expected_tx_hash !== hash) throw new HttpError(409, "This isn't the transaction Locke built for this deposit");
+  if (dep.tx_hash && dep.tx_hash !== hash) throw new HttpError(409, "This deposit was already confirmed with another transaction");
+  // Keep the hash before asking Strike: the ADA has left the wallet, so whatever Strike answers,
+  // reconcileDeposits can still find this deposit by its hash in Strike's history.
+  try {
+    await sql`update deposits set tx_hash = ${hash}, updated_at = now() where id = ${depositId} and status = 'built'`;
+  } catch (e) {
+    if (isUniqueViolation(e)) throw new HttpError(409, "This transaction was already used for another deposit");
+    throw e;
+  }
   const keys = await strikeKeysFor(userId);
   try {
     await depositConfirm(keys, dep.request_id, hash);
   } catch (e) {
     // 409 = Strike already has this quote's tx (a retry after a lost response); treat as submitted.
-    if (!(e instanceof StrikeError && e.status === 409)) throw e;
+    if (!(e instanceof StrikeError && e.status === 409)) {
+      if (dep.plan_id) await safeEvent(dep.plan_id, "watch", "Strike didn't confirm the deposit yet. Locke saved the transaction and will match it when Strike credits it.", { txHash: hash });
+      throw e;
+    }
   }
-  try {
-    await sql`update deposits set status = 'submitted', tx_hash = ${hash}, updated_at = now()
-              where id = ${depositId} and status = 'built'`;
-  } catch (e) {
-    if (isUniqueViolation(e)) throw new HttpError(409, "This transaction was already used for another deposit");
-    throw e;
-  }
+  await sql`update deposits set status = 'submitted', updated_at = now() where id = ${depositId} and status = 'built'`;
   if (dep.plan_id && dep.purpose === "open") {
     try {
       await transition(dep.plan_id, ["draft"], "funding", { status_note: "Waiting for the deposit to confirm on Cardano" });
@@ -548,7 +682,8 @@ export async function confirmDeposit(userId: string, depositId: string, txHash: 
  */
 async function reconcileDeposits(userId: string, keys: ApiKeys) {
   const sql = db();
-  const open = await sql`select * from deposits where user_id = ${userId} and status in ('built','submitted')`;
+  const open = await sql`select *, extract(epoch from now() - created_at) * 1000 as age_ms
+                         from deposits where user_id = ${userId} and status in ('built','submitted')`;
   if (open.length === 0) return;
   const history = await getDepositHistory(keys);
   for (const dep of open) {
@@ -567,13 +702,14 @@ async function reconcileDeposits(userId: string, keys: ApiKeys) {
       continue;
     }
     const failed = tx && (tx.status === "failed" || tx.status === "cancelled");
-    const ageMs = Date.now() - new Date(dep.created_at).getTime();
-    const expired = !tx && (dep.status === "built" ? ageMs > BUILT_TTL_MS : ageMs > SUBMITTED_TTL_MS);
+    // A built row with a hash was signed and sent (only the confirm call didn't get through).
+    const sent = dep.status === "submitted" || !!dep.tx_hash;
+    const expired = !tx && Number(dep.age_ms) > (sent ? SUBMITTED_TTL_MS : BUILT_TTL_MS);
     if (!failed && !expired) continue;
     const [won] = await sql`update deposits set status = 'failed', updated_at = now()
                             where id = ${dep.id} and status = ${dep.status} returning id`;
     // An unsigned deposit that expired is just abandoned: no event, nothing to tell.
-    if (!won || !dep.plan_id || dep.status === "built") continue;
+    if (!won || !dep.plan_id || !sent) continue;
     await safeEvent(
       dep.plan_id,
       "action",
@@ -630,17 +766,26 @@ export async function openPlan(userId: string, planId: string): Promise<PlanRow>
   plan = claimed;
 
   try {
+    // Strike applies margin mode and leverage asynchronously (200 = sequenced): send both, then
+    // read the settings back until they show, and refuse to order if they never do.
     let setError: unknown = null;
     try {
       await setMarginMode(keys, plan.symbol, "isolated");
     } catch (e) {
       setError = e; // refused when the mode is already set; confirmed below
     }
-    const setting = await getSymbolSetting(keys, plan.symbol);
+    await setLeverage(keys, plan.symbol, sizing.leverage).catch((e) => (setError ??= e));
+    let setting = await getSymbolSetting(keys, plan.symbol);
+    for (let i = 0; i < 3 && !(setting?.margin_mode === "isolated" && Number(setting.leverage) === sizing.leverage); i++) {
+      await sleep(600);
+      setting = await getSymbolSetting(keys, plan.symbol);
+    }
     if (setting ? setting.margin_mode !== "isolated" : setError) {
       throw new HttpError(409, `Couldn't put ${plan.symbol} in isolated margin on this Strike account. Close any open ${plan.symbol} orders in Strike, then try again.`);
     }
-    await setLeverage(keys, plan.symbol, sizing.leverage);
+    if (setting && Number(setting.leverage) !== sizing.leverage) {
+      throw new HttpError(409, `Strike hasn't applied ${sizing.leverage}x leverage on ${plan.symbol} yet. Try again in a moment.`);
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Couldn't prepare the order";
     await transition(plan.id, ["opening"], "funding", { status_note: msg });
@@ -695,7 +840,7 @@ export async function syncPlan(userId: string, planId: string): Promise<PlanRow>
   if (plan.status === "opening") {
     // The order filled but its position arrived after the order settled.
     if (pos) plan = (await activate(plan, pos)) ?? (await loadPlan(userId, planId));
-    else if (Date.now() - new Date(plan.updated_at).getTime() > 5 * 60_000) {
+    else if (age(plan, plan.updated_at) > 5 * 60_000) {
       const note = "The hedge order didn't leave a position on Strike. Your funds stay on Strike; open again to retry.";
       const won = await transition(plan.id, ["opening"], "funding", { status_note: note });
       if (won) await safeEvent(plan.id, "action", note);
@@ -703,81 +848,72 @@ export async function syncPlan(userId: string, planId: string): Promise<PlanRow>
     }
   }
 
-  if (plan.status === "active" && pos) {
-    if (plan.missing_since) await sql`update plans set missing_since = null where id = ${plan.id}`;
-    await applyBuffer(keys, plan, pos);
-    await applyTopUps(keys, plan, pos);
+  if ((plan.status === "active" || plan.status === "closing") && pos && plan.missing_since) {
+    await sql`update plans set missing_since = null where id = ${plan.id}`;
+    plan.missing_since = null;
   }
 
-  if (plan.status === "active" && !pos) {
+  if (plan.status === "active" && pos) {
+    if (await checkMarginPending(plan, pos)) return plan; // a margin add is still settling
+    await applyBuffer(keys, plan, pos);
+    if (!plan.margin_pending) await applyTopUps(keys, plan);
+  }
+
+  if ((plan.status === "active" || plan.status === "closing") && !pos) {
     // One empty read isn't proof: Strike can briefly return no positions. Close after a grace period.
     if (!plan.missing_since) {
       await sql`update plans set missing_since = now() where id = ${plan.id} and missing_since is null`;
       return loadPlan(userId, planId);
     }
-    if (Date.now() - new Date(plan.missing_since).getTime() < MISSING_GRACE_MS) return plan;
+    if (age(plan, plan.missing_since) < MISSING_GRACE_MS) return plan;
+    if (plan.status === "closing") {
+      const won = await transition(plan.id, ["closing"], "closed", { closed: true, status_note: null });
+      if (won) await safeEvent(plan.id, "info", "Plan closed. Margin is back on your Strike balance.");
+      return won ?? (await loadPlan(userId, planId));
+    }
     const won = await transition(plan.id, ["active"], "closed", { closed: true, status_note: null });
     if (won) await safeEvent(plan.id, "liquidation", "The position is no longer open on Strike (closed outside Locke or liquidated).");
     return won ?? (await loadPlan(userId, planId));
   }
 
-  if (plan.status === "closing") {
-    if (!pos) {
-      const won = await transition(plan.id, ["closing"], "closed", { closed: true, status_note: null });
-      if (won) await safeEvent(plan.id, "info", "Plan closed. Margin is back on your Strike balance.");
-      return won ?? (await loadPlan(userId, planId));
+  if (plan.status === "closing" && pos) {
+    // Still open after the close settled (partial fill, expired): send the reduce-only close again,
+    // timed on its own clock (risk updates don't reset it), up to a cap.
+    if (age(plan, plan.close_sent_at) <= CLOSE_RETRY_MS) return plan;
+    if (plan.close_attempts >= CLOSE_ATTEMPTS) {
+      await noteOnce(plan, `Strike didn't fill the close after ${CLOSE_ATTEMPTS} tries. Close the rest of this ${plan.symbol} position in Strike.`, "action");
+      return plan;
     }
-    // Still open after the close settled (partial fill): send the reduce-only close again.
-    if (Date.now() - new Date(plan.updated_at).getTime() > CLOSE_RETRY_MS) await sendClose(keys, plan, pos).catch(() => null);
+    await sendClose(keys, plan, pos).catch(() => null);
     return loadPlan(userId, planId);
   }
   return plan;
 }
 
-/** Add the buffer margin once, verified, from balance this plan may spend. */
+/** Add the buffer margin once, from balance this plan may spend; it counts when the position shows it. */
 async function applyBuffer(keys: ApiKeys, plan: PlanRow, pos: StrikePosition) {
-  if (plan.buffer_added) return;
-  const [claimed] = await db()`update plans set buffer_added = true, updated_at = now()
-                               where id = ${plan.id} and buffer_added = false returning id`;
-  if (!claimed) return;
-  plan.buffer_added = true;
+  if (plan.buffer_added || plan.margin_pending) return;
   const spendable = await spendableUsd(keys, plan.user_id, plan.id).catch(() => 0);
   const amount = Math.min(plan.sizing.bufferMarginUsd, Math.max(0, spendable - 0.05));
   if (amount < Math.min(plan.sizing.bufferMarginUsd, 1)) {
-    await db()`update plans set buffer_added = false where id = ${plan.id}`;
-    plan.buffer_added = false;
     await noteOnce(plan, "Waiting for free balance on Strike to add this plan's buffer margin.");
     return;
   }
-  if (!(await addMarginVerified(keys, plan, amount, pos))) {
-    await db()`update plans set buffer_added = false where id = ${plan.id}`;
-    plan.buffer_added = false;
-    return;
-  }
-  if (plan.status_note) await db()`update plans set status_note = null where id = ${plan.id}`;
-  await safeEvent(plan.id, "info", `Added $${amount.toFixed(2)} buffer margin to this plan`);
+  if (!pos) return;
+  await addMargin(keys, plan, "buffer", amount);
 }
 
-/** Add credited top-ups to this plan's isolated margin, each exactly once and verified. */
-async function applyTopUps(keys: ApiKeys, plan: PlanRow, pos: StrikePosition) {
-  const sql = db();
-  const topups = await sql`select * from deposits where plan_id = ${plan.id} and purpose = 'topup' and status = 'credited'`;
-  for (const t of topups) {
-    const [claimed] = await sql`update deposits set status = 'applied', updated_at = now()
-                                where id = ${t.id} and status = 'credited' returning id`;
-    if (!claimed) continue;
-    const want = Number(t.usd_value);
-    const spendable = await spendableUsd(keys, plan.user_id, plan.id).catch(() => 0);
-    const amount = Math.min(want, Math.max(0, spendable - 0.05));
-    // Strike credits a little under the quote after conversion; anything far short means the money isn't there yet.
-    const ok = amount >= want * 0.9 && (await addMarginVerified(keys, plan, amount, pos));
-    if (!ok) {
-      await sql`update deposits set status = 'credited', updated_at = now() where id = ${t.id} and status = 'applied'`;
-      continue;
-    }
-    await sql`update deposits set applied_usd = ${amount} where id = ${t.id}`;
-    await safeEvent(plan.id, "info", `Top-up of $${amount.toFixed(2)} added to this plan's margin only`);
-  }
+/** Add one credited top-up at a time to this plan's isolated margin; each counts when the position shows it. */
+async function applyTopUps(keys: ApiKeys, plan: PlanRow) {
+  const [t] = await db()`select * from deposits where plan_id = ${plan.id} and purpose = 'topup' and status = 'credited'
+                         order by created_at limit 1`;
+  if (!t) return;
+  const want = Number(t.usd_value);
+  const spendable = await spendableUsd(keys, plan.user_id, plan.id).catch(() => 0);
+  const amount = Math.min(want, Math.max(0, spendable - 0.05));
+  // Strike credits a little under the quote after conversion; anything far short means the money isn't there yet.
+  if (amount < want * 0.9) return;
+  await addMargin(keys, plan, "topup", amount, t.id);
 }
 
 // ── Adjust ──
@@ -786,7 +922,7 @@ async function applyTopUps(keys: ApiKeys, plan: PlanRow, pos: StrikePosition) {
 async function sendClose(keys: ApiKeys, plan: PlanRow, pos: StrikePosition) {
   const clientId = await claimOrder(plan.id, "close");
   if (!clientId) return;
-  await db()`update plans set updated_at = now() where id = ${plan.id}`;
+  await db()`update plans set close_sent_at = now(), close_attempts = close_attempts + 1, updated_at = now() where id = ${plan.id}`;
   await sendClaimedOrder(keys, plan, clientId, {
     side: plan.side === "sell" ? "buy" : "sell",
     size: Math.abs(parseFloat(pos.size)),
@@ -846,6 +982,10 @@ export async function resizePlan(userId: string, planId: string, raw: Record<str
     if (raw.action !== "month") throw new HttpError(400, "Unknown resize action");
     const c = plan.inputs as CostsInputs;
     if (c.months <= 1) throw new HttpError(409, "Last month: close the plan instead");
+    const due = nextMonthlyReduce(plan);
+    if (due && due.getTime() > new Date(plan.db_now).getTime()) {
+      throw new HttpError(409, `This month's share was already closed. The next one is due on ${due.toISOString().slice(0, 10)}.`);
+    }
     const perMonth = current / c.months;
     target = current - perMonth;
     inputs = { ...c, months: c.months - 1 };
@@ -855,8 +995,12 @@ export async function resizePlan(userId: string, planId: string, raw: Record<str
   const delta = Number((target - current).toFixed(decimals));
   if (Math.abs(delta) < rules.minQty) throw new HttpError(400, "That change is smaller than Strike's minimum order");
   const mark = (await getMarkPrice(plan.symbol)).mark;
-  if (Math.abs(delta) * mark < rules.minNotional && target > 0) {
+  // Strike exempts reduce-only orders from its minimum value, so only additions are checked.
+  if (delta > 0 && delta * mark < rules.minNotional) {
     throw new HttpError(400, `Strike's minimum order is $${rules.minNotional}; this change is too small`);
+  }
+  if (delta > 0 && rules.maxQty != null && delta > rules.maxQty) {
+    throw new HttpError(400, `Strike takes at most ${rules.maxQty} ${plan.symbol} in one order; resize in smaller steps`);
   }
   if (delta > 0) {
     const need = (delta * mark) / plan.sizing.leverage;
@@ -865,7 +1009,7 @@ export async function resizePlan(userId: string, planId: string, raw: Record<str
     }
     await assertFillable(plan.symbol, plan.side, delta);
   }
-  const clientId = await claimOrder(plan.id, "resize", { inputs, target, name: planName(plan.type, inputs), from: current });
+  const clientId = await claimOrder(plan.id, "resize", { inputs, target, name: planName(plan.type, inputs), from: current, month: plan.type === "costs" });
   if (!clientId) throw new HttpError(409, "Another change to this plan is still settling on Strike. Try again in a moment.");
   const reducing = delta < 0;
   await sendClaimedOrder(keys, plan, clientId, {
@@ -875,6 +1019,13 @@ export async function resizePlan(userId: string, planId: string, raw: Record<str
   });
   await safeEvent(plan.id, "info", `Resize order sent: ${current} → ${target}`, { clientOrderId: clientId });
   return settleSoon(keys, plan.id);
+}
+
+/** When a costs plan's next one-month reduce is due: 30 days after the last one (or the opening). */
+function nextMonthlyReduce(plan: PlanRow): Date | null {
+  if (plan.type !== "costs" || plan.status !== "active") return null;
+  const from = plan.last_month_reduce_at ?? plan.opened_at;
+  return from ? new Date(new Date(from).getTime() + MONTH_MS) : null;
 }
 
 function pick(o: Record<string, unknown>, keys: string[]) {
@@ -928,6 +1079,10 @@ export interface PlanView {
   riskAcknowledged: boolean;
   /** An order is in flight on Strike (open, close or resize) and settling. */
   pendingAction: OrderAction | null;
+  /** Locke's client order id for the order that opened the hedge. */
+  openOrderId: string | null;
+  /** Costs plans: when the next one-month reduce is due (ISO). */
+  nextMonthlyReduceAt: string | null;
 }
 
 /**
@@ -936,10 +1091,10 @@ export interface PlanView {
  * the numbers aren't live instead of showing a stale plan as healthy.
  */
 export async function planView(plan: PlanRow, pos: StrikePosition | null | undefined): Promise<PlanView> {
-  const [markLive, rulesLive, link] = await Promise.all([
+  const [markLive, rulesLive, feeBps] = await Promise.all([
     getMarkPrice(plan.symbol).catch(() => null),
     getMarketRules(plan.symbol).catch(() => null),
-    db()`select fee_share_bps from strike_links where user_id = ${plan.user_id}`.catch(() => []),
+    feeBpsFor(plan.user_id),
   ]);
   const fallbackPrice = Number(plan.entry_price ?? plan.sizing.price);
   const mark = markLive ?? { mark: fallbackPrice, fundingRate: 0 };
@@ -959,7 +1114,7 @@ export async function planView(plan: PlanRow, pos: StrikePosition | null | undef
     const signed = parseFloat(pos.size);
     const entry = parseFloat(pos.entry_price);
     const iso = parseFloat(pos.iso_balance);
-    const upnl = signed * (mark.mark - entry);
+    const upnl = unrealisedPnl(signed, entry, mark.mark);
     const mm = maintenanceMargin(rules.tiers, signed, mark.mark);
     const funding = parseFloat(pos.accumulated_funding_fees) || 0;
     ratio = marginRatio(mm, iso, upnl);
@@ -980,7 +1135,8 @@ export async function planView(plan: PlanRow, pos: StrikePosition | null | undef
     const liqTarget = signed < 0 ? mark.mark * (1 + DISTANCE_LEVELS.target) : mark.mark * (1 - DISTANCE_LEVELS.target);
     const byDistance = Math.max(0, isoForLiquidationAt(rules.tiers, signed, entry, liqTarget) - iso);
     suggested = Math.max(suggestedTopUpUsd(mm, iso, upnl, th.target), byDistance);
-    if (config.demoAlerts) suggested = Math.min(suggested, MIN_DEPOSIT_USD);
+    // Demo levels make small top-ups enough to show the flow; a plan genuinely at risk always gets the real amount.
+    if (config.demoAlerts && ratio < LOCKE_THRESHOLDS.action) suggested = Math.min(suggested, MIN_DEPOSIT_USD);
     const byRatio = priceAtRatio(rules.tiers, signed, entry, iso, th.action);
     const byDist = priceAtDistance(signed, liq, DISTANCE_LEVELS.action);
     alertPrice = byRatio == null ? byDist : byDist == null ? byRatio : signed < 0 ? Math.min(byRatio, byDist) : Math.max(byRatio, byDist);
@@ -993,8 +1149,6 @@ export async function planView(plan: PlanRow, pos: StrikePosition | null | undef
 
   // Without live numbers, keep the last level the worker recorded rather than claiming "ok".
   const level: RiskLevel = ratio == null ? (liveStatus ? plan.risk_level : "ok") : combinedLevel(ratio, distance, plan.risk_level, th);
-  const approved = Number(link[0]?.fee_share_bps);
-  const feeBps = Number.isFinite(approved) ? Math.min(config.builderFeeBps, approved) : config.builderFeeBps;
   const signedPlanned = plan.side === "sell" ? -plan.size : plan.size;
   return {
     id: plan.id,
@@ -1026,5 +1180,7 @@ export async function planView(plan: PlanRow, pos: StrikePosition | null | undef
     liveUnavailable,
     riskAcknowledged: !!plan.risk_ack_at,
     pendingAction: plan.pending_action,
+    openOrderId: plan.open_order_id ?? null,
+    nextMonthlyReduceAt: nextMonthlyReduce(plan)?.toISOString() ?? null,
   };
 }

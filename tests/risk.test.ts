@@ -111,3 +111,32 @@ describe("action hysteresis", () => {
     expect(combinedLevel(0.1, 0.13, "action")).toBe("watch");
   });
 });
+
+describe("Strike-level hysteresis", () => {
+  it("holds a Strike level until the ratio is clearly below it, so alerts don't flap", async () => {
+    const { riskLevel } = await import("@/lib/domain/risk");
+    expect(riskLevel(0.705, "action")).toBe("margin_call");
+    expect(riskLevel(0.695, "margin_call")).toBe("margin_call");
+    expect(riskLevel(0.66, "margin_call")).toBe("action");
+    expect(riskLevel(0.88, "reduce_only")).toBe("reduce_only");
+    expect(riskLevel(0.84, "reduce_only")).toBe("margin_call");
+    expect(riskLevel(0.97, "liquidation")).toBe("liquidation");
+    expect(riskLevel(0.94, "liquidation")).toBe("reduce_only");
+    expect(riskLevel(0.695, "action")).toBe("action");
+  });
+});
+
+describe("liquidation events on Strike's user stream", () => {
+  it("reads Strike's documented fields, and not a user's own close", async () => {
+    const { liquidationReason } = await import("@/lib/strike/stream");
+    expect(liquidationReason("ACCOUNT_UPDATE", { e: "LIQUIDATION", P: [{ s: "ADA-USD" }] })).toBe("LIQUIDATION");
+    expect(liquidationReason("ACCOUNT_UPDATE", { e: "ADL" })).toBe("ADL");
+    expect(liquidationReason("ACCOUNT_UPDATE", { e: "ORDER" })).toBeNull();
+    expect(liquidationReason("ACCOUNT_UPDATE", { e: "FUNDING" })).toBeNull();
+    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD", act: "LIQUIDATION" })).toBe("LIQUIDATION");
+    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD", act: "ADL" })).toBe("ADL");
+    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD", cr: "liquidation" })).toBe("LIQUIDATION");
+    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD", cr: "reduce_only", c: "locke-x-close-1" })).toBeNull();
+    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD" })).toBeNull();
+  });
+});

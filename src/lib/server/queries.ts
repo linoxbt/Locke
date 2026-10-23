@@ -4,6 +4,7 @@
 import type { Preview } from "../domain/types";
 import { getPosition, getPositions, type StrikePosition } from "../strike/client";
 import { db } from "./db";
+import { HttpError } from "./errors";
 import { strikeKeysFor } from "./keys";
 import { loadPlan, planView, previewFor, type PlanRow, type PlanView } from "./planService";
 
@@ -34,6 +35,8 @@ export interface DepositRow {
 export interface PlanDetail {
   plan: PlanView;
   preview: Preview | null;
+  /** Set when the preview couldn't be priced (Strike unreachable); `preview` is then null. */
+  previewError: string | null;
   events: PlanEventRow[];
   snapshots: SnapshotRow[];
   deposits: DepositRow[];
@@ -42,6 +45,11 @@ export interface PlanDetail {
 }
 
 const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : String(d));
+
+/** What to tell the user when Strike couldn't be read: our own messages pass, raw library errors don't. */
+function liveErrorText(e: unknown): string {
+  return e instanceof HttpError ? e.message : "Strike can't be reached right now. Numbers will update when it's back.";
+}
 
 /** `withPreview: false` skips re-pricing the preview (order book, fees) for polls that already have one. */
 export async function getPlanDetail(userId: string, planId: string, { withPreview = true } = {}): Promise<PlanDetail> {
@@ -55,10 +63,18 @@ export async function getPlanDetail(userId: string, planId: string, { withPrevie
       pos = await getPosition(await strikeKeysFor(userId), plan.symbol);
     } catch (e) {
       pos = undefined;
-      liveError = e instanceof Error ? e.message : "Strike is unreachable";
+      liveError = liveErrorText(e);
     }
   }
   const sql = db();
+  let previewError: string | null = null;
+  const pricePreview =
+    withPreview && (plan.status === "draft" || plan.status === "funding")
+      ? previewFor(plan).catch((e) => {
+          previewError = e instanceof HttpError ? e.message : "Can't price this plan right now. Retrying.";
+          return null;
+        })
+      : Promise.resolve(null);
   const [view, events, snapshots, deposits, preview] = await Promise.all([
     planView(plan, pos),
     sql`select id, level, message, created_at from plan_events where plan_id = ${plan.id} order by id desc limit 100`,
@@ -67,11 +83,12 @@ export async function getPlanDetail(userId: string, planId: string, { withPrevie
         and created_at > now() - interval '7 days' order by created_at desc limit 2000) recent order by created_at asc`,
     sql`select id, purpose, status, lovelace, usd_value, tx_hash, created_at from deposits
         where plan_id = ${plan.id} order by created_at desc limit 20`,
-    withPreview && (plan.status === "draft" || plan.status === "funding") ? previewFor(plan) : Promise.resolve(null),
+    pricePreview,
   ]);
   return {
     plan: view,
     preview,
+    previewError,
     events: events.map((e) => ({ id: Number(e.id), level: e.level, message: e.message, created_at: iso(e.created_at) })),
     snapshots: snapshots.map((s) => ({ mark: Number(s.mark), ratio: s.ratio, headline: s.headline, created_at: iso(s.created_at) })),
     deposits: deposits.map((d) => ({ ...(d as unknown as DepositRow), created_at: iso(d.created_at) })),
@@ -91,7 +108,7 @@ export async function listPlanViews(userId: string): Promise<{ plans: PlanView[]
       positions = await getPositions(await strikeKeysFor(userId));
     } catch (e) {
       positions = undefined;
-      liveError = e instanceof Error ? e.message : "Strike is unreachable";
+      liveError = liveErrorText(e);
     }
   }
   const plans = await Promise.all(

@@ -23,13 +23,25 @@ const state = {
   /** Quantity at each of the 20 levels per side of the mock order book. */
   bookQty: 100_000,
   /** Orders by client id, for GET /v2/order. */
-  byClientId: new Map<string, { size: string }>(),
+  byClientId: new Map<string, { size: string; filled: string }>(),
   /** Accept the order but lose the response (504): the "did it go through?" case. */
   orderLosesResponse: false,
   /** Refuse orders outright (400): nothing reaches the book. */
   orderRejected: false,
   /** Apply the isolated-margin add but lose the response (502). */
   isoLosesResponse: false,
+  // Real Strike is asynchronous: a 200 means "sequenced". These switch the mock to that behaviour.
+  /** Margin adds land only after this many further position reads (0 = at once). */
+  isoLagReads: 0,
+  /** Margin adds answer 200 but the engine rejects them (they never land). */
+  isoSilentlyRejected: false,
+  queuedIso: [] as { amount: number; reads: number }[],
+  /** Fraction of a reduce-only close that fills (the rest is cancelled, like a market order past its price bound). */
+  closeFill: 1,
+  /** Position reads that come back empty although the position exists. */
+  emptyReads: 0,
+  /** POST /v2/deposit fails (500) although the transaction is on chain. */
+  confirmFails: false,
 };
 const MARK = 0.2;
 const SPKI = Buffer.from("302a300506032b6570032100", "hex");
@@ -69,7 +81,7 @@ const server = http.createServer((req, res) => {
               symbol: "ADA-USD",
               status: "trading",
               filters: [
-                { filterType: "MARKET_LOT_SIZE", stepSize: "1", minQty: "1" },
+                { filterType: "MARKET_LOT_SIZE", stepSize: "1", minQty: "1", maxQty: "2000000" },
                 { filterType: "MIN_NOTIONAL", notional: "10" },
               ],
             },
@@ -91,6 +103,11 @@ const server = http.createServer((req, res) => {
         return json({ unsigned_tx: "84a0a0f5f6", format: "cardano_cbor", expires_at: Date.now() + 1e6 });
       case "POST /v2/deposit": {
         const d = state.deposits.get(b.request_id)!;
+        if (state.confirmFails) {
+          d.tx = b.tx_hash; // the transaction is on chain and Strike credits it, but this call fails
+          state.available += d.usd;
+          return json({ error: "internal error" }, 500);
+        }
         d.tx = b.tx_hash;
         state.available += d.usd; // credited instantly in the mock
         return json({ request_id: b.request_id, status: "pending" });
@@ -110,15 +127,23 @@ const server = http.createServer((req, res) => {
         return json({ symbol: b.symbol, leverage: b.leverage });
       case "GET /v2/order": {
         const o = state.byClientId.get(url.searchParams.get("client_order_id") ?? "");
-        return o ? json({ ClientOrderID: url.searchParams.get("client_order_id"), Status: "filled", Size: o.size, Filled: o.size }) : json({ error: "order not found" }, 404);
+        if (!o) return json({ error: "order not found" }, 404);
+        const full = o.filled === o.size;
+        return json({ ClientOrderID: url.searchParams.get("client_order_id"), Status: full ? "filled" : "cancelled", Size: o.size, Filled: o.filled, CloseReason: full ? "" : "price_bound" });
       }
       case "POST /v2/order": {
         if (state.orderRejected) return json({ error: "insufficient margin" }, 400);
         state.orders.push({ ...b, fee: req.headers["x-builder-fee-bps"] });
-        state.byClientId.set(b.client_order_id, { size: b.size });
         const size = Number(b.size) * (b.side === "sell" ? -1 : 1);
-        if (b.reduce_only) state.position = null;
-        else {
+        if (b.reduce_only && state.position) {
+          const filled = Math.round(Math.abs(size) * state.closeFill);
+          state.byClientId.set(b.client_order_id, { size: b.size, filled: String(filled) });
+          const left = Math.abs(state.position.size) - filled;
+          state.position = left > 0 ? { ...state.position, size: Math.sign(state.position.size) * left } : null;
+        } else if (b.reduce_only) {
+          state.byClientId.set(b.client_order_id, { size: b.size, filled: "0" });
+        } else {
+          state.byClientId.set(b.client_order_id, { size: b.size, filled: b.size });
           state.position = { size, entry: MARK, iso: Math.abs(size) * MARK };
           state.available -= Math.abs(size) * MARK;
         }
@@ -127,11 +152,20 @@ const server = http.createServer((req, res) => {
       }
       case "POST /v2/isoMargin":
         state.isoAdds.push(Number(b.amount));
-        if (state.position) state.position.iso += Number(b.amount);
-        state.available -= Number(b.amount);
+        if (!state.isoSilentlyRejected) {
+          if (state.isoLagReads) state.queuedIso.push({ amount: Number(b.amount), reads: state.isoLagReads });
+          else if (state.position) state.position.iso += Number(b.amount);
+          state.available -= Number(b.amount);
+        }
         if (state.isoLosesResponse) return json({ error: "bad gateway" }, 502);
         return json({ symbol: b.symbol, request_id: "m1" });
       case "GET /v2/positions": {
+        for (const q of state.queuedIso) if (--q.reads <= 0 && state.position) state.position.iso += q.amount;
+        state.queuedIso = state.queuedIso.filter((q) => q.reads > 0);
+        if (state.emptyReads > 0) {
+          state.emptyReads--;
+          return json({ positions: [] });
+        }
         const p = state.position;
         return json({
           positions: p
@@ -300,6 +334,88 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     await sql`update plans set status = 'closed' where id = ${d.plan.id}`;
     state.position = null;
   });
+
+  it("behaves like the real, asynchronous Strike: margin, closes, reservations, lost confirms", async () => {
+    state.position = null;
+    await sql`update plans set status = 'closed' where user_id = ${userId} and status <> 'closed'`;
+    const { plan } = await svc.createDraft(userId, "holdings", { amountHeld: 600, sharePct: 100, leverage: 1, bufferPct: 25 });
+    await svc.acknowledgeRisks(userId, plan.id);
+    const dep = await svc.prepareDeposit(userId, plan.id, "open", { address: "addr1test", utxos: ["8282"] });
+
+    // The confirm call fails although the ADA is on chain: the hash is kept, and the deposit is
+    // matched from Strike's history by it.
+    state.confirmFails = true;
+    await expect(svc.confirmDeposit(userId, dep.depositId!, "aa".repeat(32))).rejects.toThrow();
+    state.confirmFails = false;
+    const [kept] = await sql`select status, tx_hash from deposits where id = ${dep.depositId}`;
+    expect(kept).toMatchObject({ status: "built", tx_hash: "aa".repeat(32) });
+
+    // Margin adds are sequenced, not applied: the buffer only counts once the position shows it.
+    state.isoLagReads = 4; // the add only shows after the in-request checks (3 reads) and one more sync
+    const adds = state.isoAdds.length;
+    await svc.syncPlan(userId, plan.id); // credits the deposit, opens, sends the buffer add
+    let p = await svc.loadPlan(userId, plan.id);
+    expect(p.status).toBe("active");
+    expect(p.buffer_added).toBe(false);
+    expect(p.margin_pending).toMatchObject({ kind: "buffer" });
+    await svc.syncPlan(userId, plan.id);
+    await svc.syncPlan(userId, plan.id);
+    p = await svc.loadPlan(userId, plan.id);
+    expect(p.buffer_added).toBe(true);
+    expect(p.margin_pending).toBeNull();
+    expect(state.isoAdds.length - adds).toBe(1);
+    state.isoLagReads = 0;
+
+    // A top-up the engine silently rejects is not recorded as applied; after the verify window it's retried.
+    const top = await svc.prepareDeposit(userId, plan.id, "topup", { address: "addr1test", utxos: ["8282"], amountUsd: 20 });
+    await svc.confirmDeposit(userId, top.depositId!, "bb".repeat(32));
+    state.isoSilentlyRejected = true;
+    await svc.syncPlan(userId, plan.id);
+    let [t] = await sql`select status from deposits where id = ${top.depositId}`;
+    expect(t.status).toBe("credited");
+    await sql`update plans set margin_pending = jsonb_set(margin_pending, '{at}', to_jsonb(now() - interval '5 minutes')) where id = ${plan.id}`;
+    state.isoSilentlyRejected = false;
+    await svc.syncPlan(userId, plan.id); // gives up on the lost add
+    await svc.syncPlan(userId, plan.id); // adds it again, and this time it lands
+    [t] = await sql`select status, applied_usd from deposits where id = ${top.depositId}`;
+    expect(t.status).toBe("applied");
+    expect(Number(t.applied_usd)).toBeGreaterThan(19);
+
+    // A close that fills only half: the plan stays closing, one empty read doesn't close it, and
+    // the rest is re-sent on its own timer.
+    state.closeFill = 0.5;
+    const closing = await svc.closePlan(userId, plan.id);
+    expect(closing.status).toBe("closing");
+    expect(state.position).not.toBeNull();
+    state.emptyReads = 1;
+    expect((await svc.syncPlan(userId, plan.id)).status).toBe("closing");
+    state.closeFill = 1;
+    await sql`update plans set close_sent_at = now() - interval '1 minute' where id = ${plan.id}`;
+    await svc.syncPlan(userId, plan.id); // re-sends the close
+    p = await svc.syncPlan(userId, plan.id);
+    expect(state.position).toBeNull();
+    expect(p.status).toBe("closed");
+    expect(p.close_attempts).toBe(2);
+
+    // A funding plan that's discarded releases its credited deposit for the next plan.
+    const d2 = await svc.createDraft(userId, "holdings", { amountHeld: 700, sharePct: 100 });
+    await svc.acknowledgeRisks(userId, d2.plan.id);
+    const dep2 = await svc.prepareDeposit(userId, d2.plan.id, "open", { address: "addr1test", utxos: ["8282"] });
+    state.orderRejected = true; // keep it from opening
+    await svc.confirmDeposit(userId, dep2.depositId!, "cc".repeat(32));
+    await svc.syncPlan(userId, d2.plan.id).catch(() => null);
+    state.orderRejected = false;
+    expect((await sql`select status from deposits where id = ${dep2.depositId}`)[0].status).toBe("credited");
+    await svc.closePlan(userId, d2.plan.id);
+    expect((await sql`select status from deposits where id = ${dep2.depositId}`)[0].status).toBe("released");
+    const d3 = await svc.createDraft(userId, "holdings", { amountHeld: 700, sharePct: 100 });
+    await svc.acknowledgeRisks(userId, d3.plan.id);
+    expect((await svc.prepareDeposit(userId, d3.plan.id, "open", { address: "addr1test", utxos: [] })).needed).toBe(false);
+
+    // Bigger than Strike's largest market order: refused at the preview, before any money moves.
+    await expect(svc.createDraft(userId, "holdings", { amountHeld: 3_000_000, sharePct: 100 })).rejects.toThrow(/larger than Strike takes/);
+    await sql`update plans set status = 'closed' where id = ${d3.plan.id}`;
+  }, 30_000);
 
   it("refuses a second live plan on the same market", async () => {
     state.position = null;

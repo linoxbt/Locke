@@ -74,3 +74,18 @@ describe("operating costs plan", () => {
     expect(pts[1].with).toBeCloseTo(pts[0].with, 0);
   });
 });
+
+describe("input checks added after the second audit", () => {
+  it("refuses fractional leverage, an empty budget, and orders above Strike's maximum", async () => {
+    const { parseInputs, sizePlan, PlanInputError } = await import("@/lib/domain/plans");
+    expect(() => parseInputs("holdings", { amountHeld: 1000, leverage: 1.5 })).toThrow(PlanInputError);
+    const costs = { litresPerMonth: 1000, pumpPrice: 1000, fxRate: 1500, currency: "NGN", months: 3, crudeSharePct: 50 };
+    expect(() => parseInputs("costs", { ...costs, budget: { monthlyMax: null, stressPct: 50 } })).toThrow(/monthly budget/);
+    expect(() => parseInputs("costs", { ...costs, budget: { monthlyMax: "", stressPct: 50 } })).toThrow(/monthly budget/);
+    expect((parseInputs("costs", costs) as { coverPct: number }).coverPct).toBe(100);
+    const rules = { symbol: "WTI-USD", stepSize: 0.01, minQty: 0.01, minNotional: 10, maxQty: 500, tiers: [] };
+    const fees = { takerRate: 0.0005, builderBps: 5 };
+    const big = parseInputs("costs", { ...costs, litresPerMonth: 1_000_000, crudeSharePct: 100, months: 6 });
+    expect(() => sizePlan("costs", big, 100, rules, fees)).toThrow(/larger than Strike takes/);
+  });
+});

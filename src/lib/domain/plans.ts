@@ -57,7 +57,9 @@ function num(v: unknown, name: string, min: number, max: number): number {
 
 /** Validate and normalise untrusted form input. Throws PlanInputError. */
 export function parseInputs(type: PlanType, raw: Record<string, unknown>): PlanInputs {
+  // Strike sets leverage in whole steps.
   const leverage = num(raw.leverage ?? 1, "Leverage", 1, 3);
+  if (!Number.isInteger(leverage)) throw new PlanInputError("Leverage must be 1x, 2x or 3x");
   const bufferPct = num(raw.bufferPct ?? 25, "Margin buffer", 0, 200);
   if (type === "holdings") {
     const h: HoldingsInputs = {
@@ -85,8 +87,10 @@ export function parseInputs(type: PlanType, raw: Record<string, unknown>): PlanI
   };
   if (isCountry(raw.country)) c.country = raw.country;
   // Budget mode: the server works out the cover from the budget, never trusting a client figure.
+  // A budget that was sent but is empty or not a number is an error, not a silent full hedge.
   const b = raw.budget as { monthlyMax?: unknown; stressPct?: unknown } | null | undefined;
-  if (b && b.monthlyMax != null && b.monthlyMax !== "") {
+  if (b != null) {
+    if (typeof b !== "object" || b.monthlyMax == null || b.monthlyMax === "") throw new PlanInputError("Enter your monthly budget");
     const monthlyMax = num(b.monthlyMax, "Monthly budget", 0.01, 1e12);
     const stressPct = num(b.stressPct ?? 50, "Crude rise to protect against", 5, 200);
     const r = budgetCover(c, monthlyMax, stressPct);
@@ -124,6 +128,11 @@ export function sizePlan(
   }
   const size = roundDownToStep(rawSize, rules.stepSize);
   const notional = size * price;
+  if (rules.maxQty != null && size > rules.maxQty) {
+    throw new PlanInputError(
+      `This plan is larger than Strike takes in one order on ${rules.symbol} (at most ${rules.maxQty}; this plan is ${size}). Protect a smaller share or fewer months.`
+    );
+  }
   if (size < rules.minQty || notional < rules.minNotional) {
     throw new PlanInputError(
       `This plan is too small to hedge: Strike's minimum order is $${rules.minNotional} on ${rules.symbol} (this plan is $${notional.toFixed(2)}).`

@@ -111,15 +111,20 @@ export const DEMO_THRESHOLDS: Thresholds = {
 
 /** Leaving Action takes a ratio this far below the Action level, so a ratio hovering at it doesn't flap. */
 export const ACTION_EXIT_FACTOR = 0.92;
+/** Leaving one of Strike's levels (70/90/100%) takes a ratio this far below it. */
+export const STRIKE_EXIT_FACTOR = 0.95;
 
 /**
  * Risk level with hysteresis: once at Watch or worse, leave only below watchExit; once at Action
- * or worse, step down to Watch only below action × ACTION_EXIT_FACTOR.
+ * or worse, step down to Watch only below action × ACTION_EXIT_FACTOR; Strike's levels step down
+ * only below level × STRIKE_EXIT_FACTOR.
  */
 export function riskLevel(ratio: number, prev: RiskLevel, th: Thresholds = LOCKE_THRESHOLDS): RiskLevel {
-  if (ratio >= STRIKE_LEVELS.liquidation) return "liquidation";
-  if (ratio >= STRIKE_LEVELS.reduceOnly) return "reduce_only";
-  if (ratio >= STRIKE_LEVELS.marginCall) return "margin_call";
+  // Strike's levels get the same treatment: once reached, a level holds until the ratio is clearly below it.
+  const holds = (level: RiskLevel, at: number) => ratio >= at || (LEVEL_RANK[prev] >= LEVEL_RANK[level] && ratio >= at * STRIKE_EXIT_FACTOR);
+  if (holds("liquidation", STRIKE_LEVELS.liquidation)) return "liquidation";
+  if (holds("reduce_only", STRIKE_LEVELS.reduceOnly)) return "reduce_only";
+  if (holds("margin_call", STRIKE_LEVELS.marginCall)) return "margin_call";
   if (ratio >= th.action) return "action";
   if (LEVEL_RANK[prev] >= LEVEL_RANK.action && ratio >= th.action * ACTION_EXIT_FACTOR) return "action";
   if (ratio >= th.watch) return "watch";
