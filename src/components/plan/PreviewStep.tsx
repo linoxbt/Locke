@@ -15,7 +15,10 @@ export function RiskList({ type, className = "" }: { type: PlanType; className?:
       <li>Locke is a tool, not financial advice; you decide what to protect.</li>
       <li>Hedges can lose money on their own: a holdings hedge gives up upside, a fuel hedge loses if fuel prices fall.</li>
       {type === "costs" && <li>The fuel plan is partial: local prices also move with exchange rates, taxes and policy.</li>}
-      <li>Positions can be liquidated if margin runs out. Locke alerts you first, but can&apos;t top up without your signature.</li>
+      <li>
+        Positions can be liquidated if margin runs out. Locke watches margin around the clock and flags a plan the moment it needs a top-up,
+        but you only see it when you open Locke: it can&apos;t message you or top up without your signature.
+      </li>
       <li>The deposit converts ADA to a USD balance on Strike, which slightly lowers the ADA you have staked.</li>
       <li>Strike has eligibility rules; check that you&apos;re allowed to use it before you fund a plan.</li>
     </ul>
@@ -36,6 +39,21 @@ export function RiskCheckbox({ checked, onChange }: { checked: boolean; onChange
   );
 }
 
+/** Strike couldn't price the plan. Polls keep asking for a price; this says so and offers to ask now. */
+export function PricingUnavailable({ error, busy, onRetry }: { error: string; busy: boolean; onRetry(): void }) {
+  return (
+    <Card className="flex flex-wrap items-center justify-between gap-4">
+      <div className="min-w-0">
+        <p className="text-[14px] text-ink">Can&apos;t price this plan right now — retrying.</p>
+        <p className="mt-1 text-[13px] text-ink-2">{error}</p>
+      </div>
+      <Button variant="ghost" busy={busy} onClick={onRetry}>
+        Retry now
+      </Button>
+    </Card>
+  );
+}
+
 export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
   const { detail, refresh } = usePlan();
   const router = useRouter();
@@ -43,6 +61,7 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
   const [accepted, setAccepted] = useState(p.riskAcknowledged);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   if (!detail.preview) {
     // The plan moved past the preview (funded or opened elsewhere): nothing to price any more.
@@ -54,6 +73,19 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
             Go to plan <Arrow />
           </LinkButton>
         </Card>
+      );
+    }
+    if (detail.previewError) {
+      return (
+        <PricingUnavailable
+          error={detail.previewError}
+          busy={retrying}
+          onRetry={async () => {
+            setRetrying(true);
+            await refresh({ preview: true });
+            setRetrying(false);
+          }}
+        />
       );
     }
     return (

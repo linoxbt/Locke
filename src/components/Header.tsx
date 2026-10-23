@@ -89,12 +89,15 @@ export function Header() {
                 Connect
               </Link>
             )}
-            <Link
-              href={cta.href}
-              className={`${pill} ${me ? `num ${path === "/account" ? "bg-ink text-paper" : quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}
-            >
-              {cta.label}
-            </Link>
+            {/* On the sign-in page itself, "Get started" would only link back to it. */}
+            {(me || path !== "/connect") && (
+              <Link
+                href={cta.href}
+                className={`${pill} ${me ? `num ${path === "/account" ? "bg-ink text-paper" : quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}
+              >
+                {cta.label}
+              </Link>
+            )}
             <button
               ref={menuButton}
               type="button"
@@ -136,9 +139,11 @@ export function Header() {
                 </Link>
               ))}
             </nav>
-            <Link href={me ? "/protect" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
-              {me ? "New protection plan" : "Get started"}
-            </Link>
+            {(me || path !== "/connect") && (
+              <Link href={me ? "/protect" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
+                {me ? "New protection plan" : "Get started"}
+              </Link>
+            )}
           </div>
         </div>
       )}

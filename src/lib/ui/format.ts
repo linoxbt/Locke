@@ -29,6 +29,11 @@ export function local(n: number | null | undefined, currency: string, digits = 0
   return `${currency} ${n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 
+/** A local price: whole units from 100 up, cents below (GHS 18.46, NGN 1,250). */
+export function localPrice(n: number | null | undefined, currency: string): string {
+  return local(n, currency, n != null && Math.abs(n) < 100 ? 2 : 0);
+}
+
 /** Compact local amount for tight table cells: NGN 1.88M, NGN 950K. */
 export function localCompact(n: number | null | undefined, currency: string): string {
   if (n == null || !isFinite(n)) return "—";

@@ -7,7 +7,7 @@ import { Arrow, Card, Eyebrow, LinkButton, MarginBar, Stat, SUBTLE } from "../ui
 import { DelegationPanel } from "./DelegationPanel";
 import { usePlan } from "./PlanProvider";
 import type { CostsInputs, HoldingsInputs } from "@/lib/domain/types";
-import { local, num, pct, price, signedUsd, usd } from "@/lib/ui/format";
+import { localPrice, num, pct, price, signedUsd, usd } from "@/lib/ui/format";
 import { Ago } from "../Time";
 
 export function PlanOverview() {
@@ -20,7 +20,7 @@ export function PlanOverview() {
   const pending = pendingText(p);
   const tone = toneFor(p);
   const dark = tone === "cobalt" || tone === "danger";
-  const fmtHeadline = (n: number) => (p.type === "holdings" ? usd(n, 0) : local(n, cur, 0));
+  const fmtHeadline = (n: number) => (p.type === "holdings" ? usd(n, 0) : localPrice(n, cur));
 
   return (
     <div className="space-y-3">
@@ -30,9 +30,9 @@ export function PlanOverview() {
             <div className="display text-[18px]">
               {p.riskLevel === "action" ? "Action needed." : p.riskLevel === "margin_call" ? "Margin call on Strike." : "This plan is at risk."}
             </div>
-            <p className="mt-1 text-[14px] text-paper/80">
-              Liquidation is {pct(p.liquidationDistance, 1)} away (margin ratio {pct(p.ratio, 1)}). Top up {usd(p.suggestedTopUpUsd)} to move it back
-              to a safe distance.
+            <p className="mt-1 text-[14px] text-paper">
+              Liquidation is {pct(p.liquidationDistance, 1)} away and margin health is low. Top up {usd(p.suggestedTopUpUsd)} to move it back to a
+              safe distance.
             </p>
           </div>
           <LinkButton href={`${base}/top-up`} variant="paper" size="lg" className="shrink-0">
@@ -100,7 +100,7 @@ export function PlanOverview() {
         <Card className="lg:col-span-8">
           <div className="flex items-baseline justify-between">
             <h2 className="display text-[17px]">{h.caption}</h2>
-            <span className="text-[13px] text-ink-3">since opening</span>
+            <span className="text-[13px] text-ink-3">last 7 days</span>
           </div>
           <div className="mt-6">
             <LineChart

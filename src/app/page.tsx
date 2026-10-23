@@ -86,7 +86,7 @@ export default async function HomePage() {
             />
           </Tile>
           <Tile tone="bg-cobalt text-paper" className="min-h-[150px] sm:min-h-[168px]" title="Isolated margin" sub="Trouble in one plan never touches another" />
-          <Tile tone="bg-danger text-paper" className="min-h-[150px] sm:min-h-[168px]" title="Alerts before Strike's" sub="At 10% from liquidation, not after" />
+          <Tile tone="bg-danger text-paper" className="min-h-[150px] sm:min-h-[168px]" title="Alerts before Strike's" sub="Flagged in Locke at 10% from liquidation, not after" />
           <Tile tone="bg-lime text-ink" className="min-h-[150px] sm:min-h-[168px]" title="Replay" sub="Your plan against 180 days of real prices">
             <ReplaySpark />
           </Tile>
@@ -140,7 +140,7 @@ function Tile({
     <div className={`flex flex-col rounded-[10px] p-4 sm:p-5 ${tone} ${className}`}>
       <h3 className="display text-[18px] leading-tight sm:text-[20px]">{title}</h3>
       {children}
-      <p className={`text-[12px] leading-snug opacity-70 sm:text-[13px] ${children ? "mt-4" : "mt-auto pt-6"}`}>{sub}</p>
+      <p className={`text-[12px] leading-snug sm:text-[13px] ${children ? "mt-4" : "mt-auto pt-6"}`}>{sub}</p>
     </div>
   );
 }

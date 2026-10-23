@@ -4,11 +4,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { runDeposit, StepTracker, type DepositStep } from "../DepositFlow";
 import { Field, Slider } from "../form";
-import { Arrow, Button, Card, Display, ErrorNote, inputCls, LinkButton, Stat } from "../ui";
+import { When } from "../Time";
+import { Arrow, Button, Card, Display, ErrorNote, inputCls, LinkButton, MarginBar, Stat } from "../ui";
 import { useWallet } from "../WalletProvider";
 import { usePlan } from "./PlanProvider";
 import type { CostsInputs, HoldingsInputs } from "@/lib/domain/types";
-import { api, errorMessage } from "@/lib/ui/api";
+import { api, ApiError, errorMessage } from "@/lib/ui/api";
 import { num, pct, signedUsd, usd } from "@/lib/ui/format";
 
 function ActionLayout({ title, rest, intro, children }: { title: string; rest: string; intro: React.ReactNode; children: React.ReactNode }) {
@@ -25,13 +26,15 @@ function ActionLayout({ title, rest, intro, children }: { title: string; rest: s
 
 export function TopUpForm({ adaPrice }: { adaPrice: number | null }) {
   const { detail, refresh } = usePlan();
-  const { ensureWallet } = useWallet();
+  const { ensureWallet, me } = useWallet();
   const plan = detail.plan;
   const [amount, setAmount] = useState(() => String(Math.max(6, Math.ceil(plan.suggestedTopUpUsd || 6))));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<DepositStep | null>(null);
   const [tx, setTx] = useState<string | undefined>();
+  // A top-up on its way (on Cardano, or credited on Strike and not yet added to this plan's margin).
+  const pending = detail.deposits.find((x) => x.purpose === "topup" && (x.status === "submitted" || x.status === "credited"));
 
   const usdAmt = Number(amount) || 0;
   const pos = plan.position;
@@ -44,6 +47,7 @@ export function TopUpForm({ adaPrice }: { adaPrice: number | null }) {
       const w = await ensureWallet();
       await runDeposit({
         wallet: w,
+        sessionAddress: me?.address ?? null,
         planId: plan.id,
         purpose: "topup",
         amountUsd: usdAmt,
@@ -79,11 +83,13 @@ export function TopUpForm({ adaPrice }: { adaPrice: number | null }) {
         </>
       }
     >
-      {step === "submitted" ? (
+      {step === "submitted" || pending ? (
         <div>
-          <StepTracker step="submitted" txHash={tx} />
+          <StepTracker step={pending?.status === "credited" ? "confirmed" : "submitted"} txHash={tx ?? pending?.tx_hash ?? undefined} />
           <p className="mt-5 text-[14px] leading-relaxed text-ink-2">
-            Once Strike credits the deposit, Locke adds it to this plan&apos;s margin. Your other plans are untouched.
+            {pending?.status === "credited"
+              ? "Strike has credited the top-up. Locke is adding it to this plan's margin; a new top-up can start once that's done."
+              : "Once Strike credits the deposit, Locke adds it to this plan's margin. Your other plans are untouched."}
           </p>
           <LinkButton href={`/plans/${plan.id}`} className="mt-6">
             Back to plan <Arrow />
@@ -94,9 +100,15 @@ export function TopUpForm({ adaPrice }: { adaPrice: number | null }) {
           <Field label="Amount in USD" hint={adaPrice && usdAmt ? `≈ ${num(usdAmt / adaPrice, 1)} ADA from your wallet. Minimum $6.` : "Minimum $6."}>
             <input className={inputCls} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </Field>
-          <div className="grid grid-cols-2 gap-3 rounded-2xl bg-mist p-4">
-            <Stat label="Margin ratio now" value={pct(plan.ratio, 2)} />
-            <Stat label="After top-up" value={pct(newRatio, 2)} tone="ok" />
+          <div className="space-y-4 py-2">
+            <div>
+              <div className="mb-2 text-[13px] text-ink-2">Margin health now</div>
+              <MarginBar ratio={plan.ratio} watch={plan.thresholds.watch} action={plan.thresholds.action} />
+            </div>
+            <div>
+              <div className="mb-2 text-[13px] text-ink-2">After this top-up</div>
+              <MarginBar ratio={newRatio} watch={plan.thresholds.watch} action={plan.thresholds.action} />
+            </div>
           </div>
           <ErrorNote error={error} />
           <Button size="lg" className="w-full justify-between" busy={busy} disabled={usdAmt < 6} onClick={submit}>
@@ -132,10 +144,14 @@ export function ResizeForm() {
     } catch (e) {
       setError(errorMessage(e));
       setBusy(false);
+      // Too early for the next month (409): pick up when it's due.
+      if (e instanceof ApiError && e.status === 409) void refresh();
     }
   };
 
   if (!isHoldings) {
+    const dueAt = plan.nextMonthlyReduceAt ?? null;
+    const early = dueAt != null && new Date(dueAt).getTime() > Date.now();
     return (
       <ActionLayout
         title="Resize."
@@ -147,14 +163,20 @@ export function ResizeForm() {
             <Stat label="Close now" value={`${num((plan.position?.size ?? 0) / c.months, 2)} WTI`} />
             <Stat label="Months left" value={`${c.months} → ${Math.max(0, c.months - 1)}`} />
           </div>
+          {dueAt && c.months > 1 && (
+            <p className="text-[13px] text-ink-2">
+              {early ? "The next month can be closed from " : "A month has been due since "}
+              <When iso={dueAt} />.
+            </p>
+          )}
           <ErrorNote error={error} />
           {c.months <= 1 ? (
             <LinkButton href={`/plans/${plan.id}/close`} size="lg" variant="ink" className="w-full">
               Last month: close the plan instead <Arrow />
             </LinkButton>
           ) : (
-            <Button size="lg" className="w-full justify-between" busy={busy} onClick={() => submit({ action: "month" })}>
-              Close one month on Strike <Arrow />
+            <Button size="lg" className="w-full justify-between" busy={busy} disabled={early} onClick={() => submit({ action: "month" })}>
+              {early ? "Not due yet" : "Close one month on Strike"} <Arrow />
             </Button>
           )}
         </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "@/lib/ui/api";
-import { local, pct, usd } from "@/lib/ui/format";
+import { localPrice, pct, usd } from "@/lib/ui/format";
 import { LineChart } from "./LineChart";
 import { Slider } from "./form";
 import { Display, ErrorNote, Spinner } from "./ui";
@@ -74,7 +74,7 @@ export function ReplayPanel({ planId, type, currency, litres }: { planId: string
         { label: "With Locke", color: "var(--color-lime)", area: true, values: data.points.map((p) => perLitre(p.with)) },
       ]
     : [];
-  const fmt = (n: number) => (type === "holdings" ? usd(n, 0) : local(n, currency, 0));
+  const fmt = (n: number) => (type === "holdings" ? usd(n, 0) : localPrice(n, currency));
   const first = data?.points[0];
   const last = data?.points[data.points.length - 1];
   const fmtDate = (t: number) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });

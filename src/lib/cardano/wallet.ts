@@ -2,7 +2,7 @@
 
 // CIP-30 wallet access (Eternl, Lace, Vespr, ...). Browser only.
 
-import { addressToBech32, stakeFromBaseAddress, walletAddressBytes } from "./bech32";
+import { addressToBech32, bech32Decode, stakeFromBaseAddress, walletAddressBytes } from "./bech32";
 import { bytesToHex, utf8ToHex } from "./bytes";
 import { decodeLovelace, mergeWitnesses } from "./cbor";
 
@@ -33,25 +33,34 @@ type WalletCall = "enable" | "signData" | "signTx" | "submitTx";
 export function walletError(e: unknown, call: WalletCall): Error {
   const { code, info, message } = (e ?? {}) as { code?: number; info?: string; message?: string };
   const text = info || message || (typeof e === "string" ? e : "");
-  const err = translate(code, text, call);
+  const err = translate(code, text, call) as WalletErr;
   // The wallet's own words, for the cases where Locke's translation isn't the whole story.
-  (err as WalletErr).walletText = text;
-  (err as WalletErr).refused = err.message === CANCELLED || err.message === NOT_ALLOWED;
+  err.walletText = text;
+  err.code = code;
+  err.refused = err.message === CANCELLED || err.message === NOT_ALLOWED;
   return err;
 }
 
-type WalletErr = Error & { walletText?: string; refused?: boolean };
+type WalletErr = Error & { walletText?: string; refused?: boolean; code?: number };
 const CANCELLED = "Request cancelled in your wallet.";
 const NOT_ALLOWED = "You didn't let Locke see your wallet. Approve the connection to continue.";
+const ACCOUNT_CHANGED = "The account in your wallet changed. Switch back, or sign in again.";
+/** A wallet that is still showing (or silently holding) an earlier request refuses new ones. */
+const STILL_OPEN = "If it didn't ask you, an earlier wallet request may still be open: close it in your wallet and try again.";
 
 function translate(code: number | undefined, text: string, call: WalletCall): Error {
+  // A node refusing the transaction ("transaction rejected: BadInputsUTxO") is a failed
+  // submission, not the user cancelling, so submitTx never reads the wallet's wording.
+  if (call === "submitTx") {
+    if (code === -4) return new Error(ACCOUNT_CHANGED);
+    return new Error(`Your wallet couldn't submit the transaction${text ? `: ${text}` : ""}. Nothing was sent; try again.`);
+  }
   // OKX says "User denied request signature" (code 4001, as on EVM chains).
   if (code === -3 || code === 4001 || (call === "signData" && code === 3) || (call === "signTx" && code === 2) || /declin|reject|cancel|denied/i.test(text)) {
     return new Error(call === "enable" ? NOT_ALLOWED : CANCELLED);
   }
-  if (code === -4) return new Error("The account in your wallet changed. Switch back, or sign in again.");
+  if (code === -4) return new Error(ACCOUNT_CHANGED);
   if (call === "signData" && code === 2) return new Error("Your wallet can't sign with this address. Pick your main account in the wallet and try again.");
-  if (call === "submitTx") return new Error(`Your wallet couldn't submit the transaction${text ? `: ${text}` : ""}. Nothing was sent; try again.`);
   return new Error(text || "Your wallet reported an error. Try again.");
 }
 
@@ -104,18 +113,27 @@ export const EXPECTED_NETWORK_ID = Number(process.env.NEXT_PUBLIC_CARDANO_NETWOR
 
 const KNOWN = ["eternl", "lace", "vespr", "nami", "gerowallet", "yoroi", "typhoncip30", "nufi", "begin", "tokeo", "okxwallet"];
 
+type Cip30Provider = { name?: string; icon?: string; enable?: () => Promise<Cip30Api> };
+
 declare global {
   interface Window {
-    cardano?: Record<string, { name?: string; icon?: string; enable?: () => Promise<Cip30Api> }>;
+    cardano?: Record<string, Cip30Provider>;
+    okxwallet?: { cardano?: Cip30Provider };
   }
 }
 
+/** The CIP-30 provider for a wallet id. OKX's own namespace wins over its window.cardano entry. */
+function provider(id: string): Cip30Provider | undefined {
+  if (id === "okxwallet" && typeof window.okxwallet?.cardano?.enable === "function") return window.okxwallet.cardano;
+  return window.cardano?.[id];
+}
+
 export function detectWallets(): WalletOption[] {
-  if (typeof window === "undefined" || !window.cardano) return [];
-  const ids = new Set([...KNOWN, ...Object.keys(window.cardano)]);
+  if (typeof window === "undefined" || (!window.cardano && !window.okxwallet?.cardano)) return [];
+  const ids = new Set([...KNOWN, ...Object.keys(window.cardano ?? {})]);
   const out: WalletOption[] = [];
   for (const id of ids) {
-    const ns = window.cardano[id];
+    const ns = provider(id);
     if (ns && typeof ns.enable === "function" && !out.some((w) => w.name === (ns.name ?? id))) {
       out.push({ id, name: ns.name ?? id, icon: ns.icon });
     }
@@ -133,22 +151,25 @@ export interface ConnectedWallet {
   stakeAddress: string | null;
 }
 
-export async function enableWallet(id: string): Promise<ConnectedWallet> {
-  const ns = window.cardano?.[id];
+// One enable() per wallet at a time: some wallets (OKX) refuse a request while another is pending,
+// so concurrent callers share the one already on its way.
+const enabling = new Map<string, Promise<ConnectedWallet>>();
+
+/** Ask the wallet for access (CIP-30 enable). Call it from a user action: wallets may refuse otherwise. */
+export function enableWallet(id: string): Promise<ConnectedWallet> {
+  const pending = enabling.get(id);
+  if (pending) return pending;
+  const p = connect(id).finally(() => enabling.delete(id));
+  enabling.set(id, p);
+  return p;
+}
+
+async function connect(id: string): Promise<ConnectedWallet> {
+  const ns = provider(id);
   if (!ns?.enable) throw new Error("Wallet not found. Install a Cardano wallet extension.");
-  const api = await enableOnce(ns.enable.bind(ns)).catch(async (e: WalletErr) => {
-    // A refusal faster than a person can react usually means the wallet was still busy with an
-    // earlier request (OKX does this). Ask once more before giving up.
-    if (!e.refused || !(e as WalletErr & { instant?: boolean }).instant) throw e;
-    await new Promise((r) => setTimeout(r, 700));
-    return enableOnce(ns.enable!.bind(ns)).catch((e2: WalletErr & { instant?: boolean }) => {
-      if (e2.refused && e2.instant) {
-        throw new Error(
-          `Your wallet refused the connection without asking you. Open it, unlock it, make sure it has a Cardano account on mainnet, then try again.${said(e2)} ${WORKING}`
-        );
-      }
-      throw e2;
-    });
+  const api = await wallet("enable", ns.enable.bind(ns)).catch((e: WalletErr) => {
+    if (!e.refused) throw e;
+    throw new Error(`Your wallet refused the connection. ${STILL_OPEN}${said(e)}`);
   });
   for (const m of ["getNetworkId", "getUtxos", "signData", "signTx", "submitTx"] as const) {
     if (typeof api[m] !== "function") throw new Error(`This wallet can't do what Locke needs (${m} is missing). ${WORKING}`);
@@ -175,21 +196,26 @@ export async function enableWallet(id: string): Promise<ConnectedWallet> {
   return { id, api, address, addressHex: bytesToHex(addrBytes), addressRaw, stakeAddress };
 }
 
-/** Faster than anyone can read a wallet window and press Reject: the wallet answered on its own. */
-const INSTANT_REFUSAL_MS = 1200;
-
-async function enableOnce(enable: () => Promise<Cip30Api>): Promise<Cip30Api> {
-  const started = Date.now();
-  try {
-    return await wallet("enable", enable);
-  } catch (e) {
-    (e as WalletErr & { instant?: boolean }).instant = Date.now() - started < INSTANT_REFUSAL_MS;
-    throw e;
-  }
-}
-
 function said(e: WalletErr): string {
   return e.walletText ? ` (Your wallet said: "${e.walletText.slice(0, 120)}")` : "";
+}
+
+/**
+ * Whether two bech32 addresses belong to the same wallet account. Multi-address wallets (Eternl
+ * multi-account, Yoroi) hand out a different change address later, so two base addresses match on
+ * their stake credential (bytes 29..57); anything else must match exactly.
+ */
+export function sameAccount(a: string, b: string): boolean {
+  if (a === b) return true;
+  try {
+    const x = bech32Decode(a);
+    const y = bech32Decode(b);
+    const base = (d: Uint8Array) => d.length === 57 && d[0] >> 4 <= 3;
+    if (x.hrp !== y.hrp || !base(x.data) || !base(y.data)) return false;
+    return x.data.subarray(29, 57).every((v, i) => v === y.data[29 + i]);
+  } catch {
+    return false;
+  }
 }
 
 /** ADA in the wallet (whole ADA, floored). */
@@ -199,39 +225,35 @@ export async function walletAda(w: ConnectedWallet): Promise<number> {
   return Number(lovelace / BigInt(1_000_000));
 }
 
+/** signData errors about the address form: DataSignError 2 (AddressNotPK) or APIError -1 (InvalidRequest). */
+const addressRejected = (e: WalletErr) => e.code === 2 || e.code === -1;
+
 /**
  * Sign plain text (Strike challenge) → "coseSign1Hex:coseKeyHex". CIP-30 says the address is hex,
  * but wallets differ: OKX signs for the address string exactly as it returned it. Locke tries the
- * wallet's own form first, then hex, then bech32 — moving on only when the wallet answered
- * instantly (it rejected the address, nobody pressed anything), so a person who declines is
- * never asked twice.
+ * wallet's own form first, then hex, then bech32 — moving on only when the wallet said the address
+ * was the problem, so a person who declines is never asked twice.
  */
 export async function signText(w: ConnectedWallet, text: string, alreadyHex = false): Promise<string> {
   const payload = alreadyHex ? text : utf8ToHex(text);
   const forms = [...new Set([w.addressRaw, w.addressHex, w.address].filter((a): a is string => !!a))];
   let last: WalletErr | null = null;
   for (const addr of forms) {
-    const started = Date.now();
     try {
       const { signature, key } = await wallet("signData", () => w.api.signData(addr, payload));
       return `${signature}:${key}`;
     } catch (e) {
       last = e as WalletErr;
-      if (Date.now() - started >= INSTANT_REFUSAL_MS) throw e; // a person saw the request and declined it
+      if (!addressRejected(last)) break;
     }
   }
-  if (last?.refused) {
-    throw new Error(
-      `Your wallet refused to sign without showing a signature window. Unlock it, check it's on Cardano mainnet with this account selected, and try again.${said(last)} ${WORKING}`
-    );
-  }
+  if (last?.refused) throw new Error(`${CANCELLED} ${STILL_OPEN}${said(last)}`);
   throw last ?? new Error("Your wallet couldn't sign. Try again.");
 }
 
+/** Spendable UTxOs, possibly none: the server decides whether a deposit is needed at all. */
 export async function walletUtxos(w: ConnectedWallet): Promise<string[]> {
-  const utxos = await w.api.getUtxos();
-  if (!utxos?.length) throw new Error("Your wallet has no spendable ADA.");
-  return utxos;
+  return (await w.api.getUtxos()) ?? [];
 }
 
 /** Sign Strike's unsigned deposit transaction, attach witnesses and submit. Returns the tx hash. */

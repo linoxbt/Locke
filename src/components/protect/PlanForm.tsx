@@ -50,26 +50,38 @@ interface CostsUi {
 /** Describe step for one plan type. Submitting creates a draft and opens its preview page. */
 export function PlanForm({ type, adaPrice, wtiPrice }: { type: PlanType; adaPrice: number | null; wtiPrice: number | null }) {
   const router = useRouter();
-  const { ensureWallet } = useWallet();
+  const { ensureWallet, wallet } = useWallet();
   const [holdings, setHoldings] = useState<HoldingsInputs>(DEFAULT_HOLDINGS);
   const [costs, setCosts] = useState<CostsInputs>(DEFAULT_COSTS);
   const [ui, setUi] = useState<CostsUi>({ shareMode: "calibrated", mode: "full", monthlyMax: NaN, stressPct: 50 });
   const [ctx, setCtx] = useState<FuelContext | null>(null);
-  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletBalance, setWalletBalance] = useState<WalletRead>({ ada: null, busy: false, error: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tone = type === "costs" ? "lime" : "cobalt";
 
+  // A wallet already connected this visit can be read without asking it for anything.
   useEffect(() => {
-    if (type !== "holdings") return;
-    ensureWallet()
-      .then(walletAda)
+    if (type !== "holdings" || !wallet) return;
+    walletAda(wallet)
       .then((ada) => {
-        setWalletBalance(ada);
+        setWalletBalance({ ada, busy: false, error: null });
         setHoldings((h) => (h.amountHeld ? h : { ...h, amountHeld: ada }));
       })
       .catch(() => {});
-  }, [type, ensureWallet]);
+  }, [type, wallet]);
+
+  // Otherwise only on a click: wallets refuse (or stack up) access requests nobody asked for.
+  const readWallet = async () => {
+    setWalletBalance((b) => ({ ...b, busy: true, error: null }));
+    try {
+      const ada = await walletAda(await ensureWallet());
+      setWalletBalance({ ada, busy: false, error: null });
+      setHoldings((h) => ({ ...h, amountHeld: ada }));
+    } catch (e) {
+      setWalletBalance((b) => ({ ...b, busy: false, error: errorMessage(e) }));
+    }
+  };
 
   // Live WTI and exchange rates: fill today's rate for the chosen country and calibrate the crude share.
   useEffect(() => {
@@ -94,8 +106,15 @@ export function PlanForm({ type, adaPrice, wtiPrice }: { type: PlanType; adaPric
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setBusy(true);
     setError(null);
+    if (type === "costs") {
+      if (!(costs.pumpPrice > 0)) return setError("Enter the pump price you pay per litre.");
+      // An empty budget would reach the server as no budget, and hedge all of the crude share.
+      if (ui.mode === "budget" && !(ui.monthlyMax > 0)) {
+        return setError("Enter a monthly budget above zero, or choose “All of the crude share”.");
+      }
+    }
+    setBusy(true);
     try {
       const inputs =
         type === "holdings"
@@ -119,7 +138,7 @@ export function PlanForm({ type, adaPrice, wtiPrice }: { type: PlanType; adaPric
       <div className="mt-7 grid grid-cols-1 gap-3 lg:grid-cols-12">
         <Card className="space-y-7 lg:col-span-7">
           {type === "holdings" ? (
-            <HoldingsFields v={holdings} set={setHoldings} walletBalance={walletBalance} />
+            <HoldingsFields v={holdings} set={setHoldings} wallet={walletBalance} onReadWallet={readWallet} />
           ) : (
             <CostsFields v={costs} set={setCosts} ui={ui} setUi={setUi} ctx={ctx} calibrated={calibrated} />
           )}
@@ -179,12 +198,35 @@ function RiskControls<T extends { leverage: number; bufferPct: number }>({ v, se
   );
 }
 
-function HoldingsFields({ v, set, walletBalance }: { v: HoldingsInputs; set: React.Dispatch<React.SetStateAction<HoldingsInputs>>; walletBalance: number | null }) {
+interface WalletRead {
+  ada: number | null;
+  busy: boolean;
+  error: string | null;
+}
+
+function HoldingsFields({
+  v,
+  set,
+  wallet,
+  onReadWallet,
+}: {
+  v: HoldingsInputs;
+  set: React.Dispatch<React.SetStateAction<HoldingsInputs>>;
+  wallet: WalletRead;
+  onReadWallet(): void;
+}) {
   return (
     <>
       <Field
         label="ADA your business holds"
-        hint={walletBalance != null ? `${num(walletBalance, 0)} ADA in this wallet. Edit to include ADA your treasury holds elsewhere.` : "Open your wallet to pre-fill this."}
+        hint={
+          <>
+            {wallet.error ?? (wallet.ada != null ? `${num(wallet.ada, 0)} ADA in this wallet. Edit to include ADA your treasury holds elsewhere.` : "Type an amount, or read it from your wallet.")}{" "}
+            <button type="button" className="text-ink underline underline-offset-4 disabled:opacity-50" disabled={wallet.busy} onClick={onReadWallet}>
+              {wallet.busy ? "Reading…" : "Read from wallet"}
+            </button>
+          </>
+        }
       >
         <NumberInput value={v.amountHeld} min={1} suffix="ADA" onChange={(n) => set((x) => ({ ...x, amountHeld: n }))} />
       </Field>
@@ -223,7 +265,8 @@ function CostsFields({
       if (country) {
         const r = PUMP_PRICES[country][fuel];
         next.currency = COUNTRIES[country].currency;
-        if (r) next.pumpPrice = r.price;
+        // No reference: the old number would be read in the new currency, so ask for it instead.
+        next.pumpPrice = r ? r.price : NaN;
         const fx = ctx?.fx?.rates[COUNTRIES[country].currency]?.now;
         if (fx) next.fxRate = Math.round(fx * 100) / 100;
       }
@@ -231,7 +274,7 @@ function CostsFields({
     });
 
   const bill = v.litresPerMonth * v.pumpPrice;
-  const budget = ui.mode === "budget" && ui.monthlyMax > 0 ? budgetCover(v, ui.monthlyMax, ui.stressPct) : null;
+  const budget = ui.mode === "budget" && ui.monthlyMax > 0 && v.pumpPrice > 0 ? budgetCover(v, ui.monthlyMax, ui.stressPct) : null;
   const crudeCost = ctx ? crudeCostPerLitre(v.fuelType, ctx.wti.now, v.fxRate) : null;
 
   return (
@@ -346,7 +389,9 @@ function CostsFields({
           </Field>
           <p className="text-[13px] leading-relaxed text-ink-2">
             {!budget
-              ? "Enter a monthly budget."
+              ? v.pumpPrice > 0
+                ? "Enter a monthly budget."
+                : "Enter your pump price, then a monthly budget."
               : budget.ok
                 ? `Locke hedges ${budget.coverPct}% of the crude-linked cost. Today's bill is ${money(v.currency, budget.billNow)}; at crude +${ui.stressPct}% it would be ${money(v.currency, budget.billAtStress)} unhedged and stays under ${money(v.currency, ui.monthlyMax)} with the plan.`
                 : budget.reason === "below_today"
@@ -419,7 +464,7 @@ function Summary({
     );
   }
   const monthly = costs.litresPerMonth * costs.pumpPrice;
-  const budget = ui.mode === "budget" && ui.monthlyMax > 0 ? budgetCover(costs, ui.monthlyMax, ui.stressPct) : null;
+  const budget = ui.mode === "budget" && ui.monthlyMax > 0 && costs.pumpPrice > 0 ? budgetCover(costs, ui.monthlyMax, ui.stressPct) : null;
   const cover = ui.mode === "budget" ? (budget?.ok ? budget.coverPct : 0) : 100;
   const exposureUsd = ((costs.crudeSharePct / 100) * (cover / 100) * monthly * costs.months) / (costs.fxRate || 1);
   return (

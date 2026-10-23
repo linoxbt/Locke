@@ -10,14 +10,16 @@
   --color-mist: #e8e7e3;
   --color-line: #dcdbd6;
   --color-ink: #0c0c0d;
-  --color-ink-2: #6b6b70;
-  --color-ink-3: #74747a; /* 4.6:1 on paper: small grey text stays readable (WCAG AA) */
+  /* Small text must reach 4.5:1 (WCAG AA) on paper, canvas and mist: ink-2 5.3:1, ink-3 4.7:1 on mist. */
+  --color-ink-2: #5d5d62;
+  --color-ink-3: #656569;
   --color-cobalt: #2343ff;
   --color-cobalt-deep: #1530d6;
   --color-lime: #d6f36b;
   --color-watch: #ffb020;
-  --color-danger: #ff3d24;
-  --color-ok: #10a35a;
+  --color-danger: #dc2f18; /* paper text on it 4.7:1, and it on paper 4.7:1 */
+  --color-danger-ink: #b42410; /* danger text on tinted (danger/10) and mist backgrounds */
+  --color-ok: #08743f; /* 5.9:1 on paper, 4.7:1 on mist */
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-inter-tight), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
@@ -191,6 +193,12 @@ body {
 [data-fall] .fall[data-still] {
   opacity: 1;
   animation: none;
+}
+/* No painting work for loops nobody can see. Reduced motion stops them outright (below). */
+[data-offscreen] .animate-drift-up,
+[data-offscreen] .animate-drift-down,
+[data-offscreen] .loop {
+  animation-play-state: paused;
 }
 
 /* Range input: thin ink track, big thumb. */

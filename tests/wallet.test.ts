@@ -1,18 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { enableWallet, signText, walletError, type ConnectedWallet } from "@/lib/cardano/wallet";
+import { bech32Decode, bech32Encode } from "@/lib/cardano/bech32";
+import { enableWallet, sameAccount, signText, walletError, type ConnectedWallet } from "@/lib/cardano/wallet";
 
 const okxDenied = { code: 4001, message: "Request Signature: User denied request signature." };
+const addressNotPk = { code: 2, info: "Address is not a key hash for this wallet" };
 const BECH32 = "addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x";
 
-function walletThatRefuses(afterMs: number): ConnectedWallet {
-  const api = {
-    signData: () => new Promise((_, reject) => setTimeout(() => reject(okxDenied), afterMs)),
-  } as unknown as ConnectedWallet["api"];
-  return { id: "okxwallet", api, address: "addr1x", addressHex: "01", stakeAddress: null };
-}
-
 /** Behaves like OKX's documented Cardano provider: bech32 addresses, a string network id, signs only for its own address string. */
-function okxLike({ refuseFirstEnable = false } = {}) {
+function okxLike({ refuseEnable = false, wrongForm = addressNotPk as unknown, slowEnable = 0 } = {}) {
   let enables = 0;
   const signedWith: string[] = [];
   const api = {
@@ -22,24 +17,19 @@ function okxLike({ refuseFirstEnable = false } = {}) {
     getUsedAddresses: async () => [BECH32],
     signData: async (addr: string) => {
       signedWith.push(addr);
-      if (addr !== BECH32) throw okxDenied; // instant: no window shown
+      if (addr !== BECH32) throw wrongForm;
       return { signature: "aa", key: "bb" };
     },
     signTx: async () => "",
     submitTx: async () => "",
   };
-  (globalThis as { window?: unknown }).window = {
-    cardano: {
-      okxwallet: {
-        name: "OKX Wallet",
-        enable: async () => {
-          enables += 1;
-          if (refuseFirstEnable && enables === 1) throw okxDenied;
-          return api;
-        },
-      },
-    },
+  const enable = async () => {
+    enables += 1;
+    if (slowEnable) await new Promise((r) => setTimeout(r, slowEnable));
+    if (refuseEnable) throw okxDenied;
+    return api;
   };
+  (globalThis as { window?: unknown }).window = { cardano: { okxwallet: { name: "OKX Wallet", enable } } };
   return { signedWith, enables: () => enables };
 }
 
@@ -56,21 +46,22 @@ describe("wallet errors", () => {
     expect(walletError(new Error("User denied request signature."), "signTx").message).toBe("Request cancelled in your wallet.");
   });
 
-  it("says when the wallet refused before anyone could press Reject, and never re-asks a person who declined", async () => {
-    vi.useFakeTimers();
-    const fast = signText(walletThatRefuses(50), "hello");
-    const fastResult = expect(fast).rejects.toThrow(/refused to sign without showing a signature window/);
-    await vi.advanceTimersByTimeAsync(200);
-    await fastResult;
+  it("reports a node rejecting a submitted transaction as a failed submission, not a cancellation", () => {
+    const e = walletError({ code: 2, info: "transaction rejected: BadInputsUTxO" }, "submitTx");
+    expect(e.message).toMatch(/couldn't submit the transaction: transaction rejected: BadInputsUTxO/);
+    expect(walletError(new Error("Transaction rejected by node"), "submitTx").message).toMatch(/couldn't submit/);
+  });
 
+  it("never re-asks a person who declined to sign", async () => {
     const calls = vi.fn();
-    const w = walletThatRefuses(5000);
-    const sign = w.api.signData.bind(w.api);
-    w.api.signData = (a: string, p: string) => (calls(), sign(a, p));
-    const slow = signText(w, "hello");
-    const slowResult = expect(slow).rejects.toThrow("Request cancelled in your wallet.");
-    await vi.advanceTimersByTimeAsync(5100);
-    await slowResult;
+    const api = {
+      signData: async () => {
+        calls();
+        throw okxDenied;
+      },
+    } as unknown as ConnectedWallet["api"];
+    const w: ConnectedWallet = { id: "okxwallet", api, address: BECH32, addressHex: "01", addressRaw: "02", stakeAddress: null };
+    await expect(signText(w, "hello")).rejects.toThrow(/Request cancelled in your wallet\..*earlier wallet request may still be open.*User denied/);
     expect(calls).toHaveBeenCalledTimes(1);
   });
 });
@@ -86,18 +77,84 @@ describe("OKX-style wallets", () => {
     expect(okx.signedWith).toEqual([BECH32]);
   });
 
-  it("falls back to another address form when the wallet rejects one instantly", async () => {
+  it("tries another address form only when the wallet says the address is the problem", async () => {
     const okx = okxLike();
     const w = await enableWallet("okxwallet");
-    // As if the raw form were hex: the wallet refuses it instantly, then signs for bech32.
+    // As if the raw form were hex: the wallet answers AddressNotPK (code 2), then signs for bech32.
     expect(await signText({ ...w, addressRaw: w.addressHex }, "Connect to Strike")).toBe("aa:bb");
     expect(okx.signedWith).toEqual([w.addressHex, BECH32]);
+
+    const invalid = okxLike({ wrongForm: { code: -1, info: "InvalidRequest" } });
+    expect(await signText({ ...(await enableWallet("okxwallet")), addressRaw: w.addressHex }, "x")).toBe("aa:bb");
+    expect(invalid.signedWith).toEqual([w.addressHex, BECH32]);
+
+    const denied = okxLike({ wrongForm: okxDenied });
+    await expect(signText({ ...(await enableWallet("okxwallet")), addressRaw: w.addressHex }, "x")).rejects.toThrow(/Request cancelled/);
+    expect(denied.signedWith).toEqual([w.addressHex]);
   });
 
-  it("asks the wallet once more when it refuses the connection instantly", async () => {
-    const okx = okxLike({ refuseFirstEnable: true });
+  it("shares one enable() between concurrent callers", async () => {
+    vi.useFakeTimers();
+    const okx = okxLike({ slowEnable: 500 });
+    const a = enableWallet("okxwallet");
+    const b = enableWallet("okxwallet");
+    expect(a).toBe(b);
+    await vi.advanceTimersByTimeAsync(600);
+    const [wa, wb] = await Promise.all([a, b]);
+    expect(wa).toBe(wb);
+    expect(okx.enables()).toBe(1);
+    // Settled requests are forgotten: the next call asks the wallet again.
+    const again = enableWallet("okxwallet");
+    expect(again).not.toBe(a);
+    await vi.advanceTimersByTimeAsync(600);
+    await again;
+    expect(okx.enables()).toBe(2);
+  });
+
+  it("does not ask again when the wallet refuses the connection, and says why it might have", async () => {
+    const okx = okxLike({ refuseEnable: true });
+    await expect(enableWallet("okxwallet")).rejects.toThrow(/refused the connection.*earlier wallet request may still be open.*User denied request signature/);
+    expect(okx.enables()).toBe(1);
+  });
+
+  it("prefers window.okxwallet.cardano over window.cardano.okxwallet", async () => {
+    okxLike();
+    const stale = vi.fn(async () => {
+      throw okxDenied;
+    });
+    const win = (globalThis as unknown as { window: { cardano: Record<string, { enable: unknown }>; okxwallet?: unknown } }).window;
+    const real = win.cardano.okxwallet;
+    win.cardano.okxwallet = { enable: stale };
+    win.okxwallet = { cardano: real };
     const w = await enableWallet("okxwallet");
     expect(w.address).toBe(BECH32);
-    expect(okx.enables()).toBe(2);
+    expect(stale).not.toHaveBeenCalled();
+  });
+});
+
+describe("same account", () => {
+  const { hrp, data } = bech32Decode(BECH32);
+  const withPayment = (byte: number) => {
+    const d = data.slice();
+    d[1] = byte; // payment credential differs, stake credential stays
+    return bech32Encode(hrp, d);
+  };
+  const withStake = (byte: number) => {
+    const d = data.slice();
+    d[40] = byte;
+    return bech32Encode(hrp, d);
+  };
+
+  it("matches base addresses that share a stake credential", () => {
+    expect(sameAccount(BECH32, BECH32)).toBe(true);
+    expect(sameAccount(BECH32, withPayment(data[1] ^ 0xff))).toBe(true);
+    expect(sameAccount(BECH32, withStake(data[40] ^ 0xff))).toBe(false);
+  });
+
+  it("falls back to exact equality for anything else", () => {
+    const enterprise = bech32Encode(hrp, Uint8Array.from([0x61, ...data.subarray(1, 29)]));
+    expect(sameAccount(enterprise, enterprise)).toBe(true);
+    expect(sameAccount(enterprise, BECH32)).toBe(false);
+    expect(sameAccount("not an address", BECH32)).toBe(false);
   });
 });

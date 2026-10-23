@@ -30,7 +30,9 @@ export function PortfolioView({ initial }: { initial: { plans: PlanView[]; liveE
   const live = data.plans.filter((p) => p.status !== "closed");
   const closed = data.plans.filter((p) => p.status === "closed");
   const active = live.filter((p) => p.status === "active");
-  const protectedUsd = active.reduce((sum, p) => sum + (p.position ? p.position.size * p.mark : 0), 0);
+  // Without live numbers the sum would read as $0 protected: show a dash instead.
+  const unknown = !!data.liveError || active.some((p) => p.liveUnavailable);
+  const protectedUsd = unknown ? null : active.reduce((sum, p) => sum + (p.position ? p.position.size * p.mark : 0), 0);
   const attention = active.filter((p) => p.riskLevel !== "ok").length;
 
   return (
@@ -40,8 +42,10 @@ export function PortfolioView({ initial }: { initial: { plans: PlanView[]; liveE
           <Eyebrow className="text-ink-2">Total value protected</Eyebrow>
           <div className="num mt-4 text-[32px] leading-none tracking-tight sm:text-[44px]">{usd(protectedUsd, 0)}</div>
           <p className="mt-4 text-[14px] text-ink-2">
-            Hedge value across {active.length} active plan{active.length === 1 ? "" : "s"}, at Strike mark price.
-            {attention > 0 && <span className="text-danger"> {attention} need{attention === 1 ? "s" : ""} attention.</span>}
+            {protectedUsd == null
+              ? `Live prices from Strike are unavailable, so the value of ${active.length} active plan${active.length === 1 ? "" : "s"} can't be totalled right now.`
+              : `Hedge value across ${active.length} active plan${active.length === 1 ? "" : "s"}, at Strike mark price.`}
+            {attention > 0 && <span className="text-danger-ink"> {attention} need{attention === 1 ? "s" : ""} attention.</span>}
           </p>
         </div>
         <div className="flex flex-col gap-2 lg:col-span-4 lg:items-end lg:justify-end">

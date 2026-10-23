@@ -3,13 +3,13 @@
 import Link from "next/link";
 import type { CostsInputs } from "@/lib/domain/types";
 import type { PlanView } from "@/lib/server/planService";
-import { local, signedUsd, usd } from "@/lib/ui/format";
+import { localPrice, signedUsd, usd } from "@/lib/ui/format";
 import { Arrow, Card, Eyebrow, MarginBar, REVEAL, StateChip, SUBTLE, type Tone } from "./ui";
 
 export function headlineText(p: PlanView): { value: string; caption: string } {
   if (p.type === "holdings") return { value: usd(p.headline, 0), caption: "Protected value" };
   const c = p.inputs as CostsInputs;
-  return { value: local(p.headline, c.currency, 0), caption: "Effective fuel price per litre" };
+  return { value: localPrice(p.headline, c.currency), caption: "Effective fuel price per litre" };
 }
 
 /** Card colour: the plan type when healthy, the risk colour when it needs attention. */
@@ -46,7 +46,10 @@ export function PlanCard({ p }: { p: PlanView }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <Eyebrow className={SUBTLE[tone]}>{p.type === "holdings" ? "Holdings" : "Operating costs"}</Eyebrow>
-            <div className={`mt-2 text-[15px] font-medium ${REVEAL} group-hover:whitespace-normal group-hover:[overflow-wrap:anywhere]`} title={p.name}>
+            <div
+              className={`mt-2 text-[15px] font-medium ${REVEAL} group-hover:whitespace-normal group-hover:[overflow-wrap:anywhere] group-focus-visible:whitespace-normal group-focus-visible:[overflow-wrap:anywhere]`}
+              title={p.name}
+            >
               {p.name}
             </div>
           </div>
@@ -80,7 +83,12 @@ export function PlanCard({ p }: { p: PlanView }) {
           </div>
         ) : (
           <div className={`mt-6 flex items-center justify-between text-[13px] ${SUBTLE[tone]}`}>
-            <span className="line-clamp-1">{pendingText(p) ?? p.statusNote ?? (p.status === "closed" ? "Plan closed" : "Waiting on Strike")}</span>
+            <span className="line-clamp-1">
+              {pendingText(p) ??
+                (p.status === "draft"
+                  ? `${p.statusNote ? `${p.statusNote}. ` : ""}Not funded yet — continue`
+                  : p.statusNote ?? (p.status === "closed" ? "Plan closed" : "Waiting on Strike"))}
+            </span>
             <Arrow />
           </div>
         )}

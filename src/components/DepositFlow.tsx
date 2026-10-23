@@ -42,7 +42,9 @@ async function confirmOnce(depositId: string, txHash: string): Promise<boolean> 
     await api(`/api/deposits/${depositId}/confirm`, { body: { txHash } });
     return true;
   } catch (e) {
-    // A 4xx is final (unknown deposit, different tx): retrying won't help.
+    // Signed out or Strike dropped the connection: keep the hash and send it after signing in again.
+    if (e instanceof ApiError && (e.status === 401 || e.code === "reconnect")) return false;
+    // Any other 4xx is final (unknown deposit, different tx): retrying won't help.
     if (e instanceof ApiError && e.status >= 400 && e.status < 500) return true;
     return false;
   }
@@ -80,16 +82,25 @@ export async function resumePendingDeposits(): Promise<boolean> {
 /** quote → wallet signs and submits → Strike told the tx hash. Returns null when no deposit was needed. */
 export async function runDeposit(opts: {
   wallet: ConnectedWallet;
+  /** The address the session signed in with. */
+  sessionAddress: string | null;
   planId: string;
   purpose: "open" | "topup";
   amountUsd?: number;
   onStep(step: DepositStep, info?: { txHash?: string; lovelace?: string; usd?: number }): void;
 }): Promise<{ txHash: string } | null> {
-  const { wallet, planId, purpose, amountUsd, onStep } = opts;
+  const { wallet, sessionAddress, planId, purpose, amountUsd, onStep } = opts;
   onStep("quote");
+  // No UTxOs is fine when the Strike balance already covers the plan; the server decides.
   const utxos = await walletUtxos(wallet);
+  // Change goes to the session address. A multi-address wallet may now report another address of
+  // the same account: leave it out and the server uses the session's.
+  const address = sessionAddress && wallet.address === sessionAddress ? wallet.address : undefined;
   const prep = await api<Prepared>(`/api/plans/${planId}/deposit`, {
-    body: { purpose, amountUsd, address: wallet.address, utxos },
+    body: { purpose, amountUsd, address, utxos },
+  }).catch((e) => {
+    if (e instanceof ApiError && e.code === "utxos_required") throw new Error("Your wallet has no spendable ADA for this deposit.");
+    throw e;
   });
   if (!prep.needed) return null;
   onStep("sign", { lovelace: prep.lovelace, usd: prep.usdValue });
@@ -108,7 +119,20 @@ const STEPS: { key: DepositStep; label: string; hint: string }[] = [
   { key: "open", label: "Hedge open", hint: "Locke is watching it now" },
 ];
 
-export function StepTracker({ step, txHash, failed, skipDeposit }: { step: DepositStep; txHash?: string; failed?: boolean; skipDeposit?: boolean }) {
+export function StepTracker({
+  step,
+  txHash,
+  orderId,
+  failed,
+  skipDeposit,
+}: {
+  step: DepositStep;
+  txHash?: string;
+  /** Strike order id of the opening order, shown once the hedge is open. */
+  orderId?: string | null;
+  failed?: boolean;
+  skipDeposit?: boolean;
+}) {
   const idx = STEPS.findIndex((s) => s.key === step);
   const steps = skipDeposit ? STEPS.filter((s) => s.key === "quote" || s.key === "confirmed" || s.key === "open") : STEPS;
   return (
@@ -134,6 +158,7 @@ export function StepTracker({ step, txHash, failed, skipDeposit }: { step: Depos
               <span className="min-w-0">
                 <span className={`block text-[14px] ${done || current ? "text-ink" : "text-ink-3"}`}>{s.label}</span>
                 <span className="block text-[13px] text-ink-3">{s.hint}</span>
+                {s.key === "open" && done && orderId && <span className="num block break-all text-[12px] text-ink-2">Strike order {orderId}</span>}
               </span>
             </li>
           );
