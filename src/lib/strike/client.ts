@@ -167,9 +167,14 @@ const cache = new Map<string, { at: number; value: unknown }>();
 const loading = new Map<string, Promise<unknown>>();
 /** How long an expired entry may still be served when a refresh fails (Strike briefly down). */
 const STALE_OK_MS = 30 * 60_000;
+/**
+ * Prices and books go stale fast: past this, a failed refresh throws, so a margin ratio, a fill
+ * check or a deposit is never worked out from a mark minutes old and shown as live.
+ */
+const PRICE_STALE_OK_MS = 15_000;
 
-/** Cached loader: concurrent callers share one request, and a failed refresh serves the last value for a while. */
-async function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+/** Cached loader: concurrent callers share one request, and a failed refresh serves the last value for up to `staleOkMs`. */
+async function cached<T>(key: string, ttlMs: number, load: () => Promise<T>, staleOkMs = STALE_OK_MS): Promise<T> {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < ttlMs) return hit.value as T;
   let p = loading.get(key) as Promise<T> | undefined;
@@ -185,7 +190,7 @@ async function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Pr
   try {
     return await p;
   } catch (e) {
-    if (hit && Date.now() - hit.at < ttlMs + STALE_OK_MS) return hit.value as T;
+    if (hit && Date.now() - hit.at < ttlMs + staleOkMs) return hit.value as T;
     throw e;
   }
 }
@@ -209,7 +214,7 @@ export async function getMarkPrice(symbol: string): Promise<MarkPrice> {
       fundingRate: parseFloat(d.r),
       nextFundingTime: d.T,
     };
-  });
+  }, PRICE_STALE_OK_MS);
 }
 
 /** Visible order book (full depth Strike returns), as numbers. `fresh` skips the 2 s cache: use it right before an order. */
@@ -220,7 +225,7 @@ export async function getOrderBook(symbol: string, opts: { fresh?: boolean } = {
       Array.isArray(rows) ? rows.map((r) => [parseFloat(r[0]), parseFloat(r[1])] as BookLevel).filter(([p, q]) => p > 0 && q > 0) : [];
     return { bids: levels(d.bids), asks: levels(d.asks) };
   };
-  return opts.fresh ? load() : cached(`depth:${symbol}`, 2_000, load);
+  return opts.fresh ? load() : cached(`depth:${symbol}`, 2_000, load, PRICE_STALE_OK_MS);
 }
 
 export async function getMarketRules(symbol: string): Promise<MarketRules> {

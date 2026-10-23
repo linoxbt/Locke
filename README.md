@@ -28,7 +28,7 @@ Locke is not a trading terminal. Every screen is about an exposure the business 
 - **Resize and close.** Holdings plans resize to a new share or ADA amount. Costs plans close one month's worth (S ÷ T) to match fuel used. Close is a reduce-only market order.
 - **Replay.** The plan runs against up to 180 days of Strike's daily mark prices, with and without Locke, animated over about 10 seconds with a scrubber.
 - **Delegation evidence.** Koios shows the ADA is still staked to its pool and still delegated to its DRep.
-- **Withdraw.** Free balance on Strike goes back to the connected wallet, signed by the wallet.
+- **Withdraw.** Free balance on Strike goes back to the connected wallet, signed by the wallet. Money credited for a plan that hasn't used it yet (an opening deposit or a pending top-up) is set aside and can't be withdrawn.
 
 ### Risk levels
 
