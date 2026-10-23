@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bech32Decode, bech32Encode, addressToBech32, isBech32Stake } from "@/lib/cardano/bech32";
+import { bech32Decode, bech32Encode, addressToBech32, isBech32Stake, stakeFromBaseAddress, walletAddressBytes } from "@/lib/cardano/bech32";
 import { bytesToHex, hexToBytes } from "@/lib/cardano/bytes";
 import { decodeLovelace, mergeWitnesses, skipItem } from "@/lib/cardano/cbor";
 
@@ -57,5 +57,29 @@ describe("bech32", () => {
     expect(addressToBech32(bytes, 1).startsWith("addr1")).toBe(true);
     expect(addressToBech32(bytes, 0).startsWith("addr_test1")).toBe(true);
     expect(bytesToHex(bech32Decode(addressToBech32(bytes, 1)).data)).toBe("01" + "ab".repeat(56));
+  });
+});
+
+describe("wallet addresses", () => {
+  // CIP-19 test vectors: a mainnet base address and the reward address for its stake key.
+  const base = "addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x";
+  const stake = "stake1uyehkck0lajq8gr28t9uxnuvgcqrc6070x3k9r8048z8y5gh6ffgw";
+
+  it("reads hex and bech32 addresses alike", () => {
+    const bytes = walletAddressBytes(base);
+    expect(walletAddressBytes(bytesToHex(bytes))).toEqual(bytes);
+    expect(addressToBech32(bytes, 1)).toBe(base);
+  });
+
+  it("derives the stake address from a base address", () => {
+    const reward = stakeFromBaseAddress(walletAddressBytes(base));
+    expect(reward).not.toBeNull();
+    expect(addressToBech32(reward!, 1)).toBe(stake);
+  });
+
+  it("returns null for addresses without a stake credential", () => {
+    // Enterprise address (header type 6): payment credential only.
+    const enterprise = new Uint8Array([0x61, ...walletAddressBytes(base).subarray(1, 29)]);
+    expect(stakeFromBaseAddress(enterprise)).toBeNull();
   });
 });
