@@ -19,6 +19,8 @@ export class StrikeError extends Error {
 export interface ApiKeys {
   publicKey: string;
   privateKey: string;
+  /** Builder fee share the user approved when connecting; orders never carry more. */
+  feeShareBps?: number;
 }
 
 // ── Clock ──
@@ -264,7 +266,8 @@ export function placeMarketOrder(
   };
   if (o.reduceOnly) body.reduce_only = true;
   if (o.closePosition) body.close_position = true;
-  const bps = config.builderFeeBps;
+  // The server's fee, capped at what this user approved (the setting may have been raised since).
+  const bps = Math.min(config.builderFeeBps, keys.feeShareBps ?? config.builderFeeBps);
   return strikeRequest(keys, "POST", "/v2/order", body, bps > 0 ? { "X-Builder-Fee-Bps": String(bps) } : undefined);
 }
 

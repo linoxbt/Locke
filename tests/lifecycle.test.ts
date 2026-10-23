@@ -207,8 +207,11 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     expect(state.isoAdds).toHaveLength(2);
     expect(state.isoAdds[1]).toBeGreaterThanOrEqual(19.9);
 
+    // Raising the server's fee later never charges more than the share this user approved.
+    process.env.STRIKE_BUILDER_FEE_BPS = "15";
     await svc.closePlan(userId, plan.id);
-    expect(state.orders.at(-1)).toMatchObject({ side: "buy", reduce_only: true });
+    process.env.STRIKE_BUILDER_FEE_BPS = "5";
+    expect(state.orders.at(-1)).toMatchObject({ side: "buy", reduce_only: true, fee: "5" });
     const closed = await svc.syncPlan(userId, plan.id);
     expect(closed.status).toBe("closed");
 
