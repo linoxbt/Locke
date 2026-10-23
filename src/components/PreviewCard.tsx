@@ -40,7 +40,7 @@ export function PreviewCard({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Eyebrow className={SUBTLE[tone]}>{preview.label}</Eyebrow>
           <span className={`num rounded-full px-3 py-1 text-[12px] ${tone === "cobalt" ? "bg-paper/15" : "bg-ink/10"}`}>
-            {s.symbol} · {s.side === "sell" ? "short" : "long"} · {s.leverage}x
+            {s.symbol} · protects against a {s.side === "sell" ? "fall" : "rise"} · {s.leverage}x
           </span>
         </div>
         <p className="display mt-7 max-w-[22ch] text-[21px] sm:text-[26px]">

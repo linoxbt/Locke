@@ -17,14 +17,14 @@ const TONE: Record<Tone, string> = {
   watch: "bg-watch text-ink",
 };
 
-/** Muted text colour that stays legible on each card tone. */
+/** Muted text colour that stays legible (4.5:1 or better) on each card tone. */
 export const SUBTLE: Record<Tone, string> = {
   paper: "text-ink-2",
   mist: "text-ink-2",
   ink: "text-paper/55",
-  cobalt: "text-paper/70",
+  cobalt: "text-paper/85",
   lime: "text-ink/60",
-  danger: "text-paper/75",
+  danger: "text-paper", // danger is too light a surface for faded text
   watch: "text-ink/65",
 };
 
@@ -159,7 +159,7 @@ const CHIP: Record<string, { label: string; cls: string }> = {
   action: { label: "Action needed", cls: "bg-danger text-paper" },
   margin_call: { label: "Margin call", cls: "bg-danger text-paper" },
   reduce_only: { label: "Reduce only", cls: "bg-danger text-paper" },
-  liquidation: { label: "Liquidation", cls: "bg-ink text-danger" },
+  liquidation: { label: "Liquidation", cls: "bg-ink text-paper" },
 };
 
 export function StateChip({ status, level }: { status: string; level?: RiskLevel }) {
@@ -170,6 +170,8 @@ export function StateChip({ status, level }: { status: string; level?: RiskLevel
       {(key === "active" || key === "opening" || key === "funding") && (
         <span className={`h-1.5 w-1.5 rounded-full bg-current ${key !== "active" ? "animate-pulse" : ""}`} aria-hidden />
       )}
+      {/* Red as a mark, not as small text: red on ink is too dim to read. */}
+      {key === "liquidation" && <span className="h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />}
       {s.label}
     </span>
   );
@@ -195,6 +197,10 @@ export function MarginBar({
     { at: 0.7, label: "Strike margin call" },
     { at: 0.9, label: "Strike reduce-only" },
   ];
+  const level =
+    ratio == null ? "Unknown" : r >= 0.9 ? "Reduce only" : r >= 0.7 ? "Margin call" : ratio >= action ? "Action needed" : ratio >= watch ? "Watch" : "Healthy";
+  // Small labels: on cobalt or danger only full paper stays legible.
+  const muted = onDark ? "text-paper" : "text-ink-3";
   return (
     <div>
       <div
@@ -204,13 +210,21 @@ export function MarginBar({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(r * 100)}
+        aria-valuetext={ratio == null ? "Unknown" : `${level}, ${Math.round(r * 100)}%`}
       >
         <div className={`h-full rounded-full ${fill} transition-[width] duration-700`} style={{ width: `${Math.max(2, r * 100)}%` }} />
         {ticks.map((t) => (
           <span key={t.label} title={t.label} className={`absolute top-0 h-full w-0.5 ${onDark ? "bg-paper/30" : "bg-paper"}`} style={{ left: `${t.at * 100}%` }} />
         ))}
       </div>
-      <div className={`num mt-2 flex justify-between text-[11px] ${onDark ? "text-paper/50" : "text-ink-3"}`}>
+      <div className={`num relative mt-1 h-3.5 text-[10px] ${muted}`} aria-hidden>
+        {[...new Set(ticks.map((t) => Math.round(t.at * 100)))].map((at) => (
+          <span key={at} className="absolute -translate-x-1/2" style={{ left: `${at}%` }}>
+            {at}
+          </span>
+        ))}
+      </div>
+      <div className={`num mt-1 flex justify-between text-[11px] ${muted}`}>
         <span>Healthy</span>
         <span>Margin call 70% · Liquidation 100%</span>
       </div>
@@ -237,7 +251,7 @@ export function Stat({
   return (
     <div className="min-w-0">
       <div className={`text-[13px] ${subtle}`}>{label}</div>
-      <div className={`num mt-1 ${REVEAL} text-[15px] ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-danger" : ""}`}>{value}</div>
+      <div className={`num mt-1 ${REVEAL} text-[15px] ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-danger-ink" : ""}`}>{value}</div>
       {sub && <div className={`mt-0.5 text-[12px] ${subtle}`}>{sub}</div>}
     </div>
   );
@@ -248,14 +262,14 @@ export function Stat({
 export function ErrorNote({ error }: { error: string | null }) {
   if (!error) return null;
   return (
-    <p role="alert" className="rounded-2xl bg-danger/10 px-4 py-3 text-[13px] text-danger">
+    <p role="alert" className="rounded-2xl bg-danger/10 px-4 py-3 text-[13px] text-danger-ink">
       {error}
     </p>
   );
 }
 
 export function Notice({ tone = "watch", children }: { tone?: "watch" | "danger" | "info"; children: React.ReactNode }) {
-  const cls = { watch: "bg-watch/20 text-ink", danger: "bg-danger/10 text-danger", info: "bg-paper text-ink-2" }[tone];
+  const cls = { watch: "bg-watch/20 text-ink", danger: "bg-danger/10 text-danger-ink", info: "bg-paper text-ink-2" }[tone];
   return (
     <div role={tone === "danger" ? "alert" : "status"} className={`rounded-2xl px-4 py-3 text-[13px] ${cls}`}>
       {children}

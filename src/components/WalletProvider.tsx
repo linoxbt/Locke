@@ -1,8 +1,8 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/ui/api";
-import { detectWallets, enableWallet, signText, type ConnectedWallet, type WalletOption } from "@/lib/cardano/wallet";
+import { detectWallets, enableWallet, sameAccount, signText, type ConnectedWallet, type WalletOption } from "@/lib/cardano/wallet";
 
 export interface Me {
   address: string;
@@ -19,7 +19,10 @@ interface Ctx {
   refreshMe(): Promise<void>;
   /** Connect a wallet and sign in through Strike's builder connect. `onStep` reports progress for the UI. */
   signIn(walletId: string, onStep?: (step: SignInStep, message?: string) => void): Promise<void>;
-  /** Re-enable the wallet the session belongs to (needed to sign deposits after a reload). */
+  /**
+   * Re-enable the wallet the session belongs to (needed to sign deposits after a reload). It asks
+   * the wallet for access, so call it from a click. Keeps one identity across renders.
+   */
   ensureWallet(): Promise<ConnectedWallet>;
   signOut(): Promise<void>;
 }
@@ -99,17 +102,24 @@ export function WalletProvider({ children, initialAddress = null }: { children: 
     [refreshMe]
   );
 
+  // Read through a ref so ensureWallet never changes identity: effects that depend on it must not
+  // re-run (and ask the wallet again) when /api/me resolves.
+  const current = useRef({ wallet, me });
+  current.current = { wallet, me };
+
   const ensureWallet = useCallback(async () => {
-    if (wallet) return wallet;
+    if (current.current.wallet) return current.current.wallet;
     const id = recall() ?? detectWallets()[0]?.id;
     if (!id) throw new Error("Open your Cardano wallet extension and try again.");
     const w = await enableWallet(id);
-    if (me && w.address !== me.address) {
+    const signedIn = current.current.me;
+    // Multi-address wallets hand out a new change address later: same stake key, same account.
+    if (signedIn && !sameAccount(w.address, signedIn.address)) {
       throw new Error("This wallet is not the one you signed in with. Switch accounts in your wallet, or sign in again.");
     }
     setWallet(w);
     return w;
-  }, [wallet, me]);
+  }, []);
 
   /** Throws if the server couldn't end the session, so the UI never claims a sign-out that didn't happen. */
   const signOut = useCallback(async () => {

@@ -69,7 +69,8 @@ export function PlanDemo({ ada, wti }: { ada: number; wti: number }) {
     return () => io.disconnect();
   }, []);
 
-  // Ease the displayed figures towards the current outcome: one loop that idles once settled.
+  // Ease the displayed figures towards the current outcome. The loop stops once settled and starts
+  // again when the target moves; off screen (or with reduced motion) the figures jump straight there.
   useEffect(() => {
     let raf = 0;
     let last = performance.now();
@@ -77,18 +78,17 @@ export function PlanDemo({ ada, wti }: { ada: number; wti: number }) {
       const dt = Math.max(0, now - last);
       last = now;
       const { target: t, shown: s } = live.current;
-      if (s.without !== t.without || s.with !== t.with) {
-        const k = reduced ? 1 : 1 - Math.exp(-dt / 110);
-        let next = { without: s.without + (t.without - s.without) * k, with: s.with + (t.with - s.with) * k };
-        if (Math.abs(t.without - next.without) < 0.5 && Math.abs(t.with - next.with) < 0.5) next = { without: t.without, with: t.with };
-        live.current.shown = next;
-        setShown(next);
-      }
+      if (s.without === t.without && s.with === t.with) return;
+      const k = reduced || !visible ? 1 : 1 - Math.exp(-dt / 110);
+      let next = { without: s.without + (t.without - s.without) * k, with: s.with + (t.with - s.with) * k };
+      if (Math.abs(t.without - next.without) < 0.5 && Math.abs(t.with - next.with) < 0.5) next = { without: t.without, with: t.with };
+      live.current.shown = next;
+      setShown(next);
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [reduced]);
+  }, [reduced, visible, target.without, target.with]);
 
   // Autoplay: glide the price from wherever it is through the plan's waypoints.
   const autoplay = visible && !paused && !reduced;

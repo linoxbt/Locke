@@ -6,17 +6,17 @@ import { Arrow, Card, Display, Eyebrow, SUBTLE } from "@/components/ui";
 export const metadata: Metadata = { title: "How it works — Locke" };
 
 const STEPS = [
-  ["Describe", "ADA you hold, or litres you buy. Locke reads your wallet balance for you."],
+  ["Describe", "ADA you hold, or litres you buy. Locke can read your wallet balance for you."],
   ["Preview", "Hedge size, margin, fees, the daily cost of protection, and outcomes from −50% to +50%."],
   ["Fund", "Sign one ADA deposit. Locke sets isolated margin and opens the hedge on Strike."],
-  ["Watch", "Locke alerts you before Strike would, with a top-up ready to sign."],
+  ["Watch", "Locke watches margin around the clock and flags a plan the moment it needs a top-up. You see it, with the top-up ready to sign, when you open Locke."],
 ];
 
 const LADDER = [
-  { tone: "paper" as const, k: "Watch", v: "20% from liquidation or 50% margin ratio", d: "The plan card turns amber. Nothing to do yet." },
-  { tone: "watch" as const, k: "Action needed", v: "10% from liquidation or 60% margin ratio", d: "One-tap top-up, sized to move liquidation 25% away." },
-  { tone: "danger" as const, k: "Margin call", v: "70% margin ratio", d: "Strike's level. Locke repeats the alert." },
-  { tone: "ink" as const, k: "Liquidation", v: "100% margin ratio", d: "Strike closes the position. Locke tells you at once." },
+  { tone: "paper" as const, k: "Watch", v: "20% from liquidation or margin health 50%", d: "The plan card turns amber. Nothing to do yet." },
+  { tone: "watch" as const, k: "Action needed", v: "10% from liquidation or margin health 60%", d: "The plan shows a one-tap top-up, sized to move liquidation 25% away." },
+  { tone: "danger" as const, k: "Margin call", v: "Margin health 70%", d: "Strike's level. The plan stays flagged until it's topped up." },
+  { tone: "ink" as const, k: "Liquidation", v: "Margin health 100%", d: "Strike closes the position. Locke records it on the plan." },
 ];
 
 export default function HowItWorksPage() {
@@ -41,7 +41,7 @@ export default function HowItWorksPage() {
 
       <section className="grid grid-cols-1 gap-3 pt-12 md:grid-cols-2">
         <Card tone="cobalt" id="holdings" className="scroll-mt-24">
-          <Eyebrow className={SUBTLE.cobalt}>Holdings plan · ADA-USD · short</Eyebrow>
+          <Eyebrow className={SUBTLE.cobalt}>Holdings plan · ADA-USD · protects against a fall</Eyebrow>
           <h2 className="display mt-7 text-[22px]">Protect what you hold</h2>
           <p className={`mt-4 text-[14px] leading-relaxed ${SUBTLE.cobalt}`}>
             Locke sells ADA on Strike against the share of your treasury you choose to protect. If ADA falls, the hedge gains what the
@@ -50,7 +50,7 @@ export default function HowItWorksPage() {
           </p>
         </Card>
         <Card tone="lime" id="costs" className="scroll-mt-24">
-          <Eyebrow className={SUBTLE.lime}>Operating costs plan · WTI-USD · long</Eyebrow>
+          <Eyebrow className={SUBTLE.lime}>Operating costs plan · WTI-USD · protects against a rise</Eyebrow>
           <h2 className="display mt-7 text-[22px]">Manage what you buy</h2>
           <p className={`mt-4 text-[14px] leading-relaxed ${SUBTLE.lime}`}>
             Locke buys crude on Strike for the part of your pump price you believe moves with oil. If crude rises, the hedge gains and pays
@@ -64,8 +64,9 @@ export default function HowItWorksPage() {
         <div className="lg:col-span-5">
           <Display as="h2" size="lg" lead="Alerts before Strike's." rest="Not after." />
           <p className="mt-6 max-w-[44ch] text-[15px] leading-relaxed text-ink-2">
-            A Cardano deposit takes minutes to confirm, so Locke warns early: on margin health, and on how close the price is to
-            liquidation. Each plan has its own isolated margin, so trouble in one never touches the other.
+            A Cardano deposit takes minutes to confirm, so Locke flags plans early: on margin health, and on how close the price is to
+            liquidation. Flags show when you open Locke; it can&apos;t message you or top up outside the app. Each plan has its own isolated
+            margin, so trouble in one never touches the other.
           </p>
         </div>
         <DropIn className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-7">

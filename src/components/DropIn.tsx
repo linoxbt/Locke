@@ -45,7 +45,8 @@ export function DropIn({
  * Hero wrapper: descendants marked `.fall` fall in once, after the page has mounted (so the
  * animation runs on the final DOM only). Only tiles on screen fall: column by column, each column
  * stacking from the bottom up so a falling tile never crosses one that has landed. Off-screen
- * candidates are marked `data-still` and simply appear.
+ * candidates are marked `data-still` and simply appear. While the wrapper is out of view it carries
+ * `data-offscreen`, which pauses its looping animations (globals.css).
  */
 export function FallIn({ className = "", children, ...rest }: { className?: string; children: React.ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
   const ref = useRef<HTMLDivElement>(null);
@@ -75,9 +76,13 @@ export function FallIn({ className = "", children, ...rest }: { className?: stri
     const a = requestAnimationFrame(() => {
       b = requestAnimationFrame(() => ref.current?.setAttribute("data-in", ""));
     });
+    // Looping children (the hero's drifting columns) pause while scrolled out of view.
+    const io = new IntersectionObserver(([e]) => root.toggleAttribute("data-offscreen", !e.isIntersecting));
+    io.observe(root);
     return () => {
       cancelAnimationFrame(a);
       cancelAnimationFrame(b);
+      io.disconnect();
     };
   }, []);
   return (

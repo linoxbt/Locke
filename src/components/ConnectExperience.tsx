@@ -103,11 +103,15 @@ export function ConnectExperience({
                     }`}
                   />
                 </span>
-                <span className={`mt-2 block text-[13px] ${state === "next" ? "text-paper/40" : "text-paper"}`}>{title}</span>
+                <span className={`mt-2 block text-[13px] ${state === "next" ? "text-paper/60" : "text-paper"}`}>{title}</span>
               </li>
             );
           })}
         </ol>
+        {/* The progress above is visual; screen readers hear each stage as it changes. */}
+        <p className="sr-only" aria-live="polite">
+          {active && stage ? tileStatus(stage, wallets.find((w) => w.id === active)?.name ?? "your wallet") : ""}
+        </p>
       </div>
 
       {/* B — the wallet chooser */}
@@ -222,7 +226,7 @@ function MessagePreview({ message, feePct }: { message: string | null; feePct: s
       ];
   const headline = lines.slice(0, 2).map((l) => l.replace(/\s+via builder\s+"[^"]*"/i, ""));
   const line = (l: string, i: number) => (
-    <p key={i} className={/fee/i.test(l) ? "text-lime" : /^(Wallet|Chain|API Key|Nonce|Timestamp):/.test(l) ? "text-paper/40" : ""}>
+    <p key={i} className={/fee/i.test(l) ? "text-lime" : /^(Wallet|Chain|API Key|Nonce|Timestamp):/.test(l) ? "text-paper/60" : ""}>
       {l}
     </p>
   );
@@ -230,7 +234,7 @@ function MessagePreview({ message, feePct }: { message: string | null; feePct: s
     <div className="num mt-2 break-words text-[12px] leading-relaxed text-paper/75">
       <div className="space-y-1">{headline.map(line)}</div>
       <details className="group mt-2">
-        <summary className="cursor-pointer list-none text-[11px] text-paper/45 hover:text-paper/70">
+        <summary className="cursor-pointer list-none text-[11px] text-paper/60 hover:text-paper/80">
           <span className="group-open:hidden">Full message +</span>
           <span className="hidden group-open:inline">Hide −</span>
         </summary>
