@@ -2,6 +2,7 @@
 // Every authenticated call is signed with the user's builder-connected API wallet.
 
 import { config } from "../server/config";
+import type { BookLevel, OrderBook } from "../domain/liquidity";
 import type { FeeRates, MarginTier, MarketRules } from "../domain/types";
 import { signRequestHeaders } from "./sign";
 
@@ -157,6 +158,17 @@ export async function getMarkPrice(symbol: string): Promise<MarkPrice> {
       nextFundingTime: d.T,
     };
   });
+}
+
+/** Visible order book (full depth Strike returns), as numbers. `fresh` skips the 2 s cache: use it right before an order. */
+export async function getOrderBook(symbol: string, opts: { fresh?: boolean } = {}): Promise<OrderBook> {
+  const load = async () => {
+    const d = await publicGet(`/price/v2/depth?symbol=${encodeURIComponent(symbol)}&limit=1000`);
+    const levels = (rows: unknown): BookLevel[] =>
+      Array.isArray(rows) ? rows.map((r) => [parseFloat(r[0]), parseFloat(r[1])] as BookLevel).filter(([p, q]) => p > 0 && q > 0) : [];
+    return { bids: levels(d.bids), asks: levels(d.asks) };
+  };
+  return opts.fresh ? load() : cached(`depth:${symbol}`, 2_000, load);
 }
 
 export async function getMarketRules(symbol: string): Promise<MarketRules> {

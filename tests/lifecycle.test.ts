@@ -20,6 +20,8 @@ const state = {
   deposits: new Map<string, { usd: number; tx?: string }>(),
   marginMode: "cross",
   badSignatures: 0,
+  /** Quantity at each of the 20 levels per side of the mock order book. */
+  bookQty: 100_000,
 };
 const MARK = 0.2;
 const SPKI = Buffer.from("302a300506032b6570032100", "hex");
@@ -48,6 +50,10 @@ const server = http.createServer((req, res) => {
         return json({ serverTime: Date.now() });
       case "GET /price/v2/markPrice":
         return json({ s: url.searchParams.get("symbol"), p: String(MARK), i: String(MARK), r: "0.00001", T: 0 });
+      case "GET /price/v2/depth": {
+        const lv = (sign: number) => Array.from({ length: 20 }, (_, i) => [(MARK * (1 + sign * 0.0001 * (i + 1))).toFixed(6), String(state.bookQty)]);
+        return json({ bids: lv(-1), asks: lv(1) });
+      }
       case "GET /price/v2/exchangeInfo":
         return json({
           symbols: [
@@ -164,6 +170,15 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     expect((await svc.loadPlan(userId, plan.id)).status).toBe("funding");
     // A second open deposit while one is confirming is refused.
     await expect(svc.prepareDeposit(userId, plan.id, "open", { address: "addr1test", utxos: ["8282"] })).rejects.toThrow(/still confirming/);
+
+    // A book too thin for the hedge: nothing is sent and the plan waits in funding.
+    state.bookQty = 10;
+    await svc.syncPlan(userId, plan.id).catch(() => null);
+    expect(state.orders).toHaveLength(0);
+    const waiting = await svc.loadPlan(userId, plan.id);
+    expect(waiting.status).toBe("funding");
+    expect(waiting.status_note).toMatch(/order book can only fill/);
+    state.bookQty = 100_000;
 
     // Worker and browser sync at the same time: one order, one buffer add.
     await Promise.all([svc.syncPlan(userId, plan.id), svc.syncPlan(userId, plan.id)]);

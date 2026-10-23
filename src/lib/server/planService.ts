@@ -30,7 +30,8 @@ import {
   suggestedTopUpUsd,
   type Thresholds,
 } from "../domain/risk";
-import type { CostsInputs, HoldingsInputs, PlanInputs, PlanStatus, PlanType, Preview, RiskLevel, Sizing } from "../domain/types";
+import { estimateFill, fillProblem, type FillEstimate } from "../domain/liquidity";
+import type { CostsInputs, HoldingsInputs, PlanInputs, PlanStatus, PlanType, Preview, RiskLevel, Side, Sizing } from "../domain/types";
 import {
   addIsolatedMargin,
   depositBuildTx,
@@ -41,6 +42,7 @@ import {
   getFeeRates,
   getMarketRules,
   getMarkPrice,
+  getOrderBook,
   getPosition,
   getSymbolSetting,
   placeMarketOrder,
@@ -129,6 +131,26 @@ function planName(type: PlanType, inputs: PlanInputs): string {
   return `${fuel} · ${c.litresPerMonth.toLocaleString("en-US")} L/month · ${c.months} mo`;
 }
 
+/** Market fill estimate for the hedge order; undefined if Strike's book can't be read right now. */
+async function executionFor(sizing: Sizing): Promise<FillEstimate | undefined> {
+  const book = await getOrderBook(sizing.symbol).catch(() => null);
+  return book ? estimateFill(book, sizing.side, sizing.size, sizing.price) : undefined;
+}
+
+/** Strike's book can't take the order at a fair price right now. Nothing was sent; safe to retry later. */
+export class ThinBookError extends HttpError {
+  constructor(message: string) {
+    super(409, message);
+  }
+}
+
+/** Refuse to send a market order the visible book can't fill at a fair price. Reads a fresh book. */
+async function assertFillable(symbol: string, side: Side, size: number) {
+  const [book, mark] = await Promise.all([getOrderBook(symbol, { fresh: true }), getMarkPrice(symbol)]);
+  const problem = fillProblem(estimateFill(book, side, size, mark.mark));
+  if (problem) throw new ThinBookError(problem);
+}
+
 async function sizeAtMarket(type: PlanType, inputs: PlanInputs) {
   const symbol = PLAN_MARKET[type];
   const [mark, rules, fees] = await Promise.all([getMarkPrice(symbol), getMarketRules(symbol), getFeeRates()]);
@@ -143,6 +165,7 @@ export async function createDraft(userId: string, type: PlanType, raw: Record<st
   const inputs = parseInputs(type, raw);
   const { mark, rules, sizing } = await sizeAtMarket(type, inputs);
   const preview = buildPreview(type, inputs, sizing, rules, mark.fundingRate);
+  preview.execution = await executionFor(sizing);
   const sql = db();
   await sql`delete from plans where user_id = ${userId} and type = ${type} and status = 'draft'`;
   const [row] = await sql`
@@ -155,7 +178,9 @@ export async function createDraft(userId: string, type: PlanType, raw: Record<st
 
 export async function previewFor(plan: PlanRow): Promise<Preview> {
   const { mark, rules, sizing } = await sizeAtMarket(plan.type, plan.inputs);
-  return buildPreview(plan.type, plan.inputs, sizing, rules, mark.fundingRate);
+  const preview = buildPreview(plan.type, plan.inputs, sizing, rules, mark.fundingRate);
+  preview.execution = await executionFor(sizing);
+  return preview;
 }
 
 // ── Deposits ──
@@ -309,6 +334,16 @@ export async function openPlan(userId: string, planId: string): Promise<PlanRow>
   if (available < needed) {
     throw new HttpError(409, `Strike balance is $${available.toFixed(2)}; this plan needs $${needed.toFixed(2)} to open. Fund it first.`);
   }
+  try {
+    await assertFillable(plan.symbol, plan.side, plan.size);
+  } catch (e) {
+    // Say why on the plan, once: the worker retries on every sync.
+    if (e instanceof ThinBookError && plan.status_note !== e.message) {
+      await db()`update plans set status_note = ${e.message}, updated_at = now() where id = ${plan.id}`;
+      await addEvent(plan.id, "watch", `Waiting to open: ${e.message}`);
+    }
+    throw e;
+  }
 
   const claimed = await transition(plan.id, ["draft", "funding"], "opening", { status_note: "Placing the hedge on Strike" });
   if (!claimed) return loadPlan(userId, planId);
@@ -357,7 +392,11 @@ export async function syncPlan(userId: string, planId: string): Promise<PlanRow>
       await sql`update deposits set status = 'applied', updated_at = now() where plan_id = ${plan.id} and purpose = 'open' and status = 'credited'`;
       try {
         plan = await openPlan(userId, planId);
-      } catch {
+      } catch (e) {
+        // Nothing reached Strike: hand the deposit back so the next sync tries again.
+        if (e instanceof ThinBookError) {
+          await sql`update deposits set status = 'credited', updated_at = now() where plan_id = ${plan.id} and purpose = 'open' and status = 'applied'`;
+        }
         return loadPlan(userId, planId);
       }
     }
@@ -495,6 +534,7 @@ export async function resizePlan(userId: string, planId: string, raw: Record<str
   if (delta > 0) {
     const need = (delta * mark) / plan.sizing.leverage;
     if ((await availableUsd(keys)) < need) throw new HttpError(409, `Adding to the hedge needs $${need.toFixed(2)} on Strike. Top up first.`);
+    await assertFillable(plan.symbol, plan.side, delta);
   }
   const reducing = delta < 0;
   await placeMarketOrder(keys, {

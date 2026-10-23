@@ -1,5 +1,6 @@
 "use client";
 
+import { fillProblem, WARN_SLIPPAGE, type FillEstimate } from "@/lib/domain/liquidity";
 import type { CostsInputs, HoldingsInputs, PlanType, Preview } from "@/lib/domain/types";
 import { localCompact, num, pct, price, signedUsd, usd } from "@/lib/ui/format";
 import { Card, Eyebrow, Stat, SUBTLE } from "./ui";
@@ -55,6 +56,7 @@ export function PreviewCard({
             sub={noFunding ? "funding is flat today" : `per day, ${preview.fundingPerDayUsd >= 0 ? "received" : "paid"}`}
           />
         </div>
+        {preview.execution && <ExecutionLine est={preview.execution} dark={tone === "cobalt"} />}
       </Card>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -124,5 +126,19 @@ export function PreviewCard({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Estimated market fill from Strike's order book, with a caution when it would cost noticeably more than the mark. */
+function ExecutionLine({ est, dark }: { est: FillEstimate; dark: boolean }) {
+  const problem = fillProblem(est);
+  const slip = est.slippage ?? 0;
+  const cost = slip <= 0.0001 ? "at the mark" : `${(slip * 100).toFixed(2)}% over the mark`;
+  const tone = problem ? "bg-danger text-paper" : slip > WARN_SLIPPAGE ? "bg-watch text-ink" : dark ? "bg-paper/15" : "bg-ink/10";
+  return (
+    <p className={`num mt-6 rounded-xl px-4 py-3 text-[13px] leading-relaxed ${tone}`}>
+      {problem ??
+        `Estimated fill ${est.avgPrice != null ? price(est.avgPrice) : "—"}, ${cost}, across ${est.levels} price level${est.levels === 1 ? "" : "s"} of Strike's order book.`}
+    </p>
   );
 }

@@ -1,5 +1,7 @@
 // Shared domain types. Pure data, safe to import from browser, server and worker.
 
+import type { FillEstimate } from "./liquidity";
+
 export type PlanType = "holdings" | "costs";
 export type Side = "buy" | "sell";
 
@@ -112,4 +114,6 @@ export interface Preview {
   /** Headline number at today's price: protected value (USD) or effective fuel price (local/litre). */
   headline: number;
   unit: string;
+  /** Estimated market fill from Strike's order book at preview time; absent if the book was unavailable. */
+  execution?: FillEstimate;
 }

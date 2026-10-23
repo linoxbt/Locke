@@ -122,6 +122,7 @@ Every authenticated call goes through the user's builder-connected API wallet an
 | Connect (login) | `POST /auth/builder/request-signature` (`chain: "cardano"`), then `POST /auth/builder/verify-signature` with the CIP-30 `signData` result |
 | Market rules | `GET /price/v2/exchangeInfo` (step size, minimum notional), `GET /v2/markets` (margin tiers), `GET /v2/fee-tiers` |
 | Live price and funding | `GET /price/v2/markPrice` (`p` mark, `r` hourly funding rate); WebSocket `/ws/price`, `markPrice@1s` |
+| Liquidity | `GET /price/v2/depth`: the preview walks the book for the hedge's size (average fill, slippage over the mark); open and resize-up re-read it fresh and refuse a market order the book can't fill within 1% of the mark |
 | History | `GET /price/v2/klines?interval=1d&priceType=mark` |
 | Deposit | `POST /v2/deposit/quote` (ADA, lovelace) → `POST /v2/deposit/build-tx` (CIP-30 UTxOs) → wallet signs and submits → `POST /v2/deposit` with the tx hash |
 | Deposit credited | `GET /v2/history/transaction?type=1` matched by tx hash |
@@ -150,6 +151,8 @@ npm install
 npm run db:migrate             # applies db/schema.sql (safe to re-run)
 npm run dev                    # app on http://localhost:3000
 npm run worker                 # risk worker (separate terminal)
+npm run strike:check           # readiness: config, Strike REST/WebSocket, history, liquidity, DB
+npm run strike:check -- --signed   # + signed GET /v2/account and user-stream logon (after a wallet connects)
 npm test                       # unit tests
 TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration test (throwaway DB)
 ```

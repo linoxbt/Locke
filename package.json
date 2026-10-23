@@ -9,6 +9,7 @@
     "start": "next start",
     "worker": "tsx worker/index.ts",
     "db:migrate": "tsx scripts/migrate.ts",
+    "strike:check": "tsx scripts/strike-check.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run"
