@@ -109,7 +109,7 @@ alter table snapshots          enable row level security;
 
 -- ── Hardening (audit, 2026-10-23). Idempotent additions to the tables above. ──
 
--- Sessions: bumping the version revokes every token issued before it (logout, new sign-in).
+-- Sessions: signing out bumps the version, which revokes every token issued before it.
 alter table users add column if not exists session_version int not null default 1;
 
 -- Orders: one tracked order in flight per plan, with a deterministic client id
