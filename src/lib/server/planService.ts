@@ -30,6 +30,7 @@ import {
   suggestedTopUpUsd,
   type Thresholds,
 } from "../domain/risk";
+import { FUELS } from "../domain/fuel";
 import { estimateFill, fillProblem, type FillEstimate } from "../domain/liquidity";
 import type { CostsInputs, HoldingsInputs, PlanInputs, PlanStatus, PlanType, Preview, RiskLevel, Side, Sizing } from "../domain/types";
 import {
@@ -127,8 +128,8 @@ function planName(type: PlanType, inputs: PlanInputs): string {
     return `ADA treasury · ${h.sharePct}% protected`;
   }
   const c = inputs as CostsInputs;
-  const fuel = c.fuelType === "diesel" ? "Diesel" : "Petrol";
-  return `${fuel} · ${c.litresPerMonth.toLocaleString("en-US")} L/month · ${c.months} mo`;
+  const cover = (c.coverPct ?? 100) < 100 ? ` · ${c.coverPct}% hedged` : "";
+  return `${FUELS[c.fuelType]?.short ?? "Fuel"} · ${c.litresPerMonth.toLocaleString("en-US")} L/month · ${c.months} mo${cover}`;
 }
 
 /** Market fill estimate for the hedge order; undefined if Strike's book can't be read right now. */

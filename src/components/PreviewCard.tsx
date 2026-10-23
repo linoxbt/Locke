@@ -2,7 +2,8 @@
 
 import { fillProblem, WARN_SLIPPAGE, type FillEstimate } from "@/lib/domain/liquidity";
 import type { CostsInputs, HoldingsInputs, PlanType, Preview } from "@/lib/domain/types";
-import { localCompact, num, pct, price, signedUsd, usd } from "@/lib/ui/format";
+import { COUNTRIES, FUELS, fxBillImpact } from "@/lib/domain/fuel";
+import { local, localCompact, num, pct, price, signedUsd, usd } from "@/lib/ui/format";
 import { Card, Eyebrow, Stat, SUBTLE } from "./ui";
 
 export function hedgeInWords(type: PlanType, p: Preview): { lead: string; rest: string } {
@@ -100,12 +101,7 @@ export function PreviewCard({
               ))}
             </tbody>
           </table>
-          {type === "costs" && (
-            <p className="mt-4 text-[13px] leading-relaxed text-ink-3">
-              Assumes {pct((inputs as CostsInputs).crudeSharePct / 100)} of the pump price moves with crude. Local prices also move with
-              exchange rates, taxes and policy, which WTI doesn&apos;t capture.
-            </p>
-          )}
+          {type === "costs" && <CostsNotes c={inputs as CostsInputs} />}
         </Card>
 
         <div className="grid grid-cols-1 gap-3">
@@ -140,5 +136,26 @@ function ExecutionLine({ est, dark }: { est: FillEstimate; dark: boolean }) {
       {problem ??
         `Estimated fill ${est.avgPrice != null ? price(est.avgPrice) : "—"}, ${cost}, across ${est.levels} price level${est.levels === 1 ? "" : "s"} of Strike's order book.`}
     </p>
+  );
+}
+
+/** What the costs preview assumes, the budget it was sized for, and the currency risk it leaves open. */
+function CostsNotes({ c }: { c: CostsInputs }) {
+  const cover = c.coverPct ?? 100;
+  return (
+    <div className="mt-4 space-y-3 text-[13px] leading-relaxed">
+      <p className="text-ink-3">
+        {FUELS[c.fuelType]?.label ?? "Fuel"}
+        {c.country ? ` in ${COUNTRIES[c.country].name}` : ""}. Assumes {pct(c.crudeSharePct / 100)} of the pump price moves with crude
+        {cover < 100 ? `, and hedges ${cover}% of that` : ""}.
+        {c.budget
+          ? ` Sized so the bill stays under ${local(c.budget.monthlyMax, c.currency, 0)} a month if crude rises ${c.budget.stressPct}%.`
+          : ""}
+      </p>
+      <p className="rounded-xl bg-watch/25 p-3 text-ink">
+        <span className="font-medium">Not covered: the exchange rate.</span> If the {c.currency} weakens 10% against the dollar, this bill rises about{" "}
+        {local(fxBillImpact(c, 10), c.currency, 0)} a month even if crude doesn&apos;t move. Taxes and policy changes aren&apos;t covered either.
+      </p>
+    </div>
   );
 }

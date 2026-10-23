@@ -1,6 +1,7 @@
 // Plan sizing, scenario preview and replay (spec sections 4 and 9).
 // Pure functions: every price, rule and fee comes in as an argument.
 
+import { budgetCover, isCountry, isFuelType, type FuelType } from "./fuel";
 import {
   DISTANCE_LEVELS,
   fundingPerDay,
@@ -68,7 +69,7 @@ export function parseInputs(type: PlanType, raw: Record<string, unknown>): PlanI
     };
     return h;
   }
-  const fuel = raw.fuelType === "petrol" ? "petrol" : "diesel";
+  const fuel: FuelType = isFuelType(raw.fuelType) ? raw.fuelType : "diesel";
   const currency = String(raw.currency ?? "NGN").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "NGN";
   const c: CostsInputs = {
     fuelType: fuel,
@@ -78,15 +79,32 @@ export function parseInputs(type: PlanType, raw: Record<string, unknown>): PlanI
     currency,
     months: Math.round(num(raw.months ?? 3, "Months covered", 1, 6)),
     crudeSharePct: num(raw.crudeSharePct ?? 50, "Crude share", 0, 100),
+    coverPct: Math.round(num(raw.coverPct ?? 100, "Share hedged", 1, 100)),
     leverage,
     bufferPct,
   };
+  if (isCountry(raw.country)) c.country = raw.country;
+  // Budget mode: the server works out the cover from the budget, never trusting a client figure.
+  const b = raw.budget as { monthlyMax?: unknown; stressPct?: unknown } | null | undefined;
+  if (b && b.monthlyMax != null && b.monthlyMax !== "") {
+    const monthlyMax = num(b.monthlyMax, "Monthly budget", 0.01, 1e12);
+    const stressPct = num(b.stressPct ?? 50, "Crude rise to protect against", 5, 200);
+    const r = budgetCover(c, monthlyMax, stressPct);
+    if (!r.ok && r.reason === "below_today") {
+      throw new PlanInputError(`Your budget is below today's bill (${c.currency} ${Math.round(r.billNow).toLocaleString("en-US")} a month). A hedge can't lower today's price.`);
+    }
+    if (!r.ok) {
+      throw new PlanInputError(`No hedge needed: even if crude rises ${stressPct}%, your bill stays under ${c.currency} ${Math.round(monthlyMax).toLocaleString("en-US")} a month.`);
+    }
+    c.coverPct = r.coverPct;
+    c.budget = { monthlyMax, stressPct };
+  }
   return c;
 }
 
 /** Crude-linked USD exposure of a costs plan over its whole term. */
 export function costsExposureUsd(c: CostsInputs): number {
-  return ((c.crudeSharePct / 100) * c.litresPerMonth * c.months * c.pumpPrice) / c.fxRate;
+  return ((c.crudeSharePct / 100) * ((c.coverPct ?? 100) / 100) * c.litresPerMonth * c.months * c.pumpPrice) / c.fxRate;
 }
 
 export function sizePlan(

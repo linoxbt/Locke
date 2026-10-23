@@ -1,5 +1,6 @@
 // Shared domain types. Pure data, safe to import from browser, server and worker.
 
+import type { CountryCode, FuelType } from "./fuel";
 import type { FillEstimate } from "./liquidity";
 
 export type PlanType = "holdings" | "costs";
@@ -30,7 +31,9 @@ export interface HoldingsInputs {
 }
 
 export interface CostsInputs {
-  fuelType: "diesel" | "petrol";
+  fuelType: FuelType;
+  /** Country the reference prices and calibration came from; absent for "other". */
+  country?: CountryCode;
   /** V: litres per month. */
   litresPerMonth: number;
   /** p: pump price, local currency per litre. */
@@ -43,6 +46,10 @@ export interface CostsInputs {
   months: number;
   /** c: share of the pump price assumed to move with crude, 0..100 (%). */
   crudeSharePct: number;
+  /** s: share of the crude-linked cost the hedge covers, 1..100 (%). Plans made before this field: 100. */
+  coverPct?: number;
+  /** Budget mode: keep the monthly bill under monthlyMax if crude rises stressPct. Sets coverPct. */
+  budget?: { monthlyMax: number; stressPct: number } | null;
   leverage: number;
   bufferPct: number;
 }

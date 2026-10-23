@@ -42,6 +42,14 @@ A plan leaves Watch only when the ratio falls below 45% and the distance rises a
 
 The distance check exists because margin ratio only rises steeply in the last few percent before liquidation. On a 1x plan, a 60% ratio alert would fire about 0.3% before liquidation, too late for a Cardano deposit to confirm. The suggested top-up is enough to bring the ratio back to 35% *and* push liquidation 25% away from the mark.
 
+### Fuel plans (operating costs)
+
+- **Fuels:** diesel, petrol, kerosene / jet fuel and cooking gas (LPG). LPG counts as two-thirds of a litre of crude per litre, by energy content.
+- **Reference prices:** Nigeria, Kenya, Ghana and the Philippines, from GlobalPetrolPrices.com (official and industry sources), snapshot of 19 Oct 2026 with 1-month, 3-month and 1-year history (`src/lib/domain/fuel.ts`). Kenya LPG, Ghana LPG and Ghana kerosene have no current reference; the form asks for the user's price.
+- **Calibrated crude share:** crude's cost in a litre (live WTI ÷ 158.987 L × the fuel's crude content × the live exchange rate) over the pump price, clamped to 5–95%. Users can override it and return to the calibrated value.
+- **Budget mode:** "keep my monthly bill under X even if crude rises r%". With crude share c, cover s keeps the bill at B × (1 + c·r·(1 − s)), so Locke hedges s = 1 − (X/B − 1)/(c·r) of the crude-linked cost. The server recomputes s from the budget; a budget below today's bill, or one that needs no hedge, is refused with the reason.
+- **Exchange-rate warning:** live and 90-day-old dollar rates (open fawazahmed0 currency API via jsDelivr, Cloudflare mirror) show how the currency moved, and what a further 10% fall adds to the bill. A WTI hedge can't cover that, and the form and preview say so.
+
 ## Pages
 
 Every feature is its own server-rendered route. Pages load their data on the server, guard by
