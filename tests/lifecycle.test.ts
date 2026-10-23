@@ -163,7 +163,7 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     const k = generateApiWalletKeys();
     [{ id: userId }] = await sql`insert into users (address) values ('addr1test') returning id`;
     await sql`insert into strike_links (user_id, account_id, api_wallet_public_key, api_wallet_secret_enc, fee_share_bps)
-              values (${userId}, 'acct', ${k.publicKey}, ${encryptSecret(k.privateKey)}, 5)`;
+              values (${userId}, 'acct', ${k.publicKey}, ${encryptSecret(k.privateKey, k.publicKey)}, 5)`;
     svc = await import("@/lib/server/planService");
   });
 

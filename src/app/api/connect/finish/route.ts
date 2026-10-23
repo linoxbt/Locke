@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/server/db";
 import { HttpError } from "@/lib/server/errors";
-import { readJson, route } from "@/lib/server/http";
+import { readJson, route, str } from "@/lib/server/http";
 import { assertSameOrigin, setSessionCookie } from "@/lib/server/session";
 import { verifyBuilderSignature } from "@/lib/strike/client";
 
@@ -12,9 +12,8 @@ import { verifyBuilderSignature } from "@/lib/strike/client";
 export const POST = route(async (req: Request) => {
   assertSameOrigin(req);
   const body = await readJson(req);
-  const nonce = String(body.nonce ?? "");
-  const signature = String(body.signature ?? "");
-  if (!nonce || !/^[0-9a-f]+:[0-9a-f]+$/i.test(signature)) throw new HttpError(400, "Missing wallet signature");
+  const nonce = str(body, "nonce", 200);
+  const signature = str(body, "signature", 8192, /^[0-9a-f]+:[0-9a-f]+$/i);
 
   const sql = db();
   const [ch] = await sql`
@@ -33,7 +32,7 @@ export const POST = route(async (req: Request) => {
     const [u] = await tx`
       insert into users (address, stake_address) values (${ch.address}, ${ch.stake_address})
       on conflict (address) do update set stake_address = coalesce(excluded.stake_address, users.stake_address)
-      returning id, address`;
+      returning id, address, session_version`;
     await tx`
       insert into strike_links (user_id, account_id, api_wallet_public_key, api_wallet_secret_enc, fee_share_bps, expires_at)
       values (${u.id}, ${result.account_id}, ${ch.api_wallet_public_key}, ${ch.api_wallet_secret_enc}, ${ch.fee_share_bps}, ${validExpires})
@@ -48,6 +47,6 @@ export const POST = route(async (req: Request) => {
   });
 
   const res = NextResponse.json({ ok: true, accountId: result.account_id });
-  setSessionCookie(res, { uid: user.id, addr: user.address });
+  setSessionCookie(res, { uid: user.id, addr: user.address, v: Number(user.session_version) });
   return res;
 });

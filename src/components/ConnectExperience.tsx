@@ -33,7 +33,17 @@ function tileStatus(stage: Stage, name: string): string {
  * The sign-in page: a dark panel that shows what signing does (step track, the message the wallet
  * will show, three facts) beside the wallet chooser. One flow, so both sides share state.
  */
-export function ConnectExperience({ next, builder, feeBps }: { next: string; builder: string | null; feeBps: number | null }) {
+export function ConnectExperience({
+  next,
+  builder,
+  feeBps,
+  reconnect = false,
+}: {
+  next: string;
+  builder: string | null;
+  feeBps: number | null;
+  reconnect?: boolean;
+}) {
   const { wallets, signIn } = useWallet();
   const router = useRouter();
   const [active, setActive] = useState<string | null>(null);
@@ -150,6 +160,11 @@ export function ConnectExperience({ next, builder, feeBps }: { next: string; bui
         </div>
 
         <div className="max-w-[460px]">
+          {reconnect && !error && stage == null && (
+            <p role="status" className="rounded-xl bg-watch/25 px-4 py-3 text-[13px] text-ink">
+              Your session ended. Sign in again to pick up where you left off.
+            </p>
+          )}
           <ErrorNote error={error} />
         </div>
 

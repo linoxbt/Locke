@@ -6,8 +6,8 @@ import { getMarkPrice } from "@/lib/strike/client";
 export const dynamic = "force-dynamic";
 
 /**
- * Readiness: which pieces are configured and reachable. Reports names and booleans only,
- * never values. 200 when everything a user needs works, 503 otherwise.
+ * Readiness for uptime checks: 200 when everything a user needs works, 503 otherwise. The public
+ * answer is just {ok}; which piece failed goes to the server log, not to visitors.
  */
 export async function GET() {
   const check = async (fn: () => unknown | Promise<unknown>) => {
@@ -29,5 +29,6 @@ export async function GET() {
     strike: await check(() => getMarkPrice("ADA-USD")),
   };
   const ok = Object.values(checks).every(Boolean);
-  return NextResponse.json({ ok, checks }, { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } });
+  if (!ok) console.error("[health] failing:", Object.entries(checks).filter(([, v]) => !v).map(([k]) => k).join(", "));
+  return NextResponse.json({ ok }, { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } });
 }

@@ -15,7 +15,7 @@ export async function strikeKeysFor(userId: string): Promise<ApiKeys & { account
   return {
     accountId: row.account_id,
     publicKey: row.api_wallet_public_key,
-    privateKey: decryptSecret(row.api_wallet_secret_enc),
+    privateKey: decryptSecret(row.api_wallet_secret_enc, row.api_wallet_public_key),
     feeShareBps: Number(row.fee_share_bps),
   };
 }

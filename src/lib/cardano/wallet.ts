@@ -23,6 +23,34 @@ export interface Cip30Api {
 
 const WORKING = "Try Eternl, Lace or Vespr.";
 
+type WalletCall = "enable" | "signData" | "signTx" | "submitTx";
+
+/**
+ * CIP-30 errors are {code, info} objects whose codes mean different things per method:
+ * signData 3 and signTx 2 are the user declining, but submitTx 2 is a failed submission and
+ * signData 2 an address the wallet can't sign for. APIError -3 is a refusal, -4 an account change.
+ */
+export function walletError(e: unknown, call: WalletCall): Error {
+  if (e instanceof Error && !("code" in e)) return e;
+  const { code, info, message } = (e ?? {}) as { code?: number; info?: string; message?: string };
+  const text = info || message || "";
+  if (code === -3 || (call === "signData" && code === 3) || (call === "signTx" && code === 2) || /declin|reject|cancel/i.test(text)) {
+    return new Error(call === "enable" ? "You didn't let Locke see your wallet. Approve the connection to continue." : "Request cancelled in your wallet.");
+  }
+  if (code === -4) return new Error("The account in your wallet changed. Switch back, or sign in again.");
+  if (call === "signData" && code === 2) return new Error("Your wallet can't sign with this address. Pick your main account in the wallet and try again.");
+  if (call === "submitTx") return new Error(`Your wallet couldn't submit the transaction${text ? `: ${text}` : ""}. Nothing was sent; try again.`);
+  return new Error(text || "Your wallet reported an error. Try again.");
+}
+
+async function wallet<T>(call: WalletCall, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    throw walletError(e, call);
+  }
+}
+
 /** Call an optional CIP-30 method; a missing method or a refusal gives undefined. */
 async function optional<T>(fn: (() => Promise<T>) | undefined): Promise<T | undefined> {
   if (typeof fn !== "function") return undefined;
@@ -91,7 +119,7 @@ export interface ConnectedWallet {
 export async function enableWallet(id: string): Promise<ConnectedWallet> {
   const ns = window.cardano?.[id];
   if (!ns?.enable) throw new Error("Wallet not found. Install a Cardano wallet extension.");
-  const api = await ns.enable();
+  const api = await wallet("enable", () => ns.enable!());
   for (const m of ["getNetworkId", "getUtxos", "signData", "signTx", "submitTx"] as const) {
     if (typeof api[m] !== "function") throw new Error(`This wallet can't do what Locke needs (${m} is missing). ${WORKING}`);
   }
@@ -125,7 +153,7 @@ export async function walletAda(w: ConnectedWallet): Promise<number> {
 
 /** Sign plain text (Strike challenge) → "coseSign1Hex:coseKeyHex". */
 export async function signText(w: ConnectedWallet, text: string, alreadyHex = false): Promise<string> {
-  const { signature, key } = await w.api.signData(w.addressHex, alreadyHex ? text : utf8ToHex(text));
+  const { signature, key } = await wallet("signData", () => w.api.signData(w.addressHex, alreadyHex ? text : utf8ToHex(text)));
   return `${signature}:${key}`;
 }
 
@@ -137,7 +165,12 @@ export async function walletUtxos(w: ConnectedWallet): Promise<string[]> {
 
 /** Sign Strike's unsigned deposit transaction, attach witnesses and submit. Returns the tx hash. */
 export async function signAndSubmit(w: ConnectedWallet, unsignedTx: string): Promise<string> {
-  const witnesses = await w.api.signTx(unsignedTx, true);
-  const signed = mergeWitnesses(unsignedTx, witnesses);
-  return w.api.submitTx(signed);
+  const signed = await signFull(w, unsignedTx);
+  return wallet("submitTx", () => w.api.submitTx(signed));
+}
+
+/** Sign a transaction someone else built and return it with the wallet's witnesses attached. */
+export async function signFull(w: ConnectedWallet, unsignedTx: string): Promise<string> {
+  const witnesses = await wallet("signTx", () => w.api.signTx(unsignedTx, true));
+  return mergeWitnesses(unsignedTx, witnesses);
 }
