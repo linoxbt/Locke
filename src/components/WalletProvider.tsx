@@ -17,12 +17,15 @@ interface Ctx {
   wallet: ConnectedWallet | null;
   wallets: WalletOption[];
   refreshMe(): Promise<void>;
-  /** Connect a wallet and sign in through Strike's builder connect. */
-  signIn(walletId: string): Promise<void>;
+  /** Connect a wallet and sign in through Strike's builder connect. `onStep` reports progress for the UI. */
+  signIn(walletId: string, onStep?: (step: SignInStep, message?: string) => void): Promise<void>;
   /** Re-enable the wallet the session belongs to (needed to sign deposits after a reload). */
   ensureWallet(): Promise<ConnectedWallet>;
   signOut(): Promise<void>;
 }
+
+/** approve: wallet asked for access · sign: Strike's message is with the wallet · finish: verifying with Strike. */
+export type SignInStep = "approve" | "sign" | "finish";
 
 const WalletContext = createContext<Ctx | null>(null);
 const LAST_WALLET = "locke.wallet";
@@ -78,12 +81,15 @@ export function WalletProvider({ children, initialAddress = null }: { children: 
   }, [refreshMe]);
 
   const signIn = useCallback(
-    async (walletId: string) => {
+    async (walletId: string, onStep?: (step: SignInStep, message?: string) => void) => {
+      onStep?.("approve");
       const w = await enableWallet(walletId);
       const { nonce, message } = await api<{ nonce: string; message: string }>("/api/connect/start", {
         body: { address: w.address, stakeAddress: w.stakeAddress },
       });
+      onStep?.("sign", message);
       const signature = await signText(w, message);
+      onStep?.("finish");
       await api("/api/connect/finish", { body: { nonce, signature } });
       remember(walletId);
       setWallet(w);
