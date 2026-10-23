@@ -35,17 +35,17 @@ export function PreviewCard({
 
   return (
     <div className="space-y-3">
-      <Card tone={tone} className="sm:p-10">
+      <Card tone={tone} className="sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Eyebrow className={SUBTLE[tone]}>{preview.label}</Eyebrow>
           <span className={`num rounded-full px-3 py-1 text-[12px] ${tone === "cobalt" ? "bg-paper/15" : "bg-ink/10"}`}>
             {s.symbol} · {s.side === "sell" ? "short" : "long"} · {s.leverage}x
           </span>
         </div>
-        <p className="display mt-10 max-w-[22ch] text-[26px] sm:text-[34px]">
+        <p className="display mt-7 max-w-[22ch] text-[21px] sm:text-[26px]">
           {words.lead} <span className={SUBTLE[tone]}>{words.rest}</span>
         </p>
-        <div className={`mt-10 grid grid-cols-2 gap-6 border-t pt-6 sm:grid-cols-4 ${tone === "cobalt" ? "border-paper/20" : "border-ink/15"}`}>
+        <div className={`mt-7 grid grid-cols-2 gap-6 border-t pt-6 sm:grid-cols-4 ${tone === "cobalt" ? "border-paper/20" : "border-ink/15"}`}>
           <Stat subtle={SUBTLE[tone]} label="Hedge size" value={`${num(s.size, type === "holdings" ? 0 : 2)} ${type === "holdings" ? "ADA" : "WTI"}`} sub={usd(s.notional)} />
           <Stat subtle={SUBTLE[tone]} label="Margin to deposit" value={usd(s.requiredUsd)} sub={marginAda ? `≈ ${num(marginAda, 0)} ADA` : undefined} />
           <Stat subtle={SUBTLE[tone]} label="Opening cost" value={usd(s.openFeeUsd)} sub="taker + builder fee" />
@@ -62,10 +62,10 @@ export function PreviewCard({
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="display text-[20px]">{type === "holdings" ? "Treasury value" : "Monthly fuel bill"}</h3>
+            <h3 className="display text-[17px]">{type === "holdings" ? "Treasury value" : "Monthly fuel bill"}</h3>
             <span className="text-[13px] text-ink-3">{type === "holdings" ? "USD" : `${cur}, crude-share model`}</span>
           </div>
-          <table className="num mt-6 w-full text-[15px]">
+          <table className="num mt-6 w-full text-[14px]">
             <thead>
               <tr className="text-left text-[12px] text-ink-3">
                 <th className="pb-3 font-normal">{type === "holdings" ? "ADA" : "Crude"}</th>
@@ -111,12 +111,12 @@ export function PreviewCard({
         <div className="grid grid-cols-1 gap-3">
           <Card tone="mist">
             <Eyebrow className="text-ink-2">Locke asks for a top-up at</Eyebrow>
-            <div className="num mt-6 text-[26px] leading-none">{preview.alertPrice == null ? "Not needed" : price(preview.alertPrice)}</div>
+            <div className="num mt-6 text-[21px] leading-none">{preview.alertPrice == null ? "Not needed" : price(preview.alertPrice)}</div>
             <p className="mt-2 text-[13px] text-ink-2">{preview.alertPrice == null ? "Margin covers any price move" : `${s.symbol} mark`}</p>
           </Card>
           <Card tone={preview.liquidationPrice == null ? "mist" : "ink"}>
             <Eyebrow className={preview.liquidationPrice == null ? "text-ink-2" : SUBTLE.ink}>Estimated liquidation</Eyebrow>
-            <div className={`num mt-6 text-[26px] leading-none ${preview.liquidationPrice == null ? "text-ok" : ""}`}>
+            <div className={`num mt-6 text-[21px] leading-none ${preview.liquidationPrice == null ? "text-ok" : ""}`}>
               {preview.liquidationPrice == null ? "None" : price(preview.liquidationPrice)}
             </div>
             <p className={`mt-2 text-[13px] ${preview.liquidationPrice == null ? "text-ink-2" : SUBTLE.ink}`}>

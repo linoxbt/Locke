@@ -11,7 +11,7 @@ export default async function ReplayPage({ params }: { params: Promise<{ id: str
   const plan = await planForPage(id, "/replay", ["draft", "funding", "opening", "active", "closing", "closed", "failed"]);
   const c = plan.inputs as CostsInputs;
   return (
-    <Card tone="ink" className="sm:p-10">
+    <Card tone="ink" className="sm:p-6">
       <ReplayPanel planId={plan.id} type={plan.type} currency={plan.type === "costs" ? c.currency : "USD"} litres={plan.type === "costs" ? c.litresPerMonth : 1} />
     </Card>
   );

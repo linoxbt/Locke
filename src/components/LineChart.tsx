@@ -90,7 +90,7 @@ export function LineChart({
           </g>
         )}
       </svg>
-      <figcaption className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[14px]">
+      <figcaption className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
         {series.map((s) => (
           <span key={s.label} className={`flex items-center gap-2 ${onDark ? "text-paper/60" : "text-ink-2"}`}>
             <span className="inline-block h-[3px] w-5 rounded-full" style={{ background: s.color }} />

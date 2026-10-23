@@ -29,16 +29,16 @@ export function DelegationPanel({ q, hideCovered = false }: { q: number; hideCov
       ) : (
         <dl className="mt-6 space-y-4">
           <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-[14px] text-ink-2">Staked to</dt>
-            <dd className="num text-[20px]">{data?.poolTicker ?? (data?.pool ? shortAddr(data.pool) : "—")}</dd>
+            <dt className="text-[13px] text-ink-2">Staked to</dt>
+            <dd className="num text-[17px]">{data?.poolTicker ?? (data?.pool ? shortAddr(data.pool) : "—")}</dd>
           </div>
           <div className="flex items-baseline justify-between gap-4">
-            <dt className="text-[14px] text-ink-2">Voting through</dt>
-            <dd className={`num text-[15px] ${REVEAL}`}>{data?.drep ? shortAddr(data.drep) : "no DRep"}</dd>
+            <dt className="text-[13px] text-ink-2">Voting through</dt>
+            <dd className={`num text-[14px] ${REVEAL}`}>{data?.drep ? shortAddr(data.drep) : "no DRep"}</dd>
           </div>
           <div className={`flex items-baseline justify-between gap-4 ${hideCovered ? "hidden" : ""}`}>
-            <dt className="text-[14px] text-ink-2">Covered by this plan</dt>
-            <dd className="num text-[15px]">{num(q, 0)} ADA</dd>
+            <dt className="text-[13px] text-ink-2">Covered by this plan</dt>
+            <dd className="num text-[14px]">{num(q, 0)} ADA</dd>
           </div>
         </dl>
       )}

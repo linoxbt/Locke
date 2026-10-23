@@ -38,8 +38,8 @@ export function PortfolioView({ initial }: { initial: { plans: PlanView[]; liveE
       <section className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <div className="lg:col-span-8">
           <Eyebrow className="text-ink-2">Total value protected</Eyebrow>
-          <div className="num mt-4 text-[44px] leading-none tracking-tight sm:text-[68px]">{usd(protectedUsd, 0)}</div>
-          <p className="mt-4 text-[15px] text-ink-2">
+          <div className="num mt-4 text-[32px] leading-none tracking-tight sm:text-[44px]">{usd(protectedUsd, 0)}</div>
+          <p className="mt-4 text-[14px] text-ink-2">
             Hedge value across {active.length} active plan{active.length === 1 ? "" : "s"}, at Strike mark price.
             {attention > 0 && <span className="text-danger"> {attention} need{attention === 1 ? "s" : ""} attention.</span>}
           </p>
@@ -51,22 +51,22 @@ export function PortfolioView({ initial }: { initial: { plans: PlanView[]; liveE
         </div>
       </section>
 
-      <div className="mt-8 space-y-2">
+      <div className="mt-6 space-y-2">
         <ErrorNote error={error} />
         {data.liveError && <Notice>Live numbers from Strike are unavailable right now ({data.liveError}). Showing stored plans.</Notice>}
       </div>
 
       {live.length === 0 && (
-        <Card tone="ink" className="mt-10 px-6 py-16 text-center sm:py-24">
+        <Card tone="ink" className="mt-7 px-6 py-16 text-center sm:py-24">
           <Display as="h2" size="lg" lead="Nothing protected yet." rest="Start with what keeps you up at night." restClass="text-paper/45" className="mx-auto max-w-[16ch]" />
-          <LinkButton href="/protect" variant="paper" size="lg" className="mt-10">
+          <LinkButton href="/protect" variant="paper" size="lg" className="mt-7">
             What do you want to protect? <Arrow />
           </LinkButton>
         </Card>
       )}
 
       {live.length > 0 && (
-        <DropIn className="mt-10 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <DropIn className="mt-7 grid grid-cols-1 gap-3 md:grid-cols-2">
           {live.map((p) => (
             <PlanCard key={p.id} p={p} />
           ))}
@@ -74,8 +74,8 @@ export function PortfolioView({ initial }: { initial: { plans: PlanView[]; liveE
       )}
 
       {closed.length > 0 && (
-        <section className="mt-20">
-          <h2 className="display text-[22px]">Closed</h2>
+        <section className="mt-14">
+          <h2 className="display text-[18px]">Closed</h2>
           <DropIn className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
             {closed.map((p) => (
               <PlanCard key={p.id} p={p} />

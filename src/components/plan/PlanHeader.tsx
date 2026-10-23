@@ -27,7 +27,7 @@ export function PlanHeader() {
 
   return (
     <div className="mb-8">
-      <Link href="/portfolio" className="mb-6 inline-flex h-10 items-center gap-2 rounded-full bg-paper px-4 text-[14px] text-ink-2 hover:text-ink">
+      <Link href="/portfolio" className="mb-6 inline-flex h-10 items-center gap-2 rounded-full bg-paper px-4 text-[13px] text-ink-2 hover:text-ink">
         <Arrow className="rotate-180" /> Portfolio
       </Link>
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -39,7 +39,7 @@ export function PlanHeader() {
         </div>
         <StateChip status={p.status} level={p.riskLevel} />
       </div>
-      <nav aria-label="Plan" className="-mx-1 mt-8 flex gap-1 overflow-x-auto px-1 pb-1">
+      <nav aria-label="Plan" className="-mx-1 mt-6 flex gap-1 overflow-x-auto px-1 pb-1">
         {tabs.map((t) => {
           // Top-up, resize and close are pages of their own that belong under Overview.
           const on = path === t.href || (t.href === base && /\/(top-up|resize|close)$/.test(path));
@@ -48,7 +48,7 @@ export function PlanHeader() {
               key={t.href}
               href={t.href}
               aria-current={on ? "page" : undefined}
-              className={`inline-flex h-10 shrink-0 items-center rounded-full px-4 text-[14px] transition ${on ? "bg-ink text-paper" : "bg-paper text-ink-2 hover:text-ink"}`}
+              className={`inline-flex h-10 shrink-0 items-center rounded-full px-4 text-[13px] transition ${on ? "bg-ink text-paper" : "bg-paper text-ink-2 hover:text-ink"}`}
             >
               {t.label}
             </Link>

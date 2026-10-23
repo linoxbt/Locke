@@ -16,7 +16,7 @@ function ActionLayout({ title, rest, intro, children }: { title: string; rest: s
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
       <div className="lg:col-span-5">
         <Display as="h2" size="md" lead={title} rest={rest} />
-        <div className="mt-6 max-w-[42ch] text-[16px] leading-relaxed text-ink-2">{intro}</div>
+        <div className="mt-6 max-w-[42ch] text-[14px] leading-relaxed text-ink-2">{intro}</div>
       </div>
       <Card className="lg:col-span-7">{children}</Card>
     </div>
@@ -72,7 +72,7 @@ export function TopUpForm({ adaPrice }: { adaPrice: number | null }) {
               ? "Adding margin moves this plan further from liquidation."
               : `Liquidation is ${pct(plan.liquidationDistance, 1)} away. A top-up moves it back to a safe distance.`}
           </p>
-          <p className="mt-4 text-[14px] text-ink-3">
+          <p className="mt-4 text-[13px] text-ink-3">
             Each top-up converts a slice of ADA into a USD balance on Strike, which slightly lowers the ADA you have staked and voting.
             {plan.type === "holdings" && " Once it credits, consider resizing the plan to match the ADA you now hold."}
           </p>
@@ -82,7 +82,7 @@ export function TopUpForm({ adaPrice }: { adaPrice: number | null }) {
       {step === "submitted" ? (
         <div>
           <StepTracker step="submitted" txHash={tx} />
-          <p className="mt-5 text-[15px] leading-relaxed text-ink-2">
+          <p className="mt-5 text-[14px] leading-relaxed text-ink-2">
             Once Strike credits the deposit, Locke adds it to this plan&apos;s margin. Your other plans are untouched.
           </p>
           <LinkButton href={`/plans/${plan.id}`} className="mt-6">
@@ -90,7 +90,7 @@ export function TopUpForm({ adaPrice }: { adaPrice: number | null }) {
           </LinkButton>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <Field label="Amount in USD" hint={adaPrice && usdAmt ? `≈ ${num(usdAmt / adaPrice, 1)} ADA from your wallet. Minimum $6.` : "Minimum $6."}>
             <input className={inputCls} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </Field>
@@ -142,7 +142,7 @@ export function ResizeForm() {
         rest="Close the month you've used."
         intro={<p>Each month, close the part of the hedge that matched the fuel you burned. The rest keeps protecting the months ahead.</p>}
       >
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3 rounded-2xl bg-mist p-4">
             <Stat label="Close now" value={`${num((plan.position?.size ?? 0) / c.months, 2)} WTI`} />
             <Stat label="Months left" value={`${c.months} → ${Math.max(0, c.months - 1)}`} />
@@ -165,7 +165,7 @@ export function ResizeForm() {
   const target = Math.floor((Number(held) * share) / 100) || 0;
   return (
     <ActionLayout title="Resize." rest="Match the hedge to what you hold." intro={<p>Change how much ADA you hold or how much of it to protect. Locke adds to or reduces the hedge on Strike.</p>}>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <Field label="ADA your business holds">
           <input className={inputCls} inputMode="numeric" value={held} onChange={(e) => setHeld(e.target.value)} />
         </Field>
@@ -218,7 +218,7 @@ export function CloseForm() {
         </p>
       }
     >
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3 rounded-2xl bg-mist p-4">
           <Stat label="Hedge result" value={signedUsd(plan.position?.upnl)} />
           <Stat label="Funding to date" value={signedUsd(plan.position?.fundingToDate)} />

@@ -79,7 +79,7 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
           lead={shown === "open" ? "You're protected." : shown ? "Opening your plan." : "Fund this plan."}
           rest={shown === "open" ? "Locke is watching it." : shown ? "This takes a few minutes." : "One ADA deposit, signed in your wallet."}
         />
-        <p className="mt-6 max-w-[40ch] text-[16px] leading-relaxed text-ink-2">
+        <p className="mt-6 max-w-[40ch] text-[14px] leading-relaxed text-ink-2">
           {shown === "submitted"
             ? "Cardano needs a few confirmations before Strike credits the deposit. You can leave this page; Locke finishes opening the plan."
             : shown === "open"
@@ -88,9 +88,9 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
                 ? "Keep your wallet open to sign."
                 : "If your Strike balance already covers this plan, Locke skips the deposit and opens the hedge straight away."}
         </p>
-        {p.statusNote && shown !== "open" && <p className="mt-4 text-[14px] text-ink-3">{p.statusNote}</p>}
+        {p.statusNote && shown !== "open" && <p className="mt-4 text-[13px] text-ink-3">{p.statusNote}</p>}
         {!shown && (
-          <Card className="mt-8">
+          <Card className="mt-6">
             <div className="grid grid-cols-2 gap-6">
               <Stat label="Margin to deposit" value={usd(s.requiredUsd)} sub={adaPrice ? `≈ ${num(s.requiredUsd / adaPrice, 0)} ADA` : undefined} />
               <Stat label="Hedge" value={`${num(s.size, 2)} ${p.symbol.split("-")[0]}`} sub={`${s.side === "sell" ? "short" : "long"} · ${s.leverage}x`} />
@@ -102,7 +102,7 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
         {shown ? (
           <StepTracker step={shown} txHash={tx} failed={!!error} skipDeposit={skipDeposit} />
         ) : (
-          <p className="text-[15px] leading-relaxed text-ink-2">
+          <p className="text-[14px] leading-relaxed text-ink-2">
             Your wallet will ask you to sign one transaction that sends ADA to Strike as margin for this plan. Nothing else leaves your wallet.
           </p>
         )}

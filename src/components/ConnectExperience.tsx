@@ -8,12 +8,7 @@ import { useWallet, type SignInStep } from "./WalletProvider";
 
 type Stage = SignInStep | "done" | null;
 
-const STEPS = [
-  { title: "Choose a wallet", body: "The one that holds your ADA." },
-  { title: "Approve access", body: "Your wallet shares your address." },
-  { title: "Sign one message", body: "Links the wallet to Strike through Locke." },
-  { title: "Signed in", body: "Locke takes you to your plans." },
-];
+const STEPS = ["Choose", "Approve", "Sign"];
 
 // Wallets we point people to when they have none (or not these).
 const INSTALL = [
@@ -29,14 +24,14 @@ function stageIndex(stage: Stage): number {
 function tileStatus(stage: Stage, name: string): string {
   if (stage === "approve") return `Approve access in ${name}…`;
   if (stage === "sign") return `Sign the message in ${name}…`;
-  if (stage === "finish") return "Checking your signature with Strike…";
-  if (stage === "done") return "Signed in. Taking you in…";
-  return "Detected in this browser";
+  if (stage === "finish") return "Checking with Strike…";
+  if (stage === "done") return "Signed in";
+  return "Detected";
 }
 
 /**
- * The sign-in page: a dark panel that shows what signing does (step track, the exact message the
- * wallet will show, three facts) beside the wallet chooser. One flow, so both sides share state.
+ * The sign-in page: a dark panel that shows what signing does (step track, the message the wallet
+ * will show, three facts) beside the wallet chooser. One flow, so both sides share state.
  */
 export function ConnectExperience({ next, builder, feeBps }: { next: string; builder: string | null; feeBps: number | null }) {
   const { wallets, signIn } = useWallet();
@@ -82,18 +77,17 @@ export function ConnectExperience({ next, builder, feeBps }: { next: string; bui
   const missing = INSTALL.filter((w) => !wallets.some((d) => d.id === w.id || d.name.toLowerCase().includes(w.id)));
 
   return (
-    <section className="grid min-h-[100svh] grid-cols-1 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)] lg:grid-rows-[auto_1fr]">
-      {/* A — what this is (dark) */}
-      <div className="bg-ink px-5 pb-10 pt-28 text-paper sm:px-10 lg:px-14 lg:pt-32">
-        <p className="eyebrow text-lime">Sign in to Locke</p>
-        <h1 className="display mt-6 max-w-[13ch] text-[36px] leading-[1.02] sm:text-[48px] lg:text-[56px]">
-          One signature. <span className="text-paper/45">Then Locke keeps watch.</span>
+    <section className="grid min-h-[100svh] grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_1fr]">
+      {/* A — headline and progress (dark) */}
+      <div className="bg-ink px-5 pb-8 pt-24 text-paper sm:px-10 lg:px-14 lg:pt-28">
+        <h1 className="display text-[26px] leading-[1.05] sm:text-[32px]">
+          One signature. <span className="text-paper/45">No funds move.</span>
         </h1>
-        <ol className="mt-10 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-4">
-          {STEPS.map((s, i) => {
+        <ol className="mt-6 grid max-w-[420px] grid-cols-3 gap-3">
+          {STEPS.map((title, i) => {
             const state = i < at ? "done" : i === at ? "now" : "next";
             return (
-              <li key={s.title} aria-current={state === "now" ? "step" : undefined}>
+              <li key={title} aria-current={state === "now" ? "step" : undefined}>
                 <span className="block h-1 overflow-hidden rounded-full bg-paper/15">
                   <span
                     className={`block h-full rounded-full bg-lime transition-[width] duration-500 ${
@@ -101,9 +95,7 @@ export function ConnectExperience({ next, builder, feeBps }: { next: string; bui
                     }`}
                   />
                 </span>
-                <span className={`num mt-3 block text-[11px] ${state === "next" ? "text-paper/35" : "text-lime"}`}>0{i + 1}</span>
-                <span className={`mt-1 block text-[15px] ${state === "next" ? "text-paper/45" : "text-paper"}`}>{s.title}</span>
-                <span className="mt-1 hidden text-[13px] leading-snug text-paper/45 sm:block">{s.body}</span>
+                <span className={`mt-2 block text-[13px] ${state === "next" ? "text-paper/40" : "text-paper"}`}>{title}</span>
               </li>
             );
           })}
@@ -111,22 +103,17 @@ export function ConnectExperience({ next, builder, feeBps }: { next: string; bui
       </div>
 
       {/* B — the wallet chooser */}
-      <div className="flex flex-col bg-canvas px-5 py-10 sm:px-10 lg:row-span-2 lg:px-14 lg:pb-14 lg:pt-32">
-        <p className="eyebrow text-ink-2">Step 01</p>
-        <h2 className="display mt-4 text-[28px] leading-[1.05] sm:text-[34px]">
-          Choose your wallet. <span className="text-ink-3">The one that holds your ADA.</span>
-        </h2>
+      <div className="flex flex-col bg-canvas px-5 py-8 sm:px-10 lg:row-span-2 lg:px-14 lg:pb-10 lg:pt-28">
+        <h2 className="display text-[20px] sm:text-[22px]">Choose a wallet</h2>
 
-        <div className="mt-8 space-y-2.5">
+        <div className="mt-5 max-w-[460px] space-y-2">
           {wallets.length === 0 && !scanned && (
-            <div className="flex h-[76px] items-center gap-4 rounded-[16px] bg-paper px-5 text-[15px] text-ink-2">
-              <Spinner /> Looking for wallets in this browser…
+            <div className="flex h-16 items-center gap-3 rounded-[14px] bg-paper px-4 text-[13px] text-ink-2">
+              <Spinner /> Looking for wallets…
             </div>
           )}
           {wallets.length === 0 && scanned && (
-            <div className="rounded-[16px] bg-paper p-5 text-[15px] leading-relaxed text-ink-2">
-              No Cardano wallet found in this browser. Install one below, set it to mainnet, then reload this page.
-            </div>
+            <div className="rounded-[14px] bg-paper p-4 text-[13px] leading-relaxed text-ink-2">No Cardano wallet found. Install one below, then reload.</div>
           )}
           {wallets.map((w) => {
             const mine = active === w.id;
@@ -136,93 +123,78 @@ export function ConnectExperience({ next, builder, feeBps }: { next: string; bui
                 key={w.id}
                 onClick={() => connect(w.id)}
                 disabled={!!active}
-                className={`group flex w-full items-center gap-4 rounded-[16px] bg-paper p-4 text-left transition duration-300 sm:p-5 ${
+                className={`group flex w-full items-center gap-3 rounded-[14px] bg-paper p-3 text-left transition duration-300 ${
                   mine ? "ring-2 ring-cobalt" : "ring-1 ring-transparent hover:-translate-y-0.5 hover:ring-line"
                 } ${muted ? "opacity-40" : ""}`}
               >
-                <span className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-[12px] bg-mist">
-                  {w.icon ? (
-                    <img src={w.icon} alt="" className="h-8 w-8" />
-                  ) : (
-                    <span className="display text-[20px]">{w.name.slice(0, 1)}</span>
-                  )}
+                <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-[10px] bg-mist">
+                  {w.icon ? <img src={w.icon} alt="" className="h-6 w-6" /> : <span className="display text-[15px]">{w.name.slice(0, 1)}</span>}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[17px] font-medium">{w.name}</span>
-                  <span className={`mt-0.5 flex items-center gap-2 text-[13px] ${mine ? "text-cobalt" : "text-ink-2"}`}>
+                  <span className="block truncate text-[14px] font-medium">{w.name}</span>
+                  <span className={`flex items-center gap-1.5 text-[12px] ${mine ? "text-cobalt" : "text-ink-3"}`}>
                     {!mine && <span className="h-1.5 w-1.5 rounded-full bg-ok" />}
-                    {mine ? tileStatus(stage, w.name) : tileStatus(null, w.name)}
+                    {tileStatus(mine ? stage : null, w.name)}
                   </span>
                 </span>
                 <span
-                  className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors ${
+                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors ${
                     mine ? "bg-transparent" : "bg-ink text-paper group-hover:bg-cobalt"
                   }`}
                 >
-                  {mine ? <Spinner /> : <Arrow />}
+                  {mine ? <Spinner /> : <Arrow className="h-3.5 w-3.5" />}
                 </span>
               </button>
             );
           })}
         </div>
 
-        <ErrorNote error={error} />
+        <div className="max-w-[460px]">
+          <ErrorNote error={error} />
+        </div>
 
         {missing.length > 0 && (
-          <div className="mt-10">
-            <p className="text-[13px] text-ink-2">{wallets.length ? "Other wallets that work with Locke" : "Wallets that work with Locke"}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {missing.map((w) => (
-                <a
-                  key={w.id}
-                  href={w.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-10 items-center gap-2 rounded-full bg-mist px-4 text-[14px] text-ink transition-colors hover:bg-line"
-                >
-                  Get {w.name} <span aria-hidden>↗</span>
-                </a>
-              ))}
-            </div>
+          <div className="mt-5 flex flex-wrap gap-1.5">
+            {missing.map((w) => (
+              <a
+                key={w.id}
+                href={w.href}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-8 items-center gap-1.5 rounded-full bg-mist px-3 text-[12px] text-ink-2 transition-colors hover:bg-line hover:text-ink"
+              >
+                Get {w.name} <span aria-hidden>↗</span>
+              </a>
+            ))}
           </div>
         )}
 
-        <p className="mt-auto pt-12 text-[13px] leading-relaxed text-ink-3">
-          Cardano mainnet. Locke never sees your recovery phrase, and signing this message doesn&apos;t move funds or cost a fee.
-        </p>
+        <p className="mt-auto pt-10 text-[12px] text-ink-3">Cardano mainnet · signing is free</p>
       </div>
 
-      {/* C — exactly what you'll sign, and what it means (dark) */}
-      <div className="bg-ink px-5 pb-14 pt-10 text-paper sm:px-10 lg:px-14 lg:pt-0">
-        <div className={`rounded-[16px] p-5 ring-1 transition sm:p-6 ${stage === "sign" ? "bg-paper/10 ring-lime" : "bg-paper/5 ring-paper/10"}`}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-[14px] text-paper/70">{message ? "The message in your wallet" : "What your wallet will ask you to sign"}</p>
-            <span className={`num rounded-full px-3 py-1 text-[11px] ${stage === "sign" ? "bg-lime text-ink" : "bg-paper/10 text-paper/60"}`}>
-              {stage === "sign" ? "waiting for your signature" : "Strike · builder connect"}
-            </span>
+      {/* C — what you'll sign (dark) */}
+      <div className="bg-ink px-5 pb-10 pt-6 text-paper sm:px-10 lg:px-14 lg:pt-0">
+        <div className={`max-w-[520px] rounded-[14px] p-4 ring-1 transition ${stage === "sign" ? "bg-paper/10 ring-lime" : "bg-paper/5 ring-paper/10"}`}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[12px] text-paper/60">You&apos;ll sign</p>
+            {stage === "sign" && <span className="num rounded-full bg-lime px-2.5 py-0.5 text-[11px] text-ink">waiting for you</span>}
           </div>
           <MessagePreview message={message} builder={builder} feePct={feePct} />
         </div>
 
-        <dl className="mt-8 grid grid-cols-3 gap-4">
-          {[
-            ["0 ADA", "moves when you sign"],
-            [feePct ?? "—", "builder fee per trade, nothing else"],
-            ["1 wallet", "the only place withdrawals can go"],
-          ].map(([v, l]) => (
-            <div key={l}>
-              <dt className="sr-only">{l}</dt>
-              <dd className="num text-[22px] leading-none text-lime sm:text-[28px]">{v}</dd>
-              <dd className="mt-2 text-[12px] leading-snug text-paper/55 sm:text-[13px]">{l}</dd>
-            </div>
+        <ul className="mt-4 flex flex-wrap gap-1.5">
+          {["0 ADA moves", `${feePct ?? "—"} fee per trade`, "Withdrawals to this wallet only"].map((t) => (
+            <li key={t} className="num rounded-full bg-paper/10 px-3 py-1 text-[11px] text-paper/70">
+              {t}
+            </li>
           ))}
-        </dl>
+        </ul>
       </div>
     </section>
   );
 }
 
-/** Strike's challenge text: the real one once it arrives, a faithful outline before. The fee line is highlighted. */
+/** Strike's challenge: the builder and fee lines up front, the full text (real once it arrives) behind a toggle. */
 function MessagePreview({ message, builder, feePct }: { message: string | null; builder: string | null; feePct: string | null }) {
   const lines = message
     ? message.split("\n").filter((l) => l.trim())
@@ -230,18 +202,23 @@ function MessagePreview({ message, builder, feePct }: { message: string | null; 
         `Connect to Strike via builder "${builder ?? "Locke"}".`,
         `This authorizes the builder to collect up to ${feePct ?? "a set"} fee on your trades.`,
         "By signing, you are entrusting your API wallet private key to this builder.",
-        "Wallet: your address",
-        "Chain: cardano",
-        "API Key: made for you by Locke",
-        "Nonce: one-time",
+        "Wallet: your address · Chain: cardano · API key: made for you · Nonce: one-time",
       ];
+  const line = (l: string, i: number) => (
+    <p key={i} className={/fee/i.test(l) ? "text-lime" : /^(Wallet|Chain|API Key|Nonce|Timestamp):/.test(l) ? "text-paper/40" : ""}>
+      {l}
+    </p>
+  );
   return (
-    <div className="num mt-5 space-y-1.5 break-words text-[12px] leading-relaxed text-paper/75 sm:text-[13px]">
-      {lines.map((l, i) => (
-        <p key={i} className={/fee/i.test(l) ? "text-lime" : /^(Wallet|Chain|API Key|Nonce|Timestamp):/.test(l) ? "text-paper/45" : ""}>
-          {l}
-        </p>
-      ))}
+    <div className="num mt-2 break-words text-[12px] leading-relaxed text-paper/75">
+      <div className="space-y-1">{lines.slice(0, 2).map(line)}</div>
+      <details className="group mt-2">
+        <summary className="cursor-pointer list-none text-[11px] text-paper/45 hover:text-paper/70">
+          <span className="group-open:hidden">Full message +</span>
+          <span className="hidden group-open:inline">Hide −</span>
+        </summary>
+        <div className="mt-2 space-y-1">{lines.slice(2).map((l, i) => line(l, i + 2))}</div>
+      </details>
     </div>
   );
 }

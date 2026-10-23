@@ -85,7 +85,7 @@ export function ReplayPanel({ planId, type, currency, litres }: { planId: string
             restClass="text-paper/45"
             className="max-w-[22ch]"
           />
-          <p className="mt-3 text-[14px] text-paper/50">
+          <p className="mt-3 text-[13px] text-paper/50">
             Simulation on Strike&apos;s daily mark prices, {type === "holdings" ? "portfolio value" : "fuel cost per litre"}, price effects only.
           </p>
         </div>
@@ -104,7 +104,7 @@ export function ReplayPanel({ planId, type, currency, litres }: { planId: string
         </div>
       </div>
 
-      <div className="mt-10">
+      <div className="mt-7">
         {error && <ErrorNote error={error} />}
         {!data && !error && (
           <div className="flex h-60 items-center justify-center">

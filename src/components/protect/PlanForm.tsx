@@ -65,15 +65,15 @@ export function PlanForm({ type, adaPrice, wtiPrice }: { type: PlanType; adaPric
         rest={type === "holdings" ? "Tell Locke how much to cover." : "Tell Locke what you burn."}
         className="max-w-[18ch]"
       />
-      <div className="mt-10 grid grid-cols-1 gap-3 lg:grid-cols-12">
+      <div className="mt-7 grid grid-cols-1 gap-3 lg:grid-cols-12">
         <Card className="space-y-7 lg:col-span-7">
           {type === "holdings" ? <HoldingsFields v={holdings} set={setHoldings} walletBalance={walletBalance} /> : <CostsFields v={costs} set={setCosts} />}
         </Card>
         <div className="lg:col-span-5">
-          <Card tone={tone} className="flex flex-col lg:sticky lg:top-24 lg:min-h-[300px]">
+          <Card tone={tone} className="flex flex-col lg:sticky lg:top-24 lg:min-h-[234px]">
             <Eyebrow className={SUBTLE[tone]}>{type === "holdings" ? "You'll protect" : "Crude-linked spend"}</Eyebrow>
             <Summary type={type} holdings={holdings} costs={costs} adaPrice={adaPrice} wtiPrice={wtiPrice} />
-            <div className="mt-auto space-y-3 pt-10">
+            <div className="mt-auto space-y-3 pt-8">
               <ErrorNote error={error} />
               <Button type="submit" variant={type === "holdings" ? "paper" : "ink"} size="lg" className="w-full justify-between" busy={busy}>
                 Preview plan <Arrow />
@@ -98,7 +98,7 @@ function NumberInput({ value, onChange, min, suffix }: { value: number; onChange
         min={min}
         onChange={(e) => onChange(e.target.value === "" ? NaN : Number(e.target.value))}
       />
-      {suffix && <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[15px] text-ink-3">{suffix}</span>}
+      {suffix && <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[14px] text-ink-3">{suffix}</span>}
     </div>
   );
 }
@@ -106,7 +106,7 @@ function NumberInput({ value, onChange, min, suffix }: { value: number; onChange
 function RiskControls<T extends { leverage: number; bufferPct: number }>({ v, set }: { v: T; set(f: (x: T) => T): void }) {
   return (
     <details className="group rounded-2xl bg-mist/60 p-4 [&_summary::-webkit-details-marker]:hidden">
-      <summary className="flex cursor-pointer items-center justify-between text-[15px]">
+      <summary className="flex cursor-pointer items-center justify-between text-[14px]">
         <span>
           Leverage and buffer <span className="num ml-2 text-ink-3">{v.leverage}x · {v.bufferPct}%</span>
         </span>
@@ -190,9 +190,9 @@ function Summary({ type, holdings, costs, adaPrice, wtiPrice }: { type: PlanType
     const hedged = Math.floor((holdings.amountHeld * holdings.sharePct) / 100) || 0;
     return (
       <>
-        <div className="num mt-8 text-[38px] leading-none sm:text-[48px]">{num(hedged, 0)}</div>
-        <div className={`mt-2 text-[15px] ${SUBTLE.cobalt}`}>ADA hedged{adaPrice ? ` ≈ ${usd(hedged * adaPrice, 0)} at today's price` : ""}</div>
-        <p className={`mt-8 text-[15px] leading-relaxed ${SUBTLE.cobalt}`}>
+        <div className="num mt-6 text-[28px] leading-none sm:text-[34px]">{num(hedged, 0)}</div>
+        <div className={`mt-2 text-[14px] ${SUBTLE.cobalt}`}>ADA hedged{adaPrice ? ` ≈ ${usd(hedged * adaPrice, 0)} at today's price` : ""}</div>
+        <p className={`mt-6 text-[14px] leading-relaxed ${SUBTLE.cobalt}`}>
           {holdings.sharePct}% of {num(holdings.amountHeld || 0, 0)} ADA. Margin needed ≈{" "}
           {adaPrice ? usd((hedged * adaPrice * (1 + (holdings.bufferPct || 0) / 100)) / holdings.leverage, 0) : "—"}.
         </p>
@@ -203,12 +203,12 @@ function Summary({ type, holdings, costs, adaPrice, wtiPrice }: { type: PlanType
   const exposureUsd = ((costs.crudeSharePct / 100) * monthly * costs.months) / (costs.fxRate || 1);
   return (
     <>
-      <div className="num mt-8 text-[38px] leading-none sm:text-[48px]">{usd(exposureUsd || 0, 0)}</div>
-      <div className={`mt-2 text-[15px] ${SUBTLE.lime}`}>
+      <div className="num mt-6 text-[28px] leading-none sm:text-[34px]">{usd(exposureUsd || 0, 0)}</div>
+      <div className={`mt-2 text-[14px] ${SUBTLE.lime}`}>
         over {costs.months} month{costs.months === 1 ? "" : "s"}
         {wtiPrice ? ` ≈ ${num(exposureUsd / wtiPrice, 2)} WTI` : ""}
       </div>
-      <p className={`mt-8 text-[15px] leading-relaxed ${SUBTLE.lime}`}>
+      <p className={`mt-6 text-[14px] leading-relaxed ${SUBTLE.lime}`}>
         Monthly fuel bill ≈ {costs.currency} {num(monthly || 0, 0)} (≈ {usd(monthly / (costs.fxRate || 1) || 0, 0)}). Locke hedges the {costs.crudeSharePct}% that
         moves with crude.
       </p>

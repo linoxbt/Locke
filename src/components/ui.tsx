@@ -36,7 +36,7 @@ export function Card({
   ...rest
 }: { tone?: Tone; as?: "div" | "section" | "article" } & React.HTMLAttributes<HTMLElement>) {
   return (
-    <As {...rest} className={`rounded-[var(--radius-card)] p-4 sm:p-6 ${TONE[tone]} ${className}`}>
+    <As {...rest} className={`rounded-[var(--radius-card)] p-4 sm:p-5 ${TONE[tone]} ${className}`}>
       {children}
     </As>
   );
@@ -59,10 +59,10 @@ export function Display({
   restClass?: string;
 }) {
   const sizes = {
-    xl: "text-[32px] sm:text-[52px] lg:text-[64px]",
-    lg: "text-[28px] sm:text-[38px]",
-    md: "text-[24px] sm:text-[30px]",
-    sm: "text-[20px] sm:text-[22px]",
+    xl: "text-[24px] sm:text-[36px] lg:text-[40px]",
+    lg: "text-[22px] sm:text-[28px]",
+    md: "text-[20px] sm:text-[24px]",
+    sm: "text-[17px] sm:text-[18px]",
   };
   return (
     <As className={`display ${sizes[size]} ${className}`}>
@@ -107,7 +107,7 @@ export function Button({
       disabled={rest.disabled || busy}
       aria-busy={busy || undefined}
       className={`inline-flex items-center justify-center gap-2 rounded-full font-medium transition-[background,color,box-shadow,transform] duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:active:scale-100 ${
-        size === "lg" ? "h-14 px-7 text-[16px]" : "h-11 px-5 text-[14px]"
+        size === "lg" ? "h-12 px-6 text-[15px]" : "h-10 px-4 text-[14px]"
       } ${BUTTON[variant]} ${className}`}
     >
       {busy && <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />}
@@ -134,7 +134,7 @@ export function LinkButton({
     <Link
       href={href}
       className={`inline-flex items-center justify-center gap-2 rounded-full font-medium transition-[background,color,box-shadow] duration-200 ${
-        size === "lg" ? "h-14 px-7 text-[16px]" : "h-11 px-5 text-[14px]"
+        size === "lg" ? "h-12 px-6 text-[15px]" : "h-10 px-4 text-[14px]"
       } ${BUTTON[variant]} ${className}`}
     >
       {children}
@@ -143,7 +143,7 @@ export function LinkButton({
 }
 
 export const inputCls =
-  "num h-12 w-full rounded-xl bg-mist px-4 text-[16px] text-ink outline-none ring-1 ring-transparent transition placeholder:text-ink-3 focus:bg-paper focus:ring-cobalt";
+  "num h-11 w-full rounded-xl bg-mist px-4 text-[16px] sm:text-[14px] text-ink outline-none ring-1 ring-transparent transition placeholder:text-ink-3 focus:bg-paper focus:ring-cobalt";
 
 // ── Status ──
 
@@ -237,7 +237,7 @@ export function Stat({
   return (
     <div className="min-w-0">
       <div className={`text-[13px] ${subtle}`}>{label}</div>
-      <div className={`num mt-1 ${REVEAL} text-[17px] ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-danger" : ""}`}>{value}</div>
+      <div className={`num mt-1 ${REVEAL} text-[15px] ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-danger" : ""}`}>{value}</div>
       {sub && <div className={`mt-0.5 text-[12px] ${subtle}`}>{sub}</div>}
     </div>
   );
@@ -248,7 +248,7 @@ export function Stat({
 export function ErrorNote({ error }: { error: string | null }) {
   if (!error) return null;
   return (
-    <p role="alert" className="rounded-2xl bg-danger/10 px-4 py-3 text-[14px] text-danger">
+    <p role="alert" className="rounded-2xl bg-danger/10 px-4 py-3 text-[13px] text-danger">
       {error}
     </p>
   );
@@ -256,7 +256,7 @@ export function ErrorNote({ error }: { error: string | null }) {
 
 export function Notice({ tone = "watch", children }: { tone?: "watch" | "danger" | "info"; children: React.ReactNode }) {
   const cls = { watch: "bg-watch/20 text-ink", danger: "bg-danger/10 text-danger", info: "bg-paper text-ink-2" }[tone];
-  return <div className={`rounded-2xl px-4 py-3 text-[14px] ${cls}`}>{children}</div>;
+  return <div className={`rounded-2xl px-4 py-3 text-[13px] ${cls}`}>{children}</div>;
 }
 
 export function Spinner({ className = "" }: { className?: string }) {

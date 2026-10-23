@@ -25,10 +25,10 @@ export function PlanOverview() {
       {urgent && (
         <Card tone="danger" className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="display text-[22px]">
+            <div className="display text-[18px]">
               {p.riskLevel === "action" ? "Action needed." : p.riskLevel === "margin_call" ? "Margin call on Strike." : "This plan is at risk."}
             </div>
-            <p className="mt-1 text-[15px] text-paper/80">
+            <p className="mt-1 text-[14px] text-paper/80">
               Liquidation is {pct(p.liquidationDistance, 1)} away (margin ratio {pct(p.ratio, 1)}). Top up {usd(p.suggestedTopUpUsd)} to move it back
               to a safe distance.
             </p>
@@ -40,20 +40,20 @@ export function PlanOverview() {
       )}
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-        <Card tone={tone} className="flex flex-col lg:col-span-8 lg:min-h-[280px]">
+        <Card tone={tone} className="flex flex-col lg:col-span-8 lg:min-h-[218px]">
           <Eyebrow className={SUBTLE[tone]}>{h.caption}</Eyebrow>
-          <div className="num mt-6 text-[38px] leading-none tracking-tight sm:text-[64px]">{h.value}</div>
+          <div className="num mt-6 text-[28px] leading-none tracking-tight sm:text-[40px]">{h.value}</div>
           {p.status === "active" && (
             <div className="mt-auto pt-8">
-              <div className={`mb-3 flex justify-between text-[14px] ${SUBTLE[tone]}`}>
+              <div className={`mb-3 flex justify-between text-[13px] ${SUBTLE[tone]}`}>
                 <span>Margin health</span>
                 <span>{p.riskLevel === "ok" ? "Healthy" : p.riskLevel.replace("_", " ")}</span>
               </div>
               <MarginBar ratio={p.ratio} watch={p.thresholds.watch} action={p.thresholds.action} onDark={dark} />
             </div>
           )}
-          {p.status === "closing" && <p className={`mt-auto pt-8 text-[15px] ${SUBTLE[tone]}`}>Closing on Strike…</p>}
-          {p.status === "closed" && <p className={`mt-auto pt-8 text-[15px] ${SUBTLE[tone]}`}>This plan is closed. Its margin is back on your Strike balance.</p>}
+          {p.status === "closing" && <p className={`mt-auto pt-8 text-[14px] ${SUBTLE[tone]}`}>Closing on Strike…</p>}
+          {p.status === "closed" && <p className={`mt-auto pt-8 text-[14px] ${SUBTLE[tone]}`}>This plan is closed. Its margin is back on your Strike balance.</p>}
         </Card>
 
         <div className="grid grid-cols-1 gap-3 lg:col-span-4">
@@ -91,7 +91,7 @@ export function PlanOverview() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <Card className="lg:col-span-8">
           <div className="flex items-baseline justify-between">
-            <h2 className="display text-[20px]">{h.caption}</h2>
+            <h2 className="display text-[17px]">{h.caption}</h2>
             <span className="text-[13px] text-ink-3">since opening</span>
           </div>
           <div className="mt-6">
@@ -113,15 +113,15 @@ export function PlanOverview() {
           {p.type === "holdings" && <DelegationPanel q={(p.inputs as HoldingsInputs).amountHeld} />}
           <Card>
             <div className="flex items-baseline justify-between">
-              <h2 className="display text-[20px]">Latest</h2>
-              <Link href={`${base}/activity`} className="text-[14px] text-cobalt">
+              <h2 className="display text-[17px]">Latest</h2>
+              <Link href={`${base}/activity`} className="text-[13px] text-cobalt">
                 All activity
               </Link>
             </div>
             <ol className="mt-5 space-y-4">
-              {d.events.length === 0 && <li className="text-[14px] text-ink-3">No events yet.</li>}
+              {d.events.length === 0 && <li className="text-[13px] text-ink-3">No events yet.</li>}
               {d.events.slice(0, 4).map((e) => (
-                <li key={e.id} className="text-[14px] leading-snug">
+                <li key={e.id} className="text-[13px] leading-snug">
                   {e.message}
                   <span className="num mt-0.5 block text-[12px] text-ink-3">{ago(e.created_at)}</span>
                 </li>

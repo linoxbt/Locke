@@ -21,8 +21,8 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
       <PreviewCard type={p.type} inputs={p.inputs} preview={detail.preview} adaPrice={adaPrice} />
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <Card tone="mist" className="lg:col-span-8">
-          <h2 className="display text-[20px]">Before you open a plan</h2>
-          <ul className="mt-5 space-y-3 text-[15px] leading-relaxed text-ink-2">
+          <h2 className="display text-[17px]">Before you open a plan</h2>
+          <ul className="mt-5 space-y-3 text-[14px] leading-relaxed text-ink-2">
             <li>Locke is a tool, not financial advice; you decide what to protect.</li>
             <li>Hedges can lose money on their own: a holdings hedge gives up upside, a fuel hedge loses if fuel prices fall.</li>
             {p.type === "costs" && <li>The fuel plan is partial: local prices also move with exchange rates, taxes and policy.</li>}
@@ -32,7 +32,7 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
           </ul>
         </Card>
         <Card className="flex flex-col lg:col-span-4">
-          <label className="flex cursor-pointer items-start gap-3 text-[15px]">
+          <label className="flex cursor-pointer items-start gap-3 text-[14px]">
             <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--color-cobalt)]" />
             I understand the risks above and want Locke to open this hedge.
           </label>
@@ -42,7 +42,7 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
                 Continue to funding <Arrow />
               </LinkButton>
             ) : (
-              <span aria-disabled className="flex h-14 w-full items-center justify-between rounded-full bg-mist px-8 text-[16px] text-ink-3">
+              <span aria-disabled className="flex h-12 w-full items-center justify-between rounded-full bg-mist px-8 text-[14px] text-ink-3">
                 Continue to funding <Arrow />
               </span>
             )}

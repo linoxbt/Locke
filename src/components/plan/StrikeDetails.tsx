@@ -27,7 +27,7 @@ export function StrikeDetails() {
   return (
     <div className="space-y-3">
       <Card>
-        <h2 className="display text-[20px]">Position on Strike</h2>
+        <h2 className="display text-[17px]">Position on Strike</h2>
         <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-3 lg:grid-cols-5">
           {rows.map(([k, v]) => (
             <Stat key={k} label={k} value={v} />
@@ -35,11 +35,11 @@ export function StrikeDetails() {
         </div>
       </Card>
       <Card>
-        <h2 className="display text-[20px]">Deposits</h2>
+        <h2 className="display text-[17px]">Deposits</h2>
         {d.deposits.length === 0 ? (
-          <p className="mt-4 text-[14px] text-ink-3">No deposits for this plan.</p>
+          <p className="mt-4 text-[13px] text-ink-3">No deposits for this plan.</p>
         ) : (
-          <table className="num mt-6 w-full text-[14px]">
+          <table className="num mt-6 w-full text-[13px]">
             <thead>
               <tr className="text-left text-[12px] text-ink-3">
                 <th className="pb-3 font-normal">Purpose</th>

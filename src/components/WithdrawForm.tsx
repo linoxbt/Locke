@@ -37,9 +37,9 @@ export function WithdrawForm({ available }: { available: number | null }) {
   if (done) {
     return (
       <Card>
-        <h2 className="display text-[22px]">Withdrawal submitted.</h2>
-        <p className="mt-3 text-[15px] text-ink-2">ADA arrives in your connected wallet once Strike settles it.</p>
-        <LinkButton href="/portfolio" className="mt-8">
+        <h2 className="display text-[18px]">Withdrawal submitted.</h2>
+        <p className="mt-3 text-[14px] text-ink-2">ADA arrives in your connected wallet once Strike settles it.</p>
+        <LinkButton href="/portfolio" className="mt-6">
           Back to portfolio <Arrow />
         </LinkButton>
       </Card>
@@ -47,7 +47,7 @@ export function WithdrawForm({ available }: { available: number | null }) {
   }
 
   return (
-    <Card className="space-y-6">
+    <Card className="space-y-4">
       <Field label="Amount in USD" hint="Strike charges $1 per withdrawal; the minimum is $5.">
         <input className={inputCls} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="25" />
       </Field>

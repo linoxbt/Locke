@@ -68,7 +68,7 @@ export function StepTracker({ step, txHash, failed, skipDeposit }: { step: Depos
                 {done ? "✓" : current && !failed ? <span className="h-2 w-2 animate-pulse rounded-full bg-paper" /> : i + 1}
               </span>
               <span className="min-w-0">
-                <span className={`block text-[16px] ${done || current ? "text-ink" : "text-ink-3"}`}>{s.label}</span>
+                <span className={`block text-[14px] ${done || current ? "text-ink" : "text-ink-3"}`}>{s.label}</span>
                 <span className="block text-[13px] text-ink-3">{s.hint}</span>
               </span>
             </li>
