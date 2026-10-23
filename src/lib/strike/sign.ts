@@ -8,20 +8,14 @@ import { createHash, createPrivateKey, randomUUID, sign, type KeyObject } from "
 
 const PKCS8_ED25519_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 
-const keyCache = new Map<string, KeyObject>();
-
+// No cache: building the key object is cheap, and a cache keyed by the private key would keep
+// plaintext keys in memory for the life of the process.
 function keyObject(privateKeyHex: string): KeyObject {
-  let k = keyCache.get(privateKeyHex);
-  if (!k) {
-    k = createPrivateKey({
-      key: Buffer.concat([PKCS8_ED25519_PREFIX, Buffer.from(privateKeyHex, "hex")]),
-      format: "der",
-      type: "pkcs8",
-    });
-    if (keyCache.size > 500) keyCache.clear();
-    keyCache.set(privateKeyHex, k);
-  }
-  return k;
+  return createPrivateKey({
+    key: Buffer.concat([PKCS8_ED25519_PREFIX, Buffer.from(privateKeyHex, "hex")]),
+    format: "der",
+    type: "pkcs8",
+  });
 }
 
 export function ed25519SignHex(message: string, privateKeyHex: string): string {

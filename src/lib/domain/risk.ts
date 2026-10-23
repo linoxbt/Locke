@@ -109,12 +109,19 @@ export const DEMO_THRESHOLDS: Thresholds = {
   target: 0.0025,
 };
 
-/** Risk level with hysteresis: once at Watch or worse, leave only below watchExit. */
+/** Leaving Action takes a ratio this far below the Action level, so a ratio hovering at it doesn't flap. */
+export const ACTION_EXIT_FACTOR = 0.92;
+
+/**
+ * Risk level with hysteresis: once at Watch or worse, leave only below watchExit; once at Action
+ * or worse, step down to Watch only below action × ACTION_EXIT_FACTOR.
+ */
 export function riskLevel(ratio: number, prev: RiskLevel, th: Thresholds = LOCKE_THRESHOLDS): RiskLevel {
   if (ratio >= STRIKE_LEVELS.liquidation) return "liquidation";
   if (ratio >= STRIKE_LEVELS.reduceOnly) return "reduce_only";
   if (ratio >= STRIKE_LEVELS.marginCall) return "margin_call";
   if (ratio >= th.action) return "action";
+  if (LEVEL_RANK[prev] >= LEVEL_RANK.action && ratio >= th.action * ACTION_EXIT_FACTOR) return "action";
   if (ratio >= th.watch) return "watch";
   if (prev !== "ok" && ratio >= th.watchExit) return "watch";
   return "ok";
@@ -134,7 +141,7 @@ export const LEVEL_RANK: Record<RiskLevel, number> = {
  * low-leverage plan a ratio alert alone would fire too late for a Cardano deposit to land.
  * Locke therefore also alerts on how far the mark is from the liquidation price.
  */
-export const DISTANCE_LEVELS = { watch: 0.2, action: 0.1, watchExit: 0.22, target: 0.25 };
+export const DISTANCE_LEVELS = { watch: 0.2, action: 0.1, actionExit: 0.12, watchExit: 0.22, target: 0.25 };
 
 /** Fractional distance from mark to liquidation in the adverse direction (0.1 = 10%). */
 export function distanceToLiquidation(signedSize: number, mark: number, liq: number | null): number | null {
@@ -167,6 +174,7 @@ export function combinedLevel(
   if (distance != null) {
     if (distance <= 0) byDistance = "liquidation";
     else if (distance <= DISTANCE_LEVELS.action) byDistance = "action";
+    else if (LEVEL_RANK[prev] >= LEVEL_RANK.action && distance <= DISTANCE_LEVELS.actionExit) byDistance = "action";
     else if (distance <= DISTANCE_LEVELS.watch) byDistance = "watch";
     else if (prev !== "ok" && distance <= DISTANCE_LEVELS.watchExit) byDistance = "watch";
   }

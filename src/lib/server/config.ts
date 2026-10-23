@@ -26,10 +26,19 @@ export const config = {
   get builderCode() {
     return required("STRIKE_BUILDER_CODE");
   },
-  /** Per-order builder fee. A server constant, never taken from the browser. */
+  /** Per-order builder fee. A server constant, never taken from the browser. Required: a silent 0 would stick to every user who connects. */
   get builderFeeBps() {
-    const n = Math.floor(Number(process.env.STRIKE_BUILDER_FEE_BPS ?? "0"));
-    if (!isFinite(n) || n < 0 || n > 100) throw new ConfigError("STRIKE_BUILDER_FEE_BPS", "must be 0..100");
+    const raw = process.env.STRIKE_BUILDER_FEE_BPS;
+    if (raw == null || raw.trim() === "") throw new ConfigError("STRIKE_BUILDER_FEE_BPS");
+    const n = Number(raw);
+    const max = this.builderMaxBps;
+    if (!Number.isInteger(n) || n < 0 || n > max) throw new ConfigError("STRIKE_BUILDER_FEE_BPS", `must be a whole number from 0 to ${max} (the builder code's maximum)`);
+    return n;
+  },
+  /** The maximum fee registered for the builder code on Strike (LockeIn: 20 bps). */
+  get builderMaxBps() {
+    const n = Number(process.env.STRIKE_BUILDER_MAX_BPS ?? "20");
+    if (!Number.isInteger(n) || n < 0 || n > 100) throw new ConfigError("STRIKE_BUILDER_MAX_BPS", "must be 0..100");
     return n;
   },
   get networkId() {

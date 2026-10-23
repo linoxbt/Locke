@@ -97,3 +97,17 @@ describe("distance-based alerts", () => {
     }
   });
 });
+
+describe("action hysteresis", () => {
+  it("doesn't flap between watch and action around the action level", async () => {
+    const { riskLevel, combinedLevel, LOCKE_THRESHOLDS, ACTION_EXIT_FACTOR } = await import("@/lib/domain/risk");
+    expect(riskLevel(0.61, "watch")).toBe("action");
+    expect(riskLevel(0.59, "action")).toBe("action");
+    expect(riskLevel(LOCKE_THRESHOLDS.action * ACTION_EXIT_FACTOR - 0.001, "action")).toBe("watch");
+    expect(riskLevel(0.59, "watch")).toBe("watch");
+    // Distance: in at 10%, out only beyond 12%.
+    expect(combinedLevel(0.1, 0.099, "ok")).toBe("action");
+    expect(combinedLevel(0.1, 0.11, "action")).toBe("action");
+    expect(combinedLevel(0.1, 0.13, "action")).toBe("watch");
+  });
+});

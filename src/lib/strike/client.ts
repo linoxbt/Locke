@@ -27,17 +27,35 @@ export interface ApiKeys {
 let clockOffsetMs = 0;
 let clockCheckedAt = 0;
 
-async function serverNow(): Promise<number> {
+/** Every Strike call gives up after this long, so one hung request can't stall a route or the worker. */
+const TIMEOUT_MS = 10_000;
+
+async function strikeFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  try {
+    return await fetch(url, { cache: "no-store", ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (e) {
+    const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+    throw new StrikeError(timedOut ? "Strike didn't answer in time" : "Strike is unreachable", timedOut ? 504 : 503, null);
+  }
+}
+
+/** Strike's clock (ms), for signing. Falls back to the local clock if /v2/time misbehaves. */
+export async function serverNow(): Promise<number> {
   if (Date.now() - clockCheckedAt > 5 * 60_000) {
     try {
       const t0 = Date.now();
-      const r = await fetch(`${config.strikeApiUrl}/v2/time`, { cache: "no-store" });
-      const { serverTime } = (await r.json()) as { serverTime: number };
+      const r = await strikeFetch(`${config.strikeApiUrl}/v2/time`);
+      const body = (await r.json()) as { serverTime?: unknown };
       const t1 = Date.now();
-      clockOffsetMs = serverTime - (t0 + t1) / 2;
+      const serverTime = Number(body.serverTime);
+      // Only accept a sane millisecond timestamp within a day of ours; anything else keeps the old offset.
+      if (r.ok && Number.isFinite(serverTime) && Math.abs(serverTime - t1) < 86_400_000) {
+        clockOffsetMs = serverTime - (t0 + t1) / 2;
+      }
       clockCheckedAt = t1;
     } catch {
       // Keep the previous offset; NTP-synced hosts are within the 3-minute window anyway.
+      clockCheckedAt = Date.now();
     }
   }
   return Date.now() + clockOffsetMs;
@@ -59,16 +77,15 @@ async function parse(res: Response, what: string): Promise<any> {
 }
 
 async function publicGet(path: string): Promise<any> {
-  const res = await fetch(`${config.strikeApiUrl}${path}`, { cache: "no-store" });
+  const res = await strikeFetch(`${config.strikeApiUrl}${path}`);
   return parse(res, `GET ${path.split("?")[0]}`);
 }
 
 async function publicPost(path: string, body: object): Promise<any> {
-  const res = await fetch(`${config.strikeApiUrl}${path}`, {
+  const res = await strikeFetch(`${config.strikeApiUrl}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    cache: "no-store",
   });
   return parse(res, `POST ${path}`);
 }
@@ -88,11 +105,10 @@ export async function strikeRequest(
       ...extraHeaders,
     };
     if (bodyStr) headers["Content-Type"] = "application/json";
-    const res = await fetch(`${config.strikeApiUrl}${path}`, {
+    const res = await strikeFetch(`${config.strikeApiUrl}${path}`, {
       method,
       headers,
       body: bodyStr || undefined,
-      cache: "no-store",
     });
     // Strike answers 401 "authentication failed" for a bad signature too; nothing ran,
     // so one retry with a fresh timestamp and nonce is safe.
@@ -211,7 +227,9 @@ export async function getMarketRules(symbol: string): Promise<MarketRules> {
 export async function getFeeRates(): Promise<FeeRates> {
   const tiers = await cached("feeTiers", 10 * 60_000, () => publicGet("/v2/fee-tiers")).catch(() => null);
   const t0 = tiers?.feeTiers?.find((t: any) => t.Tier === 0);
-  return { takerRate: t0?.TakerRate ?? 0.0005, builderBps: config.builderFeeBps };
+  // Coerce: a string here would turn every fee sum into string concatenation.
+  const taker = Number(t0?.TakerRate);
+  return { takerRate: Number.isFinite(taker) && taker >= 0 && taker < 0.01 ? taker : 0.0005, builderBps: config.builderFeeBps };
 }
 
 /** Daily mark closes. */
@@ -285,6 +303,26 @@ export function placeMarketOrder(
   // The server's fee, capped at what this user approved (the setting may have been raised since).
   const bps = Math.min(config.builderFeeBps, keys.feeShareBps ?? config.builderFeeBps);
   return strikeRequest(keys, "POST", "/v2/order", body, bps > 0 ? { "X-Builder-Fee-Bps": String(bps) } : undefined);
+}
+
+export interface StrikeOrder {
+  ClientOrderID: string;
+  Status: "pending" | "open" | "filled" | "canceled" | "untriggered" | "rejected" | "expired" | "none";
+  Size: string;
+  Filled: string;
+  CloseReason?: string;
+}
+
+/** An order by its client id, or null when Strike has no such order (it was never accepted). */
+export async function getOrderByClientId(keys: ApiKeys, symbol: string, clientOrderId: string): Promise<StrikeOrder | null> {
+  try {
+    const qs = new URLSearchParams({ symbol, client_order_id: clientOrderId });
+    const o = (await strikeRequest(keys, "GET", `/v2/order?${qs}`)) as StrikeOrder;
+    return o && o.Status && o.Status !== "none" ? o : null;
+  } catch (e) {
+    if (e instanceof StrikeError && e.status === 404) return null;
+    throw e;
+  }
 }
 
 export function addIsolatedMargin(keys: ApiKeys, symbol: string, amountUsd: number) {

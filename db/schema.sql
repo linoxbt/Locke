@@ -106,3 +106,45 @@ alter table plans              enable row level security;
 alter table deposits           enable row level security;
 alter table plan_events        enable row level security;
 alter table snapshots          enable row level security;
+
+-- ── Hardening (audit, 2026-10-23). Idempotent additions to the tables above. ──
+
+-- Sessions: bumping the version revokes every token issued before it (logout, new sign-in).
+alter table users add column if not exists session_version int not null default 1;
+
+-- Orders: one tracked order in flight per plan, with a deterministic client id
+-- locke-{planId}-{action}-{seq}. Strike is asked about that exact id when an outcome is unclear.
+alter table plans add column if not exists order_seq      int not null default 0;
+alter table plans add column if not exists pending_order  text;
+alter table plans add column if not exists pending_action text check (pending_action in ('open','close','resize'));
+alter table plans add column if not exists pending_meta   jsonb;
+alter table plans add column if not exists pending_since  timestamptz;
+-- A live plan whose position briefly disappears is only closed after a grace period.
+alter table plans add column if not exists missing_since  timestamptz;
+-- Risk disclosures accepted (server-side, required before any deposit or order).
+alter table plans add column if not exists risk_ack_at    timestamptz;
+
+-- Deposits: what was actually added to margin, and one row per Cardano transaction.
+alter table deposits add column if not exists applied_usd numeric;
+create unique index if not exists deposits_tx_hash_key on deposits(tx_hash) where tx_hash is not null;
+create index if not exists deposits_user_status_idx on deposits(user_id, status);
+
+-- Sign-in rate limiting and cleanup.
+alter table connect_challenges add column if not exists ip text;
+create index if not exists connect_challenges_created_idx on connect_challenges(created_at);
+create index if not exists connect_challenges_address_idx on connect_challenges(address, created_at);
+create index if not exists connect_challenges_ip_idx on connect_challenges(ip, created_at);
+
+-- Withdrawals: an audit trail of every quote and confirmation.
+create table if not exists withdrawals (
+  id          text primary key,                 -- Strike withdraw_id
+  user_id     uuid not null references users(id) on delete cascade,
+  usd_value   numeric not null,
+  fee         numeric,
+  status      text not null default 'quoted' check (status in ('quoted', 'confirmed', 'failed')),
+  error       text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists withdrawals_user_idx on withdrawals(user_id, created_at desc);
+alter table withdrawals enable row level security;
