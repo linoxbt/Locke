@@ -34,7 +34,8 @@ export function walletError(e: unknown, call: WalletCall): Error {
   if (e instanceof Error && !("code" in e)) return e;
   const { code, info, message } = (e ?? {}) as { code?: number; info?: string; message?: string };
   const text = info || message || "";
-  if (code === -3 || (call === "signData" && code === 3) || (call === "signTx" && code === 2) || /declin|reject|cancel/i.test(text)) {
+  // OKX says "User denied request signature" (code 4001, as on EVM chains).
+  if (code === -3 || code === 4001 || (call === "signData" && code === 3) || (call === "signTx" && code === 2) || /declin|reject|cancel|denied/i.test(text)) {
     return new Error(call === "enable" ? "You didn't let Locke see your wallet. Approve the connection to continue." : "Request cancelled in your wallet.");
   }
   if (code === -4) return new Error("The account in your wallet changed. Switch back, or sign in again.");
@@ -152,9 +153,22 @@ export async function walletAda(w: ConnectedWallet): Promise<number> {
 }
 
 /** Sign plain text (Strike challenge) → "coseSign1Hex:coseKeyHex". */
+/** Faster than anyone can read a signature window and press Reject: the wallet refused on its own. */
+const INSTANT_REFUSAL_MS = 1200;
+
 export async function signText(w: ConnectedWallet, text: string, alreadyHex = false): Promise<string> {
-  const { signature, key } = await wallet("signData", () => w.api.signData(w.addressHex, alreadyHex ? text : utf8ToHex(text)));
-  return `${signature}:${key}`;
+  const started = Date.now();
+  try {
+    const { signature, key } = await wallet("signData", () => w.api.signData(w.addressHex, alreadyHex ? text : utf8ToHex(text)));
+    return `${signature}:${key}`;
+  } catch (e) {
+    if (e instanceof Error && e.message === "Request cancelled in your wallet." && Date.now() - started < INSTANT_REFUSAL_MS) {
+      throw new Error(
+        `Your wallet refused to sign without showing a signature window. Unlock it, check it's on Cardano mainnet with this account selected, and try again. ${WORKING}`
+      );
+    }
+    throw e;
+  }
 }
 
 export async function walletUtxos(w: ConnectedWallet): Promise<string[]> {
