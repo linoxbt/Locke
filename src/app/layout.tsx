@@ -19,11 +19,18 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { themeColor: "#f2f1ee", width: "device-width", initialScale: 1 };
 
+// Netlify's CDN inserts "\n<!-- This site is hosted on Netlify ... -->" after <meta charset>. React
+// renders no comments or whitespace in <head>, so those nodes break hydration of the whole page
+// (React error #418). This runs while <head> is parsed, before the webpack runtime at the end of
+// <body> can start React, and removes comment and blank text nodes that aren't React's.
+const STRIP_INJECTED_HEAD_NODES = `(function(){var h=document.head,n=h.firstChild,x;while(n){x=n.nextSibling;if(n.nodeType===8||(n.nodeType===3&&!/\\S/.test(n.nodeValue)))h.removeChild(n);n=x}})();`;
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await optionalSession();
   return (
     <html lang="en" className={`${inter.variable} ${interTight.variable} ${jetbrains.variable}`}>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: STRIP_INJECTED_HEAD_NODES }} />
         <noscript>
           {/* Without JavaScript nothing waits to animate in. */}
           <style>{`[data-drop] > *, [data-fall] .fall { opacity: 1 !important; } .replay-clip { transform: none !important; }`}</style>
