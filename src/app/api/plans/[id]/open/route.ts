@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { route } from "@/lib/server/http";
+import { idParam, route } from "@/lib/server/http";
 import { openPlan } from "@/lib/server/planService";
+import { LIMITS, rateLimit } from "@/lib/server/rateLimit";
 import { requireSession } from "@/lib/server/session";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export const POST = route(async (req: Request, ctx: Ctx) => {
   const s = await requireSession(req);
-  const { id } = await ctx.params;
+  const id = idParam((await ctx.params).id, "Plan not found");
+  rateLimit(`${s.uid}:open`, LIMITS.strikeWrite);
   const plan = await openPlan(s.uid, id);
   return NextResponse.json({ status: plan.status, statusNote: plan.status_note });
 });

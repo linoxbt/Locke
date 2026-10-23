@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { ConfigError } from "./config";
-import { currentSession, type Session } from "./session";
+import { currentSession, hasSessionCookie, type Session } from "./session";
 
 /** Session for a server-rendered page, or null when signed out (or sessions aren't configured yet). */
 export async function optionalSession(): Promise<Session | null> {
@@ -12,10 +12,17 @@ export async function optionalSession(): Promise<Session | null> {
   }
 }
 
-/** Gate a page: signed-out visitors go to /connect and come back to `returnTo` afterwards. */
+/**
+ * Gate a page: signed-out visitors go to /connect and come back to `returnTo` afterwards. A
+ * cookie that no longer counts (expired, signed out elsewhere) adds reconnect=1 so the sign-in
+ * page says the session ended.
+ */
 export async function requirePageSession(returnTo: string): Promise<Session> {
   const s = await optionalSession();
-  if (!s) redirect(`/connect?next=${encodeURIComponent(returnTo)}`);
+  if (!s) {
+    const ended = await hasSessionCookie();
+    redirect(`/connect?${ended ? "reconnect=1&" : ""}next=${encodeURIComponent(returnTo)}`);
+  }
   return s;
 }
 

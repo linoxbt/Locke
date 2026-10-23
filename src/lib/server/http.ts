@@ -29,7 +29,7 @@ export function route<A extends unknown[]>(fn: (...args: A) => Promise<Response>
           );
         }
         const status = e.status >= 400 && e.status < 500 ? 400 : 502;
-        return NextResponse.json({ error: `Strike: ${e.message}` }, { status });
+        return NextResponse.json({ error: strikeErrorText(e) }, { status });
       }
       console.error(e);
       return NextResponse.json({ error: "Something went wrong. Try again." }, { status: 500 });
@@ -37,10 +37,41 @@ export function route<A extends unknown[]>(fn: (...args: A) => Promise<Response>
   };
 }
 
-export async function readJson(req: Request): Promise<Record<string, unknown>> {
+/**
+ * What a user sees for a Strike failure. Strike's own error text is shown only when it is a short
+ * sentence from its error body; anything else (our "POST /v2/x failed (400)" fallback, JSON,
+ * stack-like text) becomes a fixed message. Network failures carry Locke's own wording (body null).
+ */
+export function strikeErrorText(e: StrikeError): string {
+  const b = e.body as { error?: unknown; message?: unknown } | null;
+  const fromBody = !!b && typeof b === "object" && (b.error === e.message || b.message === e.message);
+  if (fromBody && e.message.length <= 160 && !/[{}[\]<>\n\r\t]|\bat\s+\S+\s*\(|\.(?:js|ts):\d/.test(e.message)) return `Strike: ${e.message}`;
+  if (b === null && e.status >= 500) return e.message; // strikeFetch's own "didn't answer in time" / "unreachable"
+  return e.status >= 400 && e.status < 500 ? "Strike refused the request." : "Strike is unavailable right now. Try again shortly.";
+}
+
+/** The body, read as a stream and abandoned once it passes MAX_BODY_BYTES (a chunked body has no length up front). */
+async function readBody(req: Request): Promise<string> {
   if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) throw new HttpError(413, "Request too large");
-  const text = await req.text();
-  if (text.length > MAX_BODY_BYTES) throw new HttpError(413, "Request too large");
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      await reader.cancel().catch(() => {});
+      throw new HttpError(413, "Request too large");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+export async function readJson(req: Request): Promise<Record<string, unknown>> {
+  const text = await readBody(req);
   try {
     const body = JSON.parse(text);
     if (body && typeof body === "object" && !Array.isArray(body)) return body as Record<string, unknown>;
@@ -55,6 +86,14 @@ export function str(body: Record<string, unknown>, key: string, max: number, pat
   const v = body[key];
   if (typeof v !== "string" || !v || v.length > max || (pattern && !pattern.test(v))) throw new HttpError(400, `Invalid ${key}`);
   return v;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A plan or deposit id from the URL. Anything that isn't a UUID is a 404 and never reaches Postgres. */
+export function idParam(id: string, notFound: string): string {
+  if (!UUID.test(id)) throw new HttpError(404, notFound);
+  return id;
 }
 
 /** The caller's IP as the platform reports it (Netlify first, then the standard proxy header). */

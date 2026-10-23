@@ -100,6 +100,35 @@ describe("same-origin check", () => {
     }
     expect(() => assertSameOrigin(new Request("https://locke.example/api/x", { method: "GET" }))).not.toThrow();
   });
+
+  it("compares the whole origin, needs https off localhost, and ignores X-Forwarded-Host", async () => {
+    const { assertSameOrigin } = await import("@/lib/server/session");
+    const req = (origin: string, headers: Record<string, string> = { host: "locke.example" }) =>
+      new Request("https://locke.example/api/x", { method: "POST", headers: { ...headers, origin } });
+    // Same host, wrong scheme or port.
+    expect(() => assertSameOrigin(req("http://locke.example"))).toThrow(/Cross-origin/);
+    expect(() => assertSameOrigin(req("https://locke.example:8443"))).toThrow(/Cross-origin/);
+    // A spoofed X-Forwarded-Host no longer makes an attacker's origin "ours".
+    expect(() => assertSameOrigin(req("https://evil.example", { host: "locke.example", "x-forwarded-host": "evil.example" }))).toThrow(/Cross-origin/);
+    // Local development over http.
+    expect(() => assertSameOrigin(req("http://localhost:3000", { host: "localhost:3000" }))).not.toThrow();
+    expect(() => assertSameOrigin(req("http://127.0.0.1:3000", { host: "127.0.0.1:3000" }))).not.toThrow();
+    expect(() => assertSameOrigin(req("http://localhost:3000", { host: "localhost:4000" }))).toThrow(/Cross-origin/);
+    // The site URLs Netlify provides count even when Host is the internal one.
+    const saved = { URL: process.env.URL, DEPLOY_URL: process.env.DEPLOY_URL };
+    process.env.URL = "https://trylocke.online";
+    process.env.DEPLOY_URL = "https://abc123--locke.netlify.app";
+    try {
+      expect(() => assertSameOrigin(req("https://trylocke.online", { host: "internal.netlify" }))).not.toThrow();
+      expect(() => assertSameOrigin(req("https://abc123--locke.netlify.app", { host: "internal.netlify" }))).not.toThrow();
+      expect(() => assertSameOrigin(req("http://trylocke.online", { host: "internal.netlify" }))).toThrow(/Cross-origin/);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
 });
 
 describe("Strike connect errors", () => {
