@@ -1,8 +1,25 @@
-// "Who Locke protects": example businesses, each with a typographic visual. Swipes sideways on
-// phones (scroll-snap), three columns from lg.
+// "Who Locke protects": example businesses, each with a typographic visual, most of them in
+// motion (CSS loops marked .loop, stopped under reduced motion). Swipes sideways on phones
+// (scroll-snap), three columns from lg.
 
 import Link from "next/link";
 import { DropIn } from "@/components/DropIn";
+
+// Heartbeat across the 24/7 card: flat, a spike, flat again. Drawn in a 0–200 × 0–100 box.
+const PULSE = "M0 55 L60 55 L72 55 L80 30 L88 78 L96 44 L102 55 L200 55";
+// Bars of a fuel price that keeps moving, each on its own rhythm (height %, low point, seconds).
+const BARS: [number, number, number][] = [
+  [60, 0.55, 2.6],
+  [72, 0.7, 3.1],
+  [55, 0.5, 2.2],
+  [90, 0.62, 3.4],
+  [68, 0.58, 2.8],
+  [100, 0.66, 3.7],
+  [64, 0.52, 2.4],
+];
+// The order the highlighted member hops through the 3×3 grid.
+const HOPS = [4, 0, 8, 2, 6, 1, 7, 3, 5];
+const HOP_S = 0.55;
 
 const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode }[] = [
   {
@@ -11,8 +28,32 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     href: "/how-it-works#costs",
     visual: (
       <div className="relative h-full bg-ink">
-        <span className="display absolute -bottom-3 left-3 text-[72px] leading-none text-lime transition-all duration-500 group-hover:bottom-3">24/7</span>
-        <span className="num absolute right-4 top-4 rounded-full bg-paper/10 px-3 py-1 text-[12px] text-paper">diesel · WTI</span>
+        <svg viewBox="0 0 200 100" className="absolute inset-x-0 top-[18%] h-[46%] w-full" preserveAspectRatio="none" aria-hidden>
+          <path d={PULSE} pathLength={100} fill="none" stroke="var(--color-lime)" strokeOpacity="0.18" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          <path
+            d={PULSE}
+            pathLength={100}
+            fill="none"
+            stroke="var(--color-lime)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray="26 74"
+            vectorEffect="non-scaling-stroke"
+            className="loop"
+            style={{ animation: "pulse-travel 2.4s linear infinite" }}
+          />
+        </svg>
+        <span
+          className="loop display absolute -bottom-3 left-3 text-[72px] leading-none text-lime transition-all duration-500 group-hover:bottom-3"
+          style={{ animation: "float-up 5s ease-in-out infinite" }}
+        >
+          24/7
+        </span>
+        <span className="num absolute right-4 top-4 flex items-center gap-2 rounded-full bg-paper/10 px-3 py-1 text-[12px] text-paper">
+          <span className="loop h-1.5 w-1.5 rounded-full bg-lime" style={{ animation: "blink 1.2s ease-in-out infinite" }} />
+          diesel · WTI
+        </span>
       </div>
     ),
   },
@@ -34,10 +75,22 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     visual: (
       <div className="relative h-full bg-lime">
         <div className="absolute inset-x-4 bottom-4 flex h-28 items-end gap-2">
-          {[60, 72, 55, 90, 68, 100, 64].map((h, i) => (
-            <span key={i} className="flex-1 rounded-t-md bg-ink" style={{ height: `${h}%`, opacity: 0.25 + i * 0.1 }} />
+          {BARS.map(([h, lo, sec], i) => (
+            <span
+              key={i}
+              className="loop flex-1 origin-bottom rounded-t-md bg-ink"
+              style={{
+                height: `${h}%`,
+                opacity: 0.25 + i * 0.1,
+                ["--lo" as string]: lo,
+                animation: `bar-wave ${sec}s ease-in-out ${-i * 0.37}s infinite`,
+              }}
+            />
           ))}
         </div>
+        {/* What the plan holds the fleet's price to, whatever the bars do. */}
+        <div className="absolute inset-x-4 bottom-[4.6rem] border-t-2 border-dashed border-ink/70" />
+        <span className="num absolute bottom-[4.9rem] right-4 rounded-full bg-lime px-2 text-[11px] text-ink">budget</span>
         <span className="display absolute left-4 top-3 text-[30px] text-ink">NGN 1,250/L</span>
       </div>
     ),
@@ -61,8 +114,19 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     visual: (
       <div className="relative h-full bg-danger">
         <svg viewBox="0 0 200 100" className="absolute inset-0 h-full w-full" preserveAspectRatio="none" aria-hidden>
-          <path d="M0 80 L30 70 L60 74 L90 50 L120 56 L150 30 L180 36 L200 18" fill="none" stroke="white" strokeWidth="3" />
-          <path d="M0 80 L200 80" stroke="white" strokeWidth="3" strokeDasharray="6 6" opacity="0.6" />
+          <path d="M0 80 L30 70 L60 74 L90 50 L120 56 L150 30 L180 36 L200 18" fill="none" stroke="white" strokeOpacity="0.2" strokeWidth="3" />
+          <path
+            d="M0 80 L30 70 L60 74 L90 50 L120 56 L150 30 L180 36 L200 18"
+            pathLength={100}
+            fill="none"
+            stroke="white"
+            strokeWidth="3"
+            strokeLinejoin="round"
+            strokeDasharray="100 100"
+            className="loop"
+            style={{ animation: "line-run 4.2s cubic-bezier(0.45, 0, 0.25, 1) infinite" }}
+          />
+          <path d="M0 80 L200 80" stroke="white" strokeWidth="3" strokeDasharray="4 4" opacity="0.6" className="animate-dash-march" />
         </svg>
         <span className="eyebrow absolute bottom-4 left-4 text-paper/80">crude rises · cost holds</span>
       </div>
@@ -76,7 +140,11 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
       <div className="relative h-full bg-mist">
         <div className="absolute inset-6 grid grid-cols-3 gap-2">
           {Array.from({ length: 9 }, (_, i) => (
-            <span key={i} className={`rounded-full ${i === 4 ? "bg-cobalt" : "bg-paper"}`} />
+            <span
+              key={i}
+              className={`loop rounded-full ${i === 4 ? "bg-cobalt" : "bg-paper"}`}
+              style={{ animation: `pip ${HOP_S * 9}s ease-in-out ${HOPS.indexOf(i) * HOP_S}s infinite backwards` }}
+            />
           ))}
         </div>
       </div>

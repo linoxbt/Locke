@@ -89,6 +89,63 @@ body {
   }
 }
 
+/* Showcase loops (landing). Every looping element carries .loop so reduced motion can stop it. */
+@keyframes pulse-travel {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes bar-wave {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(var(--lo, 0.6));
+  }
+}
+/* Draw the line in, hold it, then let it run off the end so the loop restarts seamlessly. */
+@keyframes line-run {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  50%,
+  78% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -100;
+  }
+}
+@keyframes pip {
+  0%,
+  14%,
+  100% {
+    background-color: var(--color-paper);
+  }
+  3%,
+  11% {
+    background-color: var(--color-cobalt);
+  }
+}
+@keyframes float-up {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
 /* A card falling into place: accelerates down, lands, bounces once. */
 @keyframes fall {
   0% {
@@ -197,6 +254,14 @@ input[type="number"]::-webkit-outer-spin-button {
   [data-drop] > *,
   [data-fall] .fall {
     opacity: 1 !important;
+    animation: none !important;
+  }
+  /* Loops would otherwise spin at 0.01ms per cycle and flicker. */
+  .loop,
+  .animate-drift-up,
+  .animate-drift-down,
+  .animate-ping,
+  .animate-dash-march {
     animation: none !important;
   }
 }
