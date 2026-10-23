@@ -7,15 +7,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "worker": "tsx worker/index.ts",
-    "db:migrate": "tsx scripts/migrate.ts",
-    "strike:check": "tsx scripts/strike-check.ts",
+    "worker": "tsx --env-file-if-exists=.env.local worker/index.ts",
+    "db:migrate": "tsx --env-file-if-exists=.env.local scripts/migrate.ts",
+    "strike:check": "tsx --env-file-if-exists=.env.local scripts/strike-check.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "dependencies": {
     "next": "^15.5.28",

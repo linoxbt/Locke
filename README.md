@@ -15,6 +15,8 @@ Every plan follows the same path: **describe exposure → preview scenarios and 
 
 Locke is not a trading terminal. Every screen is about an exposure the business already has.
 
+**Live:** https://locke-protect.netlify.app · builder code **LockeIn** (up to 20 bps registered; orders carry `STRIKE_BUILDER_FEE_BPS`).
+
 ## What it does
 
 - **One wizard, two plan types.** The holdings form reads the wallet's ADA balance through CIP-30. The costs form takes litres per month, pump price, FX rate, months covered and an explicit *crude share* assumption.
@@ -84,7 +86,7 @@ flowchart LR
     UI[Next.js app<br/>wizard · portfolio · plan detail]
     W[CIP-30 wallet<br/>Eternl / Lace / …]
   end
-  subgraph Vercel
+  subgraph Netlify
     API[Route handlers<br/>sizing · lifecycle · signing]
   end
   subgraph Railway
@@ -151,10 +153,10 @@ Verified against mainnet while building:
 
 ## Run it
 
-Requirements: Node 20+, Postgres (local or Supabase), a builder code from Strike's Builder Dashboard, and a CIP-30 wallet on Cardano mainnet.
+Requirements: Node 22, Postgres (local or Supabase), a builder code from Strike's Builder Dashboard, and a CIP-30 wallet on Cardano mainnet.
 
 ```bash
-cp .env.example .env.local     # fill in the values below
+cp .env.example .env.local     # fill in the values below (the app, worker and scripts all read it)
 npm install
 npm run db:migrate             # applies db/schema.sql (safe to re-run)
 npm run dev                    # app on http://localhost:3000
@@ -173,27 +175,33 @@ TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration
 | `STRIKE_WS_USER_URL` | worker | `wss://api.strikefinance.org/ws/user-api` |
 | `STRIKE_WS_PRICE_URL` | worker | `wss://api.strikefinance.org/ws/price` |
 | `STRIKE_BUILDER_CODE` | app | Locke's builder code |
-| `STRIKE_BUILDER_FEE_BPS` | app, worker | Fee per order, at or below the registered share (max 100) |
+| `STRIKE_BUILDER_FEE_BPS` | app, worker | **Required.** Fee per order in whole bps, 0 to `STRIKE_BUILDER_MAX_BPS`; the app and worker refuse to start without it |
+| `STRIKE_BUILDER_MAX_BPS` | app, worker | The builder code's registered maximum (default `20`, LockeIn's) |
 | `NEXT_PUBLIC_CARDANO_NETWORK_ID` | app | `1` mainnet (`0` with the testnet API) |
 | `KOIOS_URL` | app | `https://api.koios.rest/api/v1` |
-| `DATABASE_URL` | app, worker | Postgres URL (the Supabase pooler works) |
+| `DATABASE_URL` | app, worker | Postgres URL (the Supabase pooler works; use the session pooler, port 5432, for the worker) |
+| `DATABASE_POOL_MAX` | app, worker | Connections per process (default `5`) |
+| `NEXT_PUBLIC_SITE_URL` | app | Public URL, also accepted by the same-origin check |
+| `PORT` | worker | Port for `/healthz` (Railway sets it) |
 | `LOCKE_KEY_ENC` | app, worker | 32 bytes hex; encrypts API wallet keys (`openssl rand -hex 32`) |
 | `SESSION_SECRET` | app | At least 32 characters; signs session cookies |
 | `LOCKE_DEMO_ALERTS` | app, worker | `true` lowers alert levels for a demo (labelled on screen) |
 
 ### Deploy
 
-- **App:** import the repo on Vercel and set the variables above.
+- **App:** Netlify (`netlify.toml`, Next.js runtime). Set the variables above in the Netlify UI with the Functions scope and mark the secrets as secret.
 - **Worker:** create a Railway service from the same repo. `railway.json` runs `npm run worker`, with a health check at `/healthz`.
-- **Database:** create a Supabase project, put its connection string in `DATABASE_URL`, and run `npm run db:migrate` once.
+- **Database:** create a Supabase project, put its connection string in `DATABASE_URL`, and run `npm run db:migrate` (safe to re-run after every schema change).
 
 ## Security
 
 - The Strike API wallet key is generated on the server, encrypted with AES-256-GCM under `LOCKE_KEY_ENC`, and never sent to the browser or logged. A leaked key could place trades, but it could not move money out: withdrawals need the user's own wallet signature and only go to the connected wallet.
-- Login is wallet-signed. Strike verifies the CIP-30 signature over its builder-connect challenge, and Locke issues an HMAC-signed, HTTP-only session cookie.
-- State-changing routes check `Origin` against the host, on top of `SameSite=Lax` cookies.
+- Login is wallet-signed. Strike verifies the CIP-30 signature over its builder-connect challenge, and Locke issues an HMAC-signed, HTTP-only session cookie that lasts 24 hours. Signing out bumps a per-user session version, which ends every session on every device. Sign-in starts are rate-limited per IP and per address, and the stake address is derived on the server.
+- API wallet keys are encrypted with AES-256-GCM bound (as associated data) to the key's own public key, so an encrypted key copied onto another user's row won't decrypt.
+- State-changing routes check `Origin` against the host, on top of `SameSite=Lax` cookies. Bodies are capped at 256 KB and every field is length-checked. Pages send CSP `frame-ancestors`/`object-src`/`base-uri`/`form-action` rules, HSTS and a Permissions-Policy. (A strict `script-src` is left out because CIP-30 wallet extensions inject scripts into the page.)
+- Funding and opening require a recorded acknowledgement of the risks. Deposits only build from the signed-in address. Withdrawals are recorded, must belong to the user, and are confirmed with the fully signed transaction after a fee review.
 - The server recomputes every order (size, side, symbol, reduce-only) from the stored plan and never trusts sizes from the browser.
-- Plan status changes are compare-and-set updates, so retries and races can't double-open or double-close a plan.
+- Plan status changes are compare-and-set updates, and every order carries a deterministic client order id (`locke-{plan}-{action}-{n}`) with at most one pending per plan. A lost response is resolved by looking the order up on Strike, never by sending it again, so retries and races can't double-open, double-close or double-resize a plan. Margin adds are verified by re-reading the position.
 - Row-level security is enabled on every table. The app and worker use a server role.
 
 ## Known limits
@@ -203,7 +211,9 @@ TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration
 - **Replay funding.** Strike publishes no funding-rate history, so the replay lines show price effects only. Funding at today's rate is shown alongside as a labelled projection.
 - **Cardano only.** Deposits are ADA from a CIP-30 wallet; Solana and Ethereum deposits are out of scope.
 - **One plan per market per user.** This comes from isolated margin on the main account. Strike sub-accounts can't be created through the API.
-- **Top-ups need a signature.** Locke never moves funds on its own; it alerts early and makes the top-up one tap.
+- **Top-ups need a signature.** Locke never moves funds on its own; it alerts early (and repeats every 15 minutes at margin call or worse) and makes the top-up one tap.
+- **Polling, not push, in the browser.** Plan pages poll every 5–10 s; the worker holds the WebSocket streams. Supabase Realtime isn't used.
+- **API key lifetime.** Signing in again replaces the API key Locke stores and deletes the old one from Locke; Locke doesn't revoke it on Strike, so it lapses at its own expiry.
 
 ## Disclaimer
 
