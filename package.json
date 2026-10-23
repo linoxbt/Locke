@@ -18,12 +18,13 @@
     "node": "22.x"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "next": "^15.5.28",
     "postgres": "^3.4.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "tsx": "^4.20.5",
-    "ws": "^8.18.3"
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",

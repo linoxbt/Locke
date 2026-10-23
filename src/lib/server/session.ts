@@ -5,7 +5,14 @@ import { config } from "./config";
 import { db } from "./db";
 import { HttpError } from "./errors";
 
-const COOKIE = "locke_session";
+/**
+ * Secure everywhere but `next dev` (browsers accept Secure cookies on http://localhost anyway).
+ * __Host- pins the cookie to this exact host, Secure and path /, so a sibling subdomain can't plant one.
+ */
+const secureCookie = () => process.env.NODE_ENV !== "development";
+const SECURE_COOKIE = "__Host-locke_session";
+const DEV_COOKIE = "locke_session";
+const cookieName = () => (secureCookie() ? SECURE_COOKIE : DEV_COOKIE);
 const TTL_S = 24 * 3600;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -45,22 +52,31 @@ export function decodeSession(token: string | undefined, now = Date.now()): Sess
 
 const cookieFlags = () => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
+  secure: secureCookie(),
   sameSite: "lax" as const,
   path: "/",
 });
 
 export function setSessionCookie(res: NextResponse, s: Omit<Session, "exp">) {
-  res.cookies.set(COOKIE, encodeSession(s), { ...cookieFlags(), maxAge: TTL_S });
+  res.cookies.set(cookieName(), encodeSession(s), { ...cookieFlags(), maxAge: TTL_S });
+  // A cookie under the pre-__Host- name is never read in production; drop it.
+  if (cookieName() !== DEV_COOKIE) res.cookies.set(DEV_COOKIE, "", { ...cookieFlags(), maxAge: 0 });
 }
 
 export function clearSessionCookie(res: NextResponse) {
-  res.cookies.set(COOKIE, "", { ...cookieFlags(), maxAge: 0 });
+  res.cookies.set(cookieName(), "", { ...cookieFlags(), maxAge: 0 });
+  if (cookieName() !== DEV_COOKIE) res.cookies.set(DEV_COOKIE, "", { ...cookieFlags(), maxAge: 0 });
+}
+
+/** True when the browser sent a session cookie at all, valid or not (an ended session vs. a first visit). */
+export async function hasSessionCookie(): Promise<boolean> {
+  const jar = await cookies();
+  return !!(jar.get(SECURE_COOKIE)?.value || jar.get(DEV_COOKIE)?.value);
 }
 
 /** The signed-in user, or null. A cookie from before the user last signed out no longer counts. */
 export async function currentSession(): Promise<Session | null> {
-  const s = decodeSession((await cookies()).get(COOKIE)?.value);
+  const s = decodeSession((await cookies()).get(cookieName())?.value);
   if (!s) return null;
   const [u] = await db()`select session_version from users where id = ${s.uid}`;
   return u && Number(u.session_version) === s.v ? s : null;
@@ -71,27 +87,37 @@ export async function revokeSessions(uid: string) {
   await db()`update users set session_version = session_version + 1 where id = ${uid}`;
 }
 
-function hostOf(url: string | null | undefined): string | null {
+function originOf(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
-    return new URL(url).host;
+    const o = new URL(url).origin;
+    return o === "null" ? null : o;
   } catch {
     return null;
   }
 }
 
-/** State-changing requests must come from our own origin (cookie is SameSite=Lax as well). */
+const isLocalHost = (host: string) => /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+
+/**
+ * State-changing requests must come from our own origin (cookie is SameSite=Lax as well). The
+ * whole origin is compared, scheme included, and only https counts outside localhost. Allowed:
+ * the site URLs Netlify and our env name, and https://<Host> (Netlify sets Host to the public
+ * host). X-Forwarded-Host is client-controllable and ignored.
+ */
 export function assertSameOrigin(req: Request) {
   if (req.method === "GET" || req.method === "HEAD") return;
-  const origin = hostOf(req.headers.get("origin"));
+  const origin = originOf(req.headers.get("origin"));
+  const host = req.headers.get("host");
   const allowed = new Set(
     [
-      (req.headers.get("x-forwarded-host") ?? "").split(",")[0].trim(),
-      req.headers.get("host"),
-      hostOf(process.env.URL),
-      hostOf(process.env.DEPLOY_PRIME_URL),
-      hostOf(process.env.NEXT_PUBLIC_SITE_URL),
-    ].filter(Boolean)
+      originOf(process.env.URL),
+      originOf(process.env.DEPLOY_PRIME_URL),
+      originOf(process.env.DEPLOY_URL),
+      originOf(process.env.NEXT_PUBLIC_SITE_URL),
+      host ? originOf(`https://${host}`) : null,
+      host && isLocalHost(host) ? originOf(`http://${host}`) : null,
+    ].filter((o): o is string => !!o && (o.startsWith("https://") || isLocalHost(new URL(o).host)))
   );
   if (!origin || !allowed.has(origin)) throw new HttpError(403, "Cross-origin request refused");
 }

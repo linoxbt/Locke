@@ -3,6 +3,7 @@ import { db } from "@/lib/server/db";
 import { HttpError } from "@/lib/server/errors";
 import { readJson, route } from "@/lib/server/http";
 import { strikeKeysFor } from "@/lib/server/keys";
+import { LIMITS, rateLimit } from "@/lib/server/rateLimit";
 import { requireSession } from "@/lib/server/session";
 import { withdrawQuote } from "@/lib/strike/client";
 
@@ -11,6 +12,7 @@ const MAX_USD = 1_000_000;
 /** Withdrawals always need the user's own wallet signature and only go to the connected wallet. */
 export const POST = route(async (req: Request) => {
   const s = await requireSession(req);
+  rateLimit(`${s.uid}:withdraw-quote`, LIMITS.strikeWrite);
   const body = await readJson(req);
   const usd = Number(body.usd);
   if (!Number.isFinite(usd) || usd < 5) throw new HttpError(400, "Minimum withdrawal is $5");

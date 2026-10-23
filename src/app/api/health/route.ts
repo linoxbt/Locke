@@ -5,11 +5,11 @@ import { getMarkPrice } from "@/lib/strike/client";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Readiness for uptime checks: 200 when everything a user needs works, 503 otherwise. The public
- * answer is just {ok}; which piece failed goes to the server log, not to visitors.
- */
-export async function GET() {
+/** Unauthenticated, so the answer is reused for a few seconds: hammering it can't fan out to the database and Strike. */
+const TTL_MS = 15_000;
+let last: { at: number; ok: Promise<boolean> } | null = null;
+
+async function compute(): Promise<boolean> {
   const check = async (fn: () => unknown | Promise<unknown>) => {
     try {
       await fn();
@@ -30,5 +30,16 @@ export async function GET() {
   };
   const ok = Object.values(checks).every(Boolean);
   if (!ok) console.error("[health] failing:", Object.entries(checks).filter(([, v]) => !v).map(([k]) => k).join(", "));
+  return ok;
+}
+
+/**
+ * Readiness for uptime checks: 200 when everything a user needs works, 503 otherwise. The public
+ * answer is just {ok}; which piece failed goes to the server log, not to visitors.
+ */
+export async function GET() {
+  // Concurrent hits share the one in-flight check.
+  if (!last || Date.now() - last.at > TTL_MS) last = { at: Date.now(), ok: compute() };
+  const ok = await last.ok;
   return NextResponse.json({ ok }, { status: ok ? 200 : 503, headers: { "Cache-Control": "no-store" } });
 }
