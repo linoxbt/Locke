@@ -32,6 +32,9 @@ export function PlanOverview() {
   const realized = d.realized ? d.realized.pnl + (p.position?.fundingToDate ?? 0) - d.realized.fees : 0;
   // Everything the hedge has made or cost: what is booked plus the open position's result.
   const allIn = realized + (p.position?.upnl ?? 0);
+  // Return on the margin the position was opened with, as exchanges show it.
+  const initialMargin = p.position ? (p.position.size * p.position.entry) / (p.position.leverage || 1) : 0;
+  const roe = initialMargin > 0 ? allIn / initialMargin : 0;
   const base = `/plans/${p.id}`;
   const h = headlineText(p);
   const cur = p.type === "costs" ? (p.inputs as CostsInputs).currency : "USD";
@@ -70,8 +73,21 @@ export function PlanOverview() {
               </span>
             )}
           </div>
-          <div className="num mt-6 text-[28px] leading-none tracking-tight sm:text-[40px]">
-            {live && p.type === "holdings" ? <LiveValue value={p.headline} format={(n) => usd(n, 2)} /> : h.value}
+          <div className="mt-6 flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+            <div className="num text-[28px] leading-none tracking-tight sm:text-[40px]">
+              {live && p.type === "holdings" ? <LiveValue value={p.headline} format={(n) => usd(n, 2)} /> : h.value}
+            </div>
+            {p.status === "active" && p.position && d.realized && (
+              <div className="text-right">
+                <div className={`text-[13px] ${SUBTLE[tone]}`}>Hedge P&amp;L</div>
+                <div className="num mt-1 text-[22px] leading-none tracking-tight sm:text-[28px]">
+                  <LiveValue value={allIn} format={fineSigned} />
+                </div>
+                <div className={`num mt-1 text-[13px] ${SUBTLE[tone]}`}>
+                  ROE <LiveValue value={roe} format={(n) => `${n >= 0 ? "+" : "−"}${Math.abs(n * 100).toFixed(2)}%`} />
+                </div>
+              </div>
+            )}
           </div>
           {live && p.type === "holdings" && p.position && (
             <p className={`num mt-3 text-[13px] ${SUBTLE[tone]}`}>
