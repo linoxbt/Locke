@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bech32Decode, bech32Encode, addressToBech32, isBech32Stake, stakeFromBaseAddress, walletAddressBytes } from "@/lib/cardano/bech32";
 import { bytesToHex, hexToBytes } from "@/lib/cardano/bytes";
-import { decodeLovelace, mergeWitnesses, skipItem } from "@/lib/cardano/cbor";
+import { decodeLovelace, mergeWitnesses, skipItem, utxoLovelace } from "@/lib/cardano/cbor";
 
 const vkey = "58" + "20" + "11".repeat(32);
 const sig = "58" + "40" + "22".repeat(64);
@@ -93,5 +93,20 @@ describe("transaction id", () => {
     expect(txBodyHash(`84${body}a0f5f6`)).toBe(expected);
     expect(txBodyHash(`84${body}a10081825820${"11".repeat(32)}5840${"22".repeat(64)}f5f6`)).toBe(expected);
     expect(() => txBodyHash("a0")).toThrow();
+  });
+});
+
+describe("utxoLovelace", () => {
+  const input = "82" + "5820" + "00".repeat(32) + "00";
+  const addr = "581d" + "61" + "11".repeat(28);
+  it("reads a legacy array output", () => {
+    expect(utxoLovelace("82" + input + "82" + addr + "1a03b20b80")).toBe(BigInt(62_000_000));
+  });
+  it("reads a post-Alonzo map output carrying tokens", () => {
+    const value = "82" + "1a004c4b40" + "a1" + "581c" + "22".repeat(28) + "a1" + "4141" + "01";
+    expect(utxoLovelace("82" + input + "a2" + "00" + addr + "01" + value)).toBe(BigInt(5_000_000));
+  });
+  it("rejects what isn't a UTxO", () => {
+    expect(() => utxoLovelace("1a03b20b80")).toThrow();
   });
 });

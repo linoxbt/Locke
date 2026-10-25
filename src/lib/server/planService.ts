@@ -39,6 +39,7 @@ import {
   unrealisedPnl,
   type Thresholds,
 } from "../domain/risk";
+import { utxoLovelace } from "../cardano/cbor";
 import { txBodyHash } from "../cardano/txhash";
 import { FUELS } from "../domain/fuel";
 import { estimateFill, fillProblem, type FillEstimate } from "../domain/liquidity";
@@ -73,6 +74,8 @@ import { strikeKeysFor } from "./keys";
 export const MIN_DEPOSIT_USD = 6;
 /** Deposited ADA is converted to USD on the way in; this covers conversion and price drift. */
 const DEPOSIT_CUSHION = 1.03;
+/** ADA a wallet keeps back when it sends a deposit: the network fee plus the change output's minimum. */
+const WALLET_RESERVE_LOVELACE = BigInt(2_000_000);
 /** A sent order Strike still doesn't know about after this long was never accepted. */
 const ORDER_LOOKUP_GRACE_MS = 2 * 60_000;
 /** A live plan's position must be missing this long (two reads apart) before the plan is closed. */
@@ -621,7 +624,38 @@ export async function prepareDeposit(
     lovelace = BigInt(Math.ceil(Number(lovelace) * (usd / quoted) * 1.005));
     quote = await depositQuote(keys, lovelace);
   }
-  const built = await depositBuildTx(keys, quote.request_id, p.address, p.utxos);
+  // Strike only answers "failed to build transaction" when the wallet can't cover the deposit,
+  // so check the wallet's ADA here and say what's short and what to change.
+  const inAda = (l: bigint | number) => (Number(l) / 1_000_000).toFixed(1);
+  const shortHint = purpose === "open"
+    ? "Add ADA to this wallet, or discard this plan and create it again at 2x or 3x leverage, which needs less margin."
+    : "Add ADA to this wallet, or top up a smaller amount.";
+  let walletLovelace: bigint | null = null;
+  try {
+    walletLovelace = p.utxos.reduce((sum, u) => sum + utxoLovelace(u), BigInt(0));
+  } catch {
+    walletLovelace = null; // an encoding we can't read: let Strike decide
+  }
+  if (walletLovelace !== null && walletLovelace < lovelace + WALLET_RESERVE_LOVELACE) {
+    throw new CodedHttpError(
+      400,
+      "insufficient_ada",
+      `This deposit is ${inAda(lovelace)} ADA, and this wallet has ${inAda(walletLovelace)} ADA. Cardano also keeps about ${inAda(WALLET_RESERVE_LOVELACE)} ADA back for the network fee and change. ${shortHint}`
+    );
+  }
+  let built: Awaited<ReturnType<typeof depositBuildTx>>;
+  try {
+    built = await depositBuildTx(keys, quote.request_id, p.address, p.utxos);
+  } catch (e) {
+    if (e instanceof StrikeError && e.status < 500) {
+      throw new CodedHttpError(
+        400,
+        "deposit_build_failed",
+        `Strike couldn't build a ${inAda(lovelace)} ADA deposit from this wallet. This usually means the wallet's spendable ADA doesn't cover the deposit plus fees (ADA held with tokens or set as collateral can't all be spent). ${shortHint}`
+      );
+    }
+    throw e;
+  }
   const usdValue = parseFloat(quote.quote.usd_value);
   // The id of the transaction Strike built: only that transaction can confirm this deposit.
   let expected: string | null = null;

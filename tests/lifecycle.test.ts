@@ -523,6 +523,19 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     state.position = null;
   }, 30_000);
 
+  it("says how much ADA is short instead of letting Strike fail to build the deposit", async () => {
+    state.position = null;
+    await sql`update plans set status = 'closed' where user_id = ${userId} and status <> 'closed'`;
+    const { plan } = await svc.createDraft(userId, "holdings", { amountHeld: 1000, sharePct: 100 });
+    await svc.acknowledgeRisks(userId, plan.id);
+    // One UTxO holding 1 ADA: far short of the deposit.
+    const utxo = "82" + "825820" + "00".repeat(32) + "00" + "82" + "581d61" + "11".repeat(28) + "1a000f4240";
+    await expect(svc.prepareDeposit(userId, plan.id, "open", { address: "addr1test", utxos: [utxo] })).rejects.toThrow(
+      /This deposit is [\d.]+ ADA, and this wallet has 1\.0 ADA\..*2x or 3x leverage/
+    );
+    await sql`update plans set status = 'closed' where id = ${plan.id}`;
+  });
+
   it("refuses a second live plan on the same market", async () => {
     state.position = null;
     await sql`update plans set status = 'closed' where user_id = ${userId} and status <> 'closed'`;

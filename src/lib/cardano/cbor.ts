@@ -168,6 +168,40 @@ export function mergeWitnesses(txHex: string, walletWitnessHex: string): string 
   return bytesToHex(concatBytes(encodeHead(4, count), ...parts));
 }
 
+/**
+ * Lovelace in one CIP-30 getUtxos() entry: [input, output], where output is the legacy
+ * array [address, value, ...] or the post-Alonzo map {0: address, 1: value, ...}.
+ */
+export function utxoLovelace(utxoHex: string): bigint {
+  const buf = hexToBytes(utxoHex);
+  const top = readHead(buf, 0);
+  if (top.major !== 4) throw new Error("Unexpected UTxO encoding");
+  let p = skipItem(buf, top.headLen); // input
+  const out = readHead(buf, p);
+  p += out.headLen;
+  if (out.major === 4) {
+    p = skipItem(buf, p); // address
+    return valueLovelace(buf, p);
+  }
+  if (out.major === 5 && out.value !== null) {
+    for (let i = 0; i < Number(out.value); i++) {
+      const k = readHead(buf, p);
+      p += k.headLen;
+      if (k.major === 0 && k.value === BigInt(1)) return valueLovelace(buf, p);
+      p = skipItem(buf, p);
+    }
+  }
+  throw new Error("Unexpected UTxO encoding");
+}
+
+/** Value = coin | [coin, multiasset] at `off`. */
+function valueLovelace(buf: Uint8Array, off: number): bigint {
+  let h = readHead(buf, off);
+  if (h.major === 4) h = readHead(buf, off + h.headLen);
+  if (h.major !== 0 || h.value === null) throw new Error("Unexpected value encoding");
+  return h.value;
+}
+
 /** CIP-30 getBalance(): Value = coin | [coin, multiasset]. Returns lovelace. */
 export function decodeLovelace(valueHex: string): bigint {
   const buf = hexToBytes(valueHex);
