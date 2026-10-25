@@ -9,10 +9,25 @@ import { usePlan } from "./PlanProvider";
 import type { CostsInputs, HoldingsInputs } from "@/lib/domain/types";
 import { localPrice, num, pct, price, signedUsd, usd } from "@/lib/ui/format";
 import { Ago } from "../Time";
+import { LiveValue } from "../LiveValue";
+import { nextFundingUsd, withMark } from "@/lib/domain/live";
+
+/** Small amounts need more places to show second-by-second moves. */
+const places = (n: number) => (Math.abs(n) < 100 ? 4 : 2);
+const fineSigned = (n: number) => signedUsd(n, places(n));
+const fineUsd = (n: number) => usd(n, places(n));
+
+function countdown(ms: number): string {
+  if (!(ms > 0)) return "now";
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 export function PlanOverview() {
-  const { detail: d } = usePlan();
-  const p = d.plan;
+  const { detail: d, tick } = usePlan();
+  // Between server reads, everything that follows the mark moves with Strike's price stream.
+  const p = withMark(d.plan, tick);
+  const live = !!tick && p.status === "active" && !!p.position && !p.liveUnavailable;
   const base = `/plans/${p.id}`;
   const h = headlineText(p);
   const cur = p.type === "costs" ? (p.inputs as CostsInputs).currency : "USD";
@@ -43,8 +58,23 @@ export function PlanOverview() {
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
         <Card tone={tone} className="flex flex-col lg:col-span-8 lg:min-h-[218px]">
-          <Eyebrow className={SUBTLE[tone]}>{h.caption}</Eyebrow>
-          <div className="num mt-6 text-[28px] leading-none tracking-tight sm:text-[40px]">{h.value}</div>
+          <div className="flex items-center justify-between gap-3">
+            <Eyebrow className={SUBTLE[tone]}>{h.caption}</Eyebrow>
+            {live && (
+              <span className={`num inline-flex items-center gap-1.5 text-[12px] ${SUBTLE[tone]}`} title="Strike mark price, updated every second">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" aria-hidden /> Live
+              </span>
+            )}
+          </div>
+          <div className="num mt-6 text-[28px] leading-none tracking-tight sm:text-[40px]">
+            {live && p.type === "holdings" ? <LiveValue value={p.headline} format={(n) => usd(n, 2)} /> : h.value}
+          </div>
+          {live && p.type === "holdings" && p.position && (
+            <p className={`num mt-3 text-[13px] ${SUBTLE[tone]}`}>
+              {num(p.position.size, 2)} ADA <LiveValue value={p.position.size * p.mark} format={fineUsd} /> · hedge{" "}
+              <LiveValue value={p.position.upnl} format={fineSigned} /> · funding <LiveValue value={p.position.fundingToDate} format={fineSigned} />
+            </p>
+          )}
           {pending && <p className={`mt-4 text-[14px] ${SUBTLE[tone]}`}>{pending}</p>}
           {p.status === "active" && p.liveUnavailable && (
             <p className={`mt-auto pt-8 text-[14px] ${SUBTLE[tone]}`}>
@@ -67,15 +97,40 @@ export function PlanOverview() {
         <div className="grid grid-cols-1 gap-3 lg:col-span-4">
           <Card>
             <div className="grid grid-cols-2 gap-x-4 gap-y-6">
-              <Stat label="Hedge size" value={`${num(p.position?.size ?? p.sizing.size, 2)} ${p.symbol.split("-")[0]}`} sub={usd((p.position?.size ?? 0) * p.mark, 0)} />
-              <Stat label="Hedge result" value={signedUsd(p.position?.upnl ?? 0)} sub="offsets the exposure" />
-              <Stat label="Funding to date" value={signedUsd(p.position?.fundingToDate ?? 0)} tone={(p.position?.fundingToDate ?? 0) >= 0 ? "ok" : "bad"} />
-              <Stat label="Cost of protection" value={signedUsd(p.fundingPerDay)} sub={`per day, ${p.fundingPerDay >= 0 ? "received" : "paid"}`} />
-              <Stat label="Top-up asked at" value={price(p.alertPrice)} sub={`mark ${price(p.mark)}`} />
+              <Stat
+                label="Hedge size"
+                value={`${num(p.position?.size ?? p.sizing.size, 2)} ${p.symbol.split("-")[0]}`}
+                sub={<LiveValue value={(p.position?.size ?? 0) * p.mark} format={fineUsd} />}
+              />
+              <Stat
+                label="Hedge result"
+                value={<LiveValue value={p.position?.upnl ?? 0} format={fineSigned} />}
+                tone={(p.position?.upnl ?? 0) >= 0 ? "ok" : "bad"}
+                sub="offsets the exposure"
+              />
+              <Stat
+                label="Funding to date"
+                value={<LiveValue value={p.position?.fundingToDate ?? 0} format={fineSigned} />}
+                tone={(p.position?.fundingToDate ?? 0) >= 0 ? "ok" : "bad"}
+                sub={
+                  live && tick?.nextFundingTime ? (
+                    <>
+                      next <LiveValue value={nextFundingUsd(p)} format={fineSigned} /> in {countdown(tick.nextFundingTime - tick.at)}
+                    </>
+                  ) : undefined
+                }
+              />
+              <Stat
+                label="Cost of protection"
+                value={<LiveValue value={p.fundingPerDay} format={fineSigned} />}
+                tone={p.fundingPerDay >= 0 ? "ok" : "bad"}
+                sub={`per day, ${p.fundingPerDay >= 0 ? "received" : "paid"}`}
+              />
+              <Stat label="Top-up asked at" value={price(p.alertPrice)} sub={<>mark <LiveValue value={p.mark} format={price} /></>} />
               <Stat
                 label="Liquidation"
                 value={p.position && p.position.liquidationPrice == null ? "None" : price(p.position?.liquidationPrice)}
-                sub={p.liquidationDistance != null ? `${pct(p.liquidationDistance, 1)} away` : undefined}
+                sub={p.liquidationDistance != null ? <><LiveValue value={p.liquidationDistance} format={(n) => pct(n, 2)} /> away</> : undefined}
                 tone="bad"
               />
             </div>

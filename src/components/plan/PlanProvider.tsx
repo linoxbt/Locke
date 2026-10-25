@@ -4,6 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { PlanDetail } from "@/lib/server/queries";
 import { resumePendingDeposits } from "../DepositFlow";
 import { api, errorMessage } from "@/lib/ui/api";
+import { useLiveMark } from "@/lib/ui/useLiveMark";
+import type { MarkTick } from "@/lib/domain/live";
 
 const WAITING = new Set(["funding", "opening", "closing"]);
 const PREVIEWED = new Set(["draft", "funding"]);
@@ -24,6 +26,8 @@ export type PlanDetailView = Omit<PlanDetail, "plan"> & {
 
 interface Ctx {
   detail: PlanDetailView;
+  /** Strike's mark price, one tick a second, while the plan is live. Null when the stream is down. */
+  tick: MarkTick | null;
   error: string | null;
   /** Re-fetch now (after an action). Nudges the plan forward on Strike first when it's waiting. */
   refresh(opts?: { preview?: boolean }): Promise<PlanDetailView | null>;
@@ -37,8 +41,9 @@ const PlanContext = createContext<Ctx | null>(null);
  * the preview they already have instead of re-pricing it, except a draft's, which is re-priced
  * every minute; a slow response never overwrites a newer one.
  */
-export function PlanProvider({ initial, children }: { initial: PlanDetailView; children: React.ReactNode }) {
+export function PlanProvider({ initial, priceWs, children }: { initial: PlanDetailView; priceWs: string | null; children: React.ReactNode }) {
   const [detail, setDetail] = useState(initial);
+  const tick = useLiveMark(priceWs, detail.plan.symbol, detail.plan.status === "active");
   const [error, setError] = useState<string | null>(null);
   const latest = useRef(initial);
   latest.current = detail;
@@ -98,7 +103,7 @@ export function PlanProvider({ initial, children }: { initial: PlanDetailView; c
     };
   }, [refresh]);
 
-  return <PlanContext.Provider value={{ detail, error, refresh }}>{children}</PlanContext.Provider>;
+  return <PlanContext.Provider value={{ detail, tick, error, refresh }}>{children}</PlanContext.Provider>;
 }
 
 export function usePlan(): Ctx {

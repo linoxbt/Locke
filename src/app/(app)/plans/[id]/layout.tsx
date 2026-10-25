@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { PlanHeader } from "@/components/plan/PlanHeader";
 import { PlanProvider } from "@/components/plan/PlanProvider";
+import { config } from "@/lib/server/config";
 import { HttpError } from "@/lib/server/errors";
 import { requirePageSession } from "@/lib/server/pageAuth";
 import { getPlanDetail } from "@/lib/server/queries";
@@ -18,7 +19,7 @@ export default async function PlanLayout({ children, params }: { children: React
     throw e;
   }
   return (
-    <PlanProvider initial={detail}>
+    <PlanProvider initial={detail} priceWs={config.strikePriceWsUrl}>
       <div className="animate-rise">
         <PlanHeader />
         {children}
