@@ -727,7 +727,7 @@ export async function confirmDeposit(userId: string, depositId: string, txHash: 
   await sql`update deposits set status = 'submitted', updated_at = now() where id = ${depositId} and status = 'built'`;
   if (dep.plan_id && dep.purpose === "open") {
     try {
-      await transition(dep.plan_id, ["draft"], "funding", { status_note: "Waiting for the deposit to confirm on Cardano" });
+      await transition(dep.plan_id, ["draft"], "funding", { status_note: "Waiting for Strike to credit the deposit: Cardano confirms it, then Strike's validators credit it, usually within minutes" });
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
       await safeEvent(dep.plan_id, "action", "Another plan on this market is already live, so this one can't open. The deposit stays on your Strike balance.");

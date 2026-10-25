@@ -114,7 +114,7 @@ export async function runDeposit(opts: {
 const STEPS: { key: DepositStep; label: string; hint: string }[] = [
   { key: "quote", label: "Quote", hint: "Strike prices the ADA deposit" },
   { key: "sign", label: "Sign in your wallet", hint: "One transaction, margin only" },
-  { key: "submitted", label: "Submitted to Cardano", hint: "Usually 1–3 minutes to confirm" },
+  { key: "submitted", label: "Submitted to Cardano", hint: "Cardano confirms, then Strike credits it: usually a few minutes" },
   { key: "confirmed", label: "Credited on Strike", hint: "Isolated margin and leverage set" },
   { key: "open", label: "Hedge open", hint: "Locke is watching it now" },
 ];

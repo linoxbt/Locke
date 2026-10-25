@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { runDeposit, StepTracker, type DepositStep } from "../DepositFlow";
 import { Arrow, Button, Card, Display, ErrorNote, LinkButton, Notice, Stat } from "../ui";
 import { useWallet } from "../WalletProvider";
@@ -12,6 +12,15 @@ import { CARDANOSCAN, num, shortAddr, usd } from "@/lib/ui/format";
 
 /** Mirrors the cushion the server adds to the margin before it skips the deposit. */
 const COVER_CUSHION = 1.03;
+
+function RefreshIcon({ spinning }: { spinning?: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className={spinning ? "animate-spin" : ""}>
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 4v5h-5" />
+    </svg>
+  );
+}
 
 /** Fund a plan and follow it until the hedge is open on Strike. */
 export function FundStep({ adaPrice }: { adaPrice: number | null }) {
@@ -29,6 +38,10 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
   const [error, setError] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(p.riskAcknowledged);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  // The plan re-checks itself every few seconds; every fresh read counts as a check.
+  useEffect(() => setCheckedAt(Date.now()), [detail]);
   // Deposits are listed newest first: the latest opening deposit failing means the user has to start again.
   const lastOpen = detail.deposits.find((x) => x.purpose === "open");
   const lastFailed = lastOpen?.status === "failed" ? lastOpen : null;
@@ -90,6 +103,13 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
     }
   };
 
+  const checkNow = async () => {
+    setChecking(true);
+    await refresh();
+    setCheckedAt(Date.now());
+    setChecking(false);
+  };
+
   const retryPricing = async () => {
     setRetrying(true);
     await refresh({ preview: true });
@@ -147,7 +167,20 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
       </div>
       <Card tone="mist" className="lg:col-span-7">
         {shown ? (
-          <StepTracker step={shown} txHash={tx} orderId={p.openOrderId} failed={!!error} skipDeposit={skipDeposit} />
+          <>
+            <StepTracker step={shown} txHash={tx} orderId={p.openOrderId} failed={!!error} skipDeposit={skipDeposit} />
+            {shown !== "open" && !busy && (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Button variant="ghost" disabled={checking} aria-busy={checking || undefined} onClick={checkNow}>
+                  <RefreshIcon spinning={checking} /> Check status
+                </Button>
+                <span className="text-[12px] text-ink-3">
+                  Updates by itself every few seconds
+                  {checkedAt && ` · checked ${new Date(checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}
+                </span>
+              </div>
+            )}
+          </>
         ) : (
           <div className="space-y-4">
             {!detail.preview && detail.previewError && <PricingUnavailable error={detail.previewError} busy={retrying} onRetry={retryPricing} />}
