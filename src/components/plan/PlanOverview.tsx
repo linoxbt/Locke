@@ -28,8 +28,10 @@ export function PlanOverview() {
   // Between server reads, everything that follows the mark moves with Strike's price stream.
   const p = withMark(d.plan, tick);
   const live = !!tick && p.status === "active" && !!p.position && !p.liveUnavailable;
-  // Everything the hedge has made or cost so far: open result, realized, funding, minus fees.
-  const allIn = d.realized ? (p.position?.upnl ?? 0) + d.realized.pnl + (p.position?.fundingToDate ?? 0) - d.realized.fees : 0;
+  // Booked so far: closed trades, funding settled, minus fees. Moves when Strike books money, not with the price.
+  const realized = d.realized ? d.realized.pnl + (p.position?.fundingToDate ?? 0) - d.realized.fees : 0;
+  // Everything the hedge has made or cost: what is booked plus the open position's result.
+  const allIn = realized + (p.position?.upnl ?? 0);
   const base = `/plans/${p.id}`;
   const h = headlineText(p);
   const cur = p.type === "costs" ? (p.inputs as CostsInputs).currency : "USD";
@@ -105,10 +107,10 @@ export function PlanOverview() {
                 sub={<LiveValue value={(p.position?.size ?? 0) * p.mark} format={fineUsd} />}
               />
               <Stat
-                label="Hedge result"
+                label="Unrealized P&L"
                 value={<LiveValue value={p.position?.upnl ?? 0} format={fineSigned} />}
                 tone={(p.position?.upnl ?? 0) >= 0 ? "ok" : "bad"}
-                sub="offsets the exposure"
+                sub={live ? "moves with the price, every second" : "offsets the exposure"}
               />
               <Stat
                 label="Funding to date"
@@ -139,15 +141,21 @@ export function PlanOverview() {
                 <>
                   <Stat
                     label="Realized P&L"
-                    value={<LiveValue value={d.realized.pnl} format={fineSigned} />}
-                    tone={d.realized.pnl >= 0 ? "ok" : "bad"}
-                    sub={p.status === "closed" ? `${d.realized.fills} fills` : "locked in when reduced or closed"}
+                    value={<LiveValue value={realized} format={fineSigned} />}
+                    tone={realized >= 0 ? "ok" : "bad"}
+                    sub={
+                      <>
+                        fees <LiveValue value={-d.realized.fees} format={fineSigned} />
+                        {d.realized.pnl !== 0 && <> · trades <LiveValue value={d.realized.pnl} format={fineSigned} /></>}
+                        {(p.position?.fundingToDate ?? 0) !== 0 && <> · funding <LiveValue value={p.position?.fundingToDate ?? 0} format={fineSigned} /></>}
+                      </>
+                    }
                   />
                   <Stat
                     label="Hedge P&L, all in"
                     value={<LiveValue value={allIn} format={fineSigned} />}
                     tone={allIn >= 0 ? "ok" : "bad"}
-                    sub={<>fees <LiveValue value={-d.realized.fees} format={fineSigned} /></>}
+                    sub="realized + unrealized"
                   />
                 </>
               )}
