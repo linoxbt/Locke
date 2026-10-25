@@ -28,6 +28,8 @@ export function PlanOverview() {
   // Between server reads, everything that follows the mark moves with Strike's price stream.
   const p = withMark(d.plan, tick);
   const live = !!tick && p.status === "active" && !!p.position && !p.liveUnavailable;
+  // Everything the hedge has made or cost so far: open result, realized, funding, minus fees.
+  const allIn = d.realized ? (p.position?.upnl ?? 0) + d.realized.pnl + (p.position?.fundingToDate ?? 0) - d.realized.fees : 0;
   const base = `/plans/${p.id}`;
   const h = headlineText(p);
   const cur = p.type === "costs" ? (p.inputs as CostsInputs).currency : "USD";
@@ -133,6 +135,22 @@ export function PlanOverview() {
                 sub={p.liquidationDistance != null ? <><LiveValue value={p.liquidationDistance} format={(n) => pct(n, 2)} /> away</> : undefined}
                 tone="bad"
               />
+              {d.realized && (
+                <>
+                  <Stat
+                    label="Realized P&L"
+                    value={<LiveValue value={d.realized.pnl} format={fineSigned} />}
+                    tone={d.realized.pnl >= 0 ? "ok" : "bad"}
+                    sub={p.status === "closed" ? `${d.realized.fills} fills` : "locked in when reduced or closed"}
+                  />
+                  <Stat
+                    label="Hedge P&L, all in"
+                    value={<LiveValue value={allIn} format={fineSigned} />}
+                    tone={allIn >= 0 ? "ok" : "bad"}
+                    sub={<>fees <LiveValue value={-d.realized.fees} format={fineSigned} /></>}
+                  />
+                </>
+              )}
             </div>
           </Card>
           {p.status === "active" && (

@@ -395,6 +395,32 @@ export async function getDepositHistory(keys: ApiKeys): Promise<StrikeTransactio
   return d.transactions ?? [];
 }
 
+export interface StrikeFill {
+  order_id: string;
+  symbol: string;
+  side: string;
+  price: string;
+  size: string;
+  realized_pnl: string;
+  fee: string;
+  /** none, commission, liquidation or funding. */
+  fee_type: string;
+  liquidation_fee?: string;
+  client_order_id?: string;
+  /** Set on Strike's forced closes (liquidation, ADL). */
+  auto_close_type?: string;
+  timestamp: number;
+}
+
+/** This account's fills on one market since `startTime` (Unix ms), newest first. Realized P&L and fees live here. */
+export async function getFills(keys: ApiKeys, symbol: string, startTime: number): Promise<StrikeFill[]> {
+  const start = Math.floor(startTime);
+  return cached(`fills:${keys.publicKey}:${symbol}:${start}`, 10_000, async () => {
+    const d = await strikeRequest(keys, "GET", `/v2/history/fill?symbol=${encodeURIComponent(symbol)}&startTime=${start}&limit=1000`);
+    return (d.fills ?? []) as StrikeFill[];
+  });
+}
+
 export async function getSymbolSetting(
   keys: ApiKeys,
   symbol: string

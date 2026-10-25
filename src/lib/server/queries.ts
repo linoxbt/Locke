@@ -1,8 +1,9 @@
 // Read models shared by API routes and server-rendered pages, so a page's first paint and
 // the JSON it later polls are always the same shape.
 
+import { realizedFrom, type Realized } from "../domain/live";
 import type { Preview } from "../domain/types";
-import { getPosition, getPositions, type StrikePosition } from "../strike/client";
+import { getFills, getPosition, getPositions, type StrikePosition } from "../strike/client";
 import { db } from "./db";
 import { HttpError } from "./errors";
 import { strikeKeysFor } from "./keys";
@@ -42,6 +43,8 @@ export interface PlanDetail {
   deposits: DepositRow[];
   /** Set when Strike couldn't be reached; the page renders stored data and says so. */
   liveError: string | null;
+  /** Realized P&L and fees from the plan's own fills on Strike; null before it opens or when Strike can't be read. */
+  realized: Realized | null;
 }
 
 const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : String(d));
@@ -75,7 +78,7 @@ export async function getPlanDetail(userId: string, planId: string, { withPrevie
           return null;
         })
       : Promise.resolve(null);
-  const [view, events, snapshots, deposits, preview] = await Promise.all([
+  const [view, events, snapshots, deposits, preview, realized] = await Promise.all([
     planView(plan, pos),
     sql`select id, level, message, created_at from plan_events where plan_id = ${plan.id} order by id desc limit 100`,
     // The newest snapshots (one a minute): select the latest, then put them back in time order.
@@ -84,6 +87,7 @@ export async function getPlanDetail(userId: string, planId: string, { withPrevie
     sql`select id, purpose, status, lovelace, usd_value, tx_hash, created_at from deposits
         where plan_id = ${plan.id} order by created_at desc limit 20`,
     pricePreview,
+    realizedFor(userId, plan),
   ]);
   return {
     plan: view,
@@ -93,7 +97,24 @@ export async function getPlanDetail(userId: string, planId: string, { withPrevie
     snapshots: snapshots.map((s) => ({ mark: Number(s.mark), ratio: s.ratio, headline: s.headline, created_at: iso(s.created_at) })),
     deposits: deposits.map((d) => ({ ...(d as unknown as DepositRow), created_at: iso(d.created_at) })),
     liveError,
+    realized,
   };
+}
+
+/**
+ * The plan's fills on Strike, from its creation until shortly after it closed: its own orders by
+ * client order id, plus any forced close (liquidation) of its position.
+ */
+async function realizedFor(userId: string, plan: PlanRow): Promise<Realized | null> {
+  if (!plan.opened_at) return null;
+  try {
+    const from = new Date(plan.created_at).getTime();
+    const to = plan.closed_at ? new Date(plan.closed_at).getTime() + 5 * 60_000 : null;
+    const fills = await getFills(await strikeKeysFor(userId), plan.symbol, from);
+    return realizedFrom(fills, plan.id, from, to);
+  } catch {
+    return null;
+  }
 }
 
 export async function listPlanViews(userId: string): Promise<{ plans: PlanView[]; liveError: string | null }> {
