@@ -56,7 +56,8 @@ export function PlanProvider({ initial, priceWs, children }: { initial: PlanDeta
       const mine = ++seq.current;
       try {
         const cur = latest.current;
-        const pending = WAITING.has(cur.plan.status) || cur.deposits.some((x) => x.status === "submitted" || x.status === "credited");
+        // Only the owner nudges a plan forward on Strike; a shared link just reads it.
+        const pending = !cur.viewer && (WAITING.has(cur.plan.status) || cur.deposits.some((x) => x.status === "submitted" || x.status === "credited"));
         if (pending) await api(`/api/plans/${id}/sync`, { body: {} }).catch(() => {});
         const withPreview = opts?.preview ?? !cur.preview;
         const next = await api<PlanDetailView>(`/api/plans/${id}${withPreview ? "" : "?preview=0"}`);
@@ -76,6 +77,7 @@ export function PlanProvider({ initial, priceWs, children }: { initial: PlanDeta
 
   useEffect(() => {
     // Deliver any deposit hash an earlier visit couldn't, then pick up the result.
+    if (latest.current.viewer) return;
     void resumePendingDeposits().then((sent) => {
       if (sent) void refresh();
     });

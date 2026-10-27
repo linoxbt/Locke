@@ -12,7 +12,20 @@ export function PlanHeader() {
   const p = detail.plan;
   const path = usePathname();
   const base = `/plans/${p.id}`;
-  const tabs = PENDING.has(p.status)
+  const viewer = !!detail.viewer;
+  // A shared link shows only the read-only pages: no Fund, and an opening plan starts at Activity.
+  const tabs = viewer && PENDING.has(p.status)
+    ? p.status === "opening"
+      ? [
+          { href: `${base}/activity`, label: "Activity" },
+          { href: `${base}/replay`, label: "Replay" },
+          { href: `${base}/strike`, label: "Strike details" },
+        ]
+      : [
+          { href: `${base}/preview`, label: "Preview" },
+          { href: `${base}/replay`, label: "Replay" },
+        ]
+    : PENDING.has(p.status)
     ? [
         { href: `${base}/preview`, label: "Preview" },
         { href: `${base}/fund`, label: "Fund" },
@@ -27,8 +40,8 @@ export function PlanHeader() {
 
   return (
     <div className="mb-8">
-      <Link href="/portfolio" className="mb-6 inline-flex h-10 items-center gap-2 rounded-full bg-paper px-4 text-[13px] text-ink-2 hover:text-ink">
-        <Arrow className="rotate-180" /> Portfolio
+      <Link href={viewer ? "/" : "/portfolio"} className="mb-6 inline-flex h-10 items-center gap-2 rounded-full bg-paper px-4 text-[13px] text-ink-2 hover:text-ink">
+        <Arrow className="rotate-180" /> {viewer ? "Locke" : "Portfolio"}
       </Link>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">

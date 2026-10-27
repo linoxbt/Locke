@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
 import { replay } from "@/lib/domain/plans";
-import { idParam, route } from "@/lib/server/http";
-import { loadPlan } from "@/lib/server/planService";
-import { LIMITS, rateLimit } from "@/lib/server/rateLimit";
-import { requireSession } from "@/lib/server/session";
+import { clientIp, idParam, route } from "@/lib/server/http";
+import { optionalSession } from "@/lib/server/pageAuth";
+import { loadSharedPlan } from "@/lib/server/planService";
+import { ipBucket, LIMITS, rateLimit } from "@/lib/server/rateLimit";
+import { assertSameOrigin } from "@/lib/server/session";
 import { getDailyCloses, getMarkPrice } from "@/lib/strike/client";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** Simulation: the plan against real Strike mark history. Funding uses today's rate as a constant. */
+/** Simulation: the plan against real Strike mark history. Funding uses today's rate as a constant. Readable from a shared link. */
 export const GET = route(async (req: Request, ctx: Ctx) => {
-  const s = await requireSession(req);
+  const s = await optionalSession();
+  if (s) assertSameOrigin(req);
   const id = idParam((await ctx.params).id, "Plan not found");
-  rateLimit(`${s.uid}:replay`, LIMITS.read);
-  const plan = await loadPlan(s.uid, id);
+  rateLimit(`${s?.uid ?? ipBucket(clientIp(req)) ?? "anon"}:replay`, LIMITS.read);
+  const plan = await loadSharedPlan(id);
   const days = [30, 90, 180].includes(Number(new URL(req.url).searchParams.get("days")))
     ? Number(new URL(req.url).searchParams.get("days"))
     : 90;

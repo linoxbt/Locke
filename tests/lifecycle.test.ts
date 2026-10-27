@@ -536,6 +536,31 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     await sql`update plans set status = 'closed' where id = ${plan.id}`;
   });
 
+  it("lets a shared link read a plan, read-only, without its deposits", async () => {
+    const { getPlanDetailFor } = await import("@/lib/server/queries");
+    state.position = null;
+    await sql`update plans set status = 'closed' where user_id = ${userId} and status <> 'closed'`;
+    const { plan } = await svc.createDraft(userId, "holdings", { amountHeld: 1000, sharePct: 100 });
+    await svc.acknowledgeRisks(userId, plan.id);
+    const dep = await svc.prepareDeposit(userId, plan.id, "open", { address: "addr1test", utxos: ["8282"] });
+    await svc.confirmDeposit(userId, dep.depositId!, txId(dep));
+
+    const own = await getPlanDetailFor(userId, plan.id, { withPreview: false });
+    expect(own.viewer).toBe(false);
+    expect(own.deposits.length).toBeGreaterThan(0);
+
+    for (const who of [null, "00000000-0000-4000-8000-000000000000"]) {
+      const shared = await getPlanDetailFor(who, plan.id, { withPreview: false });
+      expect(shared.viewer).toBe(true);
+      expect(shared.plan.id).toBe(plan.id);
+      expect(shared.plan.status).toBe(own.plan.status);
+      expect(shared.deposits).toEqual([]);
+    }
+    await expect(getPlanDetailFor(null, "00000000-0000-4000-8000-000000000001")).rejects.toThrow(/Plan not found/);
+    await expect(getPlanDetailFor(null, "not-a-plan")).rejects.toThrow(/Plan not found/);
+    await sql`update plans set status = 'closed' where id = ${plan.id}`;
+  });
+
   it("refuses a second live plan on the same market", async () => {
     state.position = null;
     await sql`update plans set status = 'closed' where user_id = ${userId} and status <> 'closed'`;

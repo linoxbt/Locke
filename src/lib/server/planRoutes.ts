@@ -2,8 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import type { PlanStatus } from "../domain/types";
 import { db } from "./db";
 import { HttpError } from "./errors";
-import { requirePageSession } from "./pageAuth";
-import { loadPlan, type PlanRow } from "./planService";
+import { optionalSession, requirePageSession } from "./pageAuth";
+import { loadPlan, loadSharedPlan, type PlanRow } from "./planService";
 
 /** Where a plan in this status should be looked at. */
 export function homeFor(plan: Pick<PlanRow, "id" | "status">): string {
@@ -13,18 +13,42 @@ export function homeFor(plan: Pick<PlanRow, "id" | "status">): string {
   return base;
 }
 
+/** Where someone who doesn't own a plan looks at it: the read-only pages only. */
+export function viewHomeFor(plan: Pick<PlanRow, "id" | "status">): string {
+  const base = `/plans/${plan.id}`;
+  if (plan.status === "draft" || plan.status === "funding") return `${base}/preview`;
+  if (plan.status === "opening") return `${base}/activity`;
+  return base;
+}
+
 /**
  * Load a plan for a page and enforce which statuses the page serves; anything else is
  * redirected to the page that fits the plan right now.
+ *
+ * `view` pages (overview, preview, replay, activity, Strike details) can be read through a shared
+ * link without owning the plan: read-only, signed in or not. Action pages stay the owner's.
  */
-export async function planForPage(id: string, page: string, allowed: PlanStatus[]): Promise<PlanRow> {
+export async function planForPage(id: string, page: string, allowed: PlanStatus[], opts: { view?: boolean } = {}): Promise<PlanRow> {
+  const notFoundOn404 = (e: unknown): never => {
+    if (e instanceof HttpError && e.status === 404) notFound();
+    throw e;
+  };
+  if (opts.view) {
+    const s = await optionalSession();
+    const plan = await loadSharedPlan(id).catch(notFoundOn404);
+    const owner = !!s && s.uid === plan.user_id;
+    if (!allowed.includes(plan.status)) redirect(owner ? homeFor(plan) : viewHomeFor(plan));
+    return plan;
+  }
   const s = await requirePageSession(`/plans/${id}${page}`);
   let plan: PlanRow;
   try {
     plan = await loadPlan(s.uid, id);
   } catch (e) {
-    if (e instanceof HttpError && e.status === 404) notFound();
-    throw e;
+    // Not theirs: a shared plan is still readable on its view pages.
+    const shared = await loadSharedPlan(id).catch(() => null);
+    if (shared) redirect(viewHomeFor(shared));
+    return notFoundOn404(e);
   }
   if (!allowed.includes(plan.status)) redirect(homeFor(plan));
   return plan;

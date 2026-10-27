@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Replay — Locke" };
 
 export default async function ReplayPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const plan = await planForPage(id, "/replay", ["draft", "funding", "opening", "active", "closing", "closed", "failed"]);
+  const plan = await planForPage(id, "/replay", ["draft", "funding", "opening", "active", "closing", "closed", "failed"], { view: true });
   const c = plan.inputs as CostsInputs;
   return (
     <Card tone="ink" className="sm:p-6">

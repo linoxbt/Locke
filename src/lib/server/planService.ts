@@ -181,6 +181,14 @@ export async function loadPlan(userId: string, planId: string): Promise<PlanRow>
   return row as unknown as PlanRow;
 }
 
+/** A plan by id alone, for read-only viewing of a shared link. Owner checks are the caller's. */
+export async function loadSharedPlan(planId: string): Promise<PlanRow> {
+  if (!/^[0-9a-f-]{36}$/i.test(planId)) throw new HttpError(404, "Plan not found");
+  const [row] = await db()`select *, now() as db_now from plans where id = ${planId}`;
+  if (!row) throw new HttpError(404, "Plan not found");
+  return row as unknown as PlanRow;
+}
+
 /** Compare-and-set status change. Returns the updated row, or null if another caller won. */
 async function transition(
   planId: string,

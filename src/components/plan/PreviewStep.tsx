@@ -119,6 +119,17 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
           <h2 className="display text-[17px]">Before you open a plan</h2>
           <RiskList type={p.type} className="mt-5" />
         </Card>
+        {detail.viewer ? (
+          <Card tone="ink" className="flex flex-col lg:col-span-4">
+            <h2 className="display text-[17px] text-paper">Want a plan like this?</h2>
+            <p className="mt-3 text-[14px] leading-relaxed text-paper/75">This is someone else&apos;s plan, shown read-only. Describe your own and Locke prices it the same way.</p>
+            <div className="mt-auto pt-8">
+              <LinkButton href={`/protect/${p.type}`} variant="paper" size="lg" className="w-full justify-between">
+                Protect your own <Arrow />
+              </LinkButton>
+            </div>
+          </Card>
+        ) : (
         <Card className="flex flex-col lg:col-span-4">
           <RiskCheckbox checked={accepted} onChange={setAccepted} />
           <div className="mt-auto space-y-3 pt-8">
@@ -128,12 +139,15 @@ export function PreviewStep({ adaPrice }: { adaPrice: number | null }) {
             </Button>
           </div>
         </Card>
+        )}
       </div>
-      <div className="flex flex-wrap gap-2 pt-2">
-        <LinkButton href={`/protect/${p.type}`} variant="ghost">
-          Start over with different numbers
-        </LinkButton>
-      </div>
+      {!detail.viewer && (
+        <div className="flex flex-wrap gap-2 pt-2">
+          <LinkButton href={`/protect/${p.type}`} variant="ghost">
+            Start over with different numbers
+          </LinkButton>
+        </div>
+      )}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { getFills, getPosition, getPositions, type StrikePosition } from "../str
 import { db } from "./db";
 import { HttpError } from "./errors";
 import { strikeKeysFor } from "./keys";
-import { loadPlan, planView, previewFor, type PlanRow, type PlanView } from "./planService";
+import { loadPlan, loadSharedPlan, planView, previewFor, type PlanRow, type PlanView } from "./planService";
 
 export interface PlanEventRow {
   id: number;
@@ -45,6 +45,8 @@ export interface PlanDetail {
   liveError: string | null;
   /** Realized P&L and fees from the plan's own fills on Strike; null before it opens or when Strike can't be read. */
   realized: Realized | null;
+  /** Read by someone other than its owner (a shared link): nothing to act on, no deposits listed. */
+  viewer?: boolean;
 }
 
 const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : String(d));
@@ -56,7 +58,21 @@ function liveErrorText(e: unknown): string {
 
 /** `withPreview: false` skips re-pricing the preview (order book, fees) for polls that already have one. */
 export async function getPlanDetail(userId: string, planId: string, { withPreview = true } = {}): Promise<PlanDetail> {
-  const plan = await loadPlan(userId, planId);
+  return detailFor(await loadPlan(userId, planId), false, withPreview);
+}
+
+/**
+ * A plan for whoever opened its link: its owner gets the full detail, anyone else (signed out,
+ * or another wallet) a read-only copy without the deposit list.
+ */
+export async function getPlanDetailFor(viewerUid: string | null, planId: string, { withPreview = true } = {}): Promise<PlanDetail> {
+  const plan = await loadSharedPlan(planId);
+  return detailFor(plan, plan.user_id !== viewerUid, withPreview);
+}
+
+async function detailFor(plan: PlanRow, viewer: boolean, withPreview: boolean): Promise<PlanDetail> {
+  // Strike is read with the owner's keys either way; a viewer only ever gets the rendered numbers.
+  const userId = plan.user_id;
   const live = plan.status === "active" || plan.status === "closing";
   // null = no position; undefined = Strike couldn't be read (the view then says the numbers aren't live).
   let pos: StrikePosition | null | undefined = null;
@@ -95,9 +111,10 @@ export async function getPlanDetail(userId: string, planId: string, { withPrevie
     previewError,
     events: events.map((e) => ({ id: Number(e.id), level: e.level, message: e.message, created_at: iso(e.created_at) })),
     snapshots: snapshots.map((s) => ({ mark: Number(s.mark), ratio: s.ratio, headline: s.headline, created_at: iso(s.created_at) })),
-    deposits: deposits.map((d) => ({ ...(d as unknown as DepositRow), created_at: iso(d.created_at) })),
+    deposits: viewer ? [] : deposits.map((d) => ({ ...(d as unknown as DepositRow), created_at: iso(d.created_at) })),
     liveError,
     realized,
+    viewer,
   };
 }
 

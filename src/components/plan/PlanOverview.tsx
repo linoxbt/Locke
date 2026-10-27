@@ -38,7 +38,8 @@ export function PlanOverview() {
   const base = `/plans/${p.id}`;
   const h = headlineText(p);
   const cur = p.type === "costs" ? (p.inputs as CostsInputs).currency : "USD";
-  const urgent = p.status === "active" && p.riskLevel !== "ok" && p.riskLevel !== "watch";
+  const viewer = !!d.viewer;
+  const urgent = !viewer && p.status === "active" && p.riskLevel !== "ok" && p.riskLevel !== "watch";
   const pending = pendingText(p);
   const tone = toneFor(p);
   const dark = tone === "cobalt" || tone === "danger";
@@ -111,7 +112,11 @@ export function PlanOverview() {
             </div>
           )}
           {p.status === "closing" && <p className={`mt-auto pt-8 text-[14px] ${SUBTLE[tone]}`}>Closing on Strike…</p>}
-          {p.status === "closed" && <p className={`mt-auto pt-8 text-[14px] ${SUBTLE[tone]}`}>This plan is closed. Its margin is back on your Strike balance.</p>}
+          {p.status === "closed" && (
+            <p className={`mt-auto pt-8 text-[14px] ${SUBTLE[tone]}`}>
+              This plan is closed. Its margin is back on {viewer ? "its owner's" : "your"} Strike balance.
+            </p>
+          )}
         </Card>
 
         <div className="grid grid-cols-1 gap-3 lg:col-span-4">
@@ -177,7 +182,7 @@ export function PlanOverview() {
               )}
             </div>
           </Card>
-          {p.status === "active" && (
+          {p.status === "active" && !viewer && (
             <div className="grid grid-cols-3 gap-2">
               <LinkButton href={`${base}/top-up`} variant="ink">
                 Top up
@@ -215,7 +220,7 @@ export function PlanOverview() {
           </div>
         </Card>
         <div className="grid grid-cols-1 gap-3 lg:col-span-4">
-          {p.type === "holdings" && <DelegationPanel q={((p.inputs as HoldingsInputs).amountHeld * (p.inputs as HoldingsInputs).sharePct) / 100} />}
+          {p.type === "holdings" && !viewer && <DelegationPanel q={((p.inputs as HoldingsInputs).amountHeld * (p.inputs as HoldingsInputs).sharePct) / 100} />}
           <Card>
             <div className="flex items-baseline justify-between">
               <h2 className="display text-[17px]">Latest</h2>
