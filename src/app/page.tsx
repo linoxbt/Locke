@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { BaseMark } from "@/components/base/BaseMark";
 import { DropIn } from "@/components/DropIn";
 import { Collage } from "@/components/landing/Collage";
 import { LiveDot, LivePrices, type Quote } from "@/components/landing/LivePrices";
@@ -38,10 +37,7 @@ export default async function HomePage() {
         {/* The overlay lets hover through to the collage; only the card itself takes the pointer. */}
         <div className="pointer-events-none relative z-10 flex h-full items-center justify-center px-4">
           <div className="pointer-events-auto w-full max-w-[520px] animate-rise rounded-[14px] bg-paper p-5 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.35)] sm:p-6">
-            <span className="eyebrow flex items-center gap-2 text-ink-2">
-              <BaseMark size={12} /> Built on Base
-            </span>
-            <h1 className="display mt-3 text-[24px] leading-[1.04] sm:text-[32px]">
+            <h1 className="display text-[24px] leading-[1.04] sm:text-[32px]">
               Protect what your business holds. <span className="text-ink-3">Manage what it buys, from a vault you own on Base.</span>
             </h1>
             <Link
