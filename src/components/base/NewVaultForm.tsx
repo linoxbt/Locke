@@ -51,7 +51,7 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
 
   useEffect(() => {
     fetch("/api/base/markets", { cache: "no-store" })
-      .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error((await r.json().catch(() => ({})))?.error ?? "Veranta is unavailable"))))
+      .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error((await r.json().catch(() => ({})))?.error ?? "Avantis is unavailable"))))
       .then((d) => setMarkets(d.markets))
       .catch((e) => setLoadError(String(e.message ?? e)));
   }, []);
@@ -126,7 +126,7 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
     }
   }
 
-  if (loadError) return <Notice tone="danger">Veranta&apos;s market data didn&apos;t load ({loadError}). Try again shortly.</Notice>;
+  if (loadError) return <Notice tone="danger">Avantis&apos;s market data didn&apos;t load ({loadError}). Try again shortly.</Notice>;
 
   const busy = step !== "idle";
   const sizing = sized.sizing;
@@ -194,9 +194,9 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
 
       <Card tone="ink" className="flex h-fit flex-col gap-5 lg:sticky lg:top-24">
         <div className="eyebrow text-lime">Your vault</div>
-        {!markets && <p className="text-[14px] text-paper/70">Loading Veranta&apos;s markets…</p>}
+        {!markets && <p className="text-[14px] text-paper/70">Loading Avantis&apos;s markets…</p>}
         {sized.problem && <p className="text-[14px] text-paper">{sized.problem}</p>}
-        {market && !market.available && <p className="text-[14px] text-paper">This market isn&apos;t available on Veranta right now.</p>}
+        {market && !market.available && <p className="text-[14px] text-paper">This market isn&apos;t available on Avantis right now.</p>}
         {sizing && (
           <>
             <div>
@@ -215,7 +215,7 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
             <label className="flex items-start gap-3 text-[13px] text-paper/85">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#d6f36b]" />
               <span>
-                I understand the hedge is a leveraged position on Veranta, can lose its margin if prices move far against it, and that fees and
+                I understand the hedge is a leveraged position on Avantis, can lose its margin if prices move far against it, and that fees and
                 funding apply. I&apos;ve read the{" "}
                 <Link href="/legal/risk" target="_blank" className="underline underline-offset-2">
                   Risk Disclosure
@@ -245,8 +245,8 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
 
 function carryHint(m: MarketInfo): string {
   const yearly = (m.carryPctPerHour ?? 0) * 24 * 365;
-  if (Math.abs(yearly) < 0.05) return `${m.symbol} on Veranta. Holding costs almost nothing right now.`;
+  if (Math.abs(yearly) < 0.05) return `${m.symbol} on Avantis. Holding costs almost nothing right now.`;
   return yearly < 0
-    ? `${m.symbol} on Veranta. This side is being paid about ${(-yearly).toFixed(1)}% a year right now.`
-    : `${m.symbol} on Veranta. Holding costs about ${yearly.toFixed(1)}% a year right now.`;
+    ? `${m.symbol} on Avantis. This side is being paid about ${(-yearly).toFixed(1)}% a year right now.`
+    : `${m.symbol} on Avantis. Holding costs about ${yearly.toFixed(1)}% a year right now.`;
 }

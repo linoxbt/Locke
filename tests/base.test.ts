@@ -76,7 +76,7 @@ describe("Base keeper decisions", () => {
     expect(decide({ ...base, marketOpen: false }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("market is closed") });
     expect(decide({ ...base, paused: true }).action.kind).toBe("wait");
     expect(decide({ ...base, cooldownLeftS: 1800 }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("30 min") });
-    expect(decide({ ...base, status: "opening", openSentAgoS: 30 }).action).toMatchObject({ kind: "wait", note: "Waiting for Veranta to fill the hedge." });
+    expect(decide({ ...base, status: "opening", openSentAgoS: 30 }).action).toMatchObject({ kind: "wait", note: "Waiting for Avantis to fill the hedge." });
     expect(decide({ ...base, status: "opening", openSentAgoS: OPEN_RETRY_S + 1 }).action.kind).toBe("open");
     expect(decide({ ...base, keeperIsUs: false }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("removed") });
   });

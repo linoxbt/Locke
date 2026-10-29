@@ -127,7 +127,7 @@ export default async function HomePage() {
         </div>
         <p className="mt-10 text-center text-[13px] text-ink-3">Works with</p>
         <ul className="mx-auto mt-6 flex max-w-[1100px] flex-wrap items-center justify-center gap-x-8 gap-y-3 text-[17px] text-ink sm:text-[19px]">
-          {["Strike", "Cardano", "Eternl", "Lace", "Vespr", "Base", "Base Account", "Veranta", "USDC"].map((n) => (
+          {["Strike", "Cardano", "Eternl", "Lace", "Vespr", "Base", "Base Account", "Avantis", "USDC"].map((n) => (
             <li key={n} className="display">
               {n}
             </li>

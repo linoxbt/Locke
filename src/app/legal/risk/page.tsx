@@ -26,7 +26,7 @@ export default function Risk() {
           at 90%, and liquidates it at 100%. Locke alerts you earlier, at 50% and 60%.
         </li>
         <li>
-          <strong>On Veranta</strong>, a position is liquidated when its losses and fees reach 85% of its margin. Locke&apos;s keeper adds
+          <strong>On Avantis</strong> (now operating as Veranta), a position is liquidated when its losses and fees reach 85% of its margin. Locke&apos;s keeper adds
           margin from your vault&apos;s buffer when 60% of the margin is used, but only while there is buffer left and the market is open.
         </li>
       </ul>
@@ -57,15 +57,15 @@ export default function Risk() {
       <h2>Markets close and roll</h2>
       <p>
         Crypto markets trade around the clock, but oil markets close at night and at weekends. While a market is closed, nobody can add
-        margin, resize or close the hedge, and prices can gap when it reopens. Oil hedges on Veranta follow a futures contract that is rolled
+        margin, resize or close the hedge, and prices can gap when it reopens. Oil hedges on Avantis follow a futures contract that is rolled
         each month: the entry price shifts at the roll and trading pauses briefly.
       </p>
 
       <h2>Venue and counterparty risk</h2>
       <ul>
         <li>
-          Strike Finance and Veranta are independent platforms. They can change their rules, fees, margin levels or markets, pause trading,
-          delist a market, or fail. Veranta pays winning positions from a liquidity vault, and its contracts can be upgraded by its operators.
+          Strike Finance and Avantis are independent platforms. They can change their rules, fees, margin levels or markets, pause trading,
+          delist a market, or fail. Avantis pays winning positions from a liquidity vault, and its contracts can be upgraded by its operators.
         </li>
         <li>Venues depend on price oracles. A wrong or late price can cause a liquidation or a bad fill.</li>
       </ul>

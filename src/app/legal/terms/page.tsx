@@ -28,7 +28,7 @@ export default function Terms() {
           <strong>Locke on Strike</strong> (Cardano): hedges on Strike Finance, from your own Strike account.
         </li>
         <li>
-          <strong>Locke on Base</strong>: hedges on Veranta (formerly Avantis), from a vault contract on Base that you own.
+          <strong>Locke on Base</strong>: hedges on Avantis (now operating as Veranta, veranta.xyz), from a vault contract on Base that you own.
         </li>
       </ul>
       <p>
@@ -55,10 +55,10 @@ export default function Terms() {
       <ul>
         <li>You must be at least 18 and able to enter a binding contract.</li>
         <li>
-          You must not use Locke where the law forbids it, where Strike or Veranta does not allow you to use its service, or if you are
+          You must not use Locke where the law forbids it, where Strike or Avantis does not allow you to use its service, or if you are
           subject to sanctions. You are responsible for checking the rules that apply to you.
         </li>
-        <li>You must not use Locke to break the law, to move the proceeds of crime, or to interfere with Locke, Strike, Veranta or any network.</li>
+        <li>You must not use Locke to break the law, to move the proceeds of crime, or to interfere with Locke, Strike, Avantis or any network.</li>
       </ul>
 
       <h2>4. Risk</h2>
@@ -104,7 +104,7 @@ export default function Terms() {
 
       <h2>7. Third-party services</h2>
       <p>
-        Locke works on top of services we don&apos;t control, including Strike Finance, Veranta, the Cardano and Base networks, price oracles
+        Locke works on top of services we don&apos;t control, including Strike Finance, Avantis, the Cardano and Base networks, price oracles
         (Pyth), wallets (including Base Account by Coinbase), and our hosting and data providers. Your use of them is governed by their own
         terms. We are not responsible for their availability, their decisions (such as liquidations, delistings or account restrictions), or
         losses they cause.

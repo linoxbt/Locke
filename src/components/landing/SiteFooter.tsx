@@ -39,13 +39,13 @@ export function SiteFooter() {
         <div className="col-span-2 md:col-span-1">
           <h2 className="text-[15px]">Locke</h2>
           <p className="mt-3 text-[15px] leading-relaxed text-paper/50">
-            Protection plans for businesses: on Cardano with Strike Finance, and on Base with Veranta. A tool, not financial advice.
+            Protection plans for businesses: on Cardano with Strike Finance, and on Base with Avantis. A tool, not financial advice.
           </p>
         </div>
       </div>
       <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-5 pb-10 text-[13px] text-paper/55 sm:flex-row sm:justify-between sm:px-14">
         <span>Hedges can lose money on their own, and positions can be liquidated if margin runs out.</span>
-        <span>Check Veranta&apos;s and Strike&apos;s eligibility rules before you use them.</span>
+        <span>Check Avantis&apos;s and Strike&apos;s eligibility rules before you use them.</span>
       </div>
     </footer>
   );

@@ -38,7 +38,7 @@ export default async function BaseHome({ searchParams }: { searchParams: Promise
           </div>
           <ul className="grid gap-3 text-[14px] leading-relaxed text-paper/80 sm:grid-cols-3">
             <li>Your USDC sits in your own vault contract. Only you can withdraw it.</li>
-            <li>Locke&apos;s keeper hedges on Veranta within limits written into the vault.</li>
+            <li>Locke&apos;s keeper hedges on Avantis within limits written into the vault.</li>
             <li>Close or withdraw from your wallet at any time, even if Locke is offline.</li>
           </ul>
         </Card>

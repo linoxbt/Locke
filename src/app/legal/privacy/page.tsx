@@ -71,7 +71,7 @@ export default function Privacy() {
       <h2>Who else sees data</h2>
       <ul>
         <li>
-          <strong>Trading venues:</strong> Strike Finance receives your Strike account&apos;s orders through Locke; Veranta sees your
+          <strong>Trading venues:</strong> Strike Finance receives your Strike account&apos;s orders through Locke; Avantis (now operating as Veranta) sees your
           vault&apos;s trades on Base. Each uses data under its own privacy policy.
         </li>
         <li>
@@ -80,7 +80,7 @@ export default function Privacy() {
         </li>
         <li>
           <strong>Our providers:</strong> hosting (Netlify), database (Supabase), background workers (Railway), and blockchain data and price
-          services (such as Koios, Base RPC providers and Pyth through Veranta). They process data only to provide their service to us.
+          services (such as Koios, Base RPC providers and Pyth through Avantis). They process data only to provide their service to us.
         </li>
         <li>
           <strong>When the law requires it:</strong> to comply with a valid legal request, or to protect users and Locke from fraud or abuse.

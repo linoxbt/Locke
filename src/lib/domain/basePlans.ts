@@ -117,7 +117,7 @@ export function sizeBasePlan(i: BasePlanInputs, m: MarketTerms): BaseSizing {
   if (!market) throw new BasePlanError("Unknown market");
   const notionalUsd = hedgeNotional(i);
   if (notionalUsd < m.minPositionUsd) {
-    throw new BasePlanError(`Veranta's smallest ${market.asset} hedge is $${m.minPositionUsd}; this plan hedges $${notionalUsd.toFixed(2)}`);
+    throw new BasePlanError(`Avantis's smallest ${market.asset} hedge is $${m.minPositionUsd}; this plan hedges $${notionalUsd.toFixed(2)}`);
   }
   if (i.leverage > m.maxLeverage) throw new BasePlanError(`${market.asset} allows at most ${m.maxLeverage}x`);
   const collateralUsd = notionalUsd / i.leverage;

@@ -63,7 +63,7 @@ export function decide(v: VaultState): KeeperDecision {
   // A live hedge: watch it, and add margin when it gets close.
   if (v.position) {
     const p = v.position;
-    if (v.mark == null) return wait("active", "No price from Veranta right now; checking again shortly.");
+    if (v.mark == null) return wait("active", "No price from Avantis right now; checking again shortly.");
     const ratio = verantaMarginRatio(p, v.mark);
     const level = riskLevel(ratio, v.prevLevel, LOCKE_THRESHOLDS);
     if (ratio < LOCKE_THRESHOLDS.action) return { status: "active", ratio, level, action: { kind: "wait", note: null } };
@@ -82,7 +82,7 @@ export function decide(v: VaultState): KeeperDecision {
   if (v.status === "active") return { status: "closed", ratio: null, level: "ok", action: { kind: "closed", note: "The hedge is closed. The vault's USDC is available to withdraw." } };
 
   // Funding or opening: open the hedge once everything is in place.
-  if (v.openSentAgoS != null && v.openSentAgoS < OPEN_RETRY_S) return wait("opening", "Waiting for Veranta to fill the hedge.");
+  if (v.openSentAgoS != null && v.openSentAgoS < OPEN_RETRY_S) return wait("opening", "Waiting for Avantis to fill the hedge.");
   if (!v.keeperIsUs) return wait(v.status, "Locke's keeper is removed, so it won't open the hedge.");
   if (v.paused) return wait(v.status, "Locke has paused new hedges for now.");
   if (!v.marketOpen) return wait(v.status, "The market is closed; the hedge opens when it reopens.");
