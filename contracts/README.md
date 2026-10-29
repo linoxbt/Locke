@@ -30,6 +30,7 @@ npm install
 npx hardhat test                                       # offline unit + property-based tests (mock Veranta)
 FUZZ_RUNS=1000 npx hardhat test test/fuzz.invariants.test.ts   # a longer property-based run
 FORK=1 npx hardhat test test/fork.veranta.test.ts      # against the real Veranta contracts on a Base fork
+FORK=1 npx hardhat test test/fork.eas.test.ts          # Protected by Locke attestations on the real EAS predeploys
 node scripts/measure-fills.mjs                         # how fast Veranta fills directly-sent orders
 node scripts/measure-funding.mjs                       # which side pays ETH/BTC funding right now
 node scripts/testnet-run.mjs <keys.json> [out.json]    # live run on Veranta's test network (needs test funds)

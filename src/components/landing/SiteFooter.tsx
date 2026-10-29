@@ -5,7 +5,7 @@ import { LockeLogoReverse } from "../Logo";
 
 const COLUMNS: { title: string; links: [string, string][] }[] = [
   { title: "Locke on Base", links: [["Sign in with Base", "/base"], ["New vault", "/base/new"]] },
-  { title: "Product", links: [["How it works", "/how-it-works"], ["Holdings plan", "/how-it-works#holdings"], ["Operating costs plan", "/how-it-works#costs"]] },
+  { title: "Product", links: [["How it works", "/how-it-works"], ["Holdings plan", "/how-it-works#holdings"], ["Operating costs plan", "/how-it-works#costs"], ["Metrics", "/metrics"]] },
   { title: "On Cardano", links: [["Connect a wallet", "/connect"], ["Protect your ADA", "/protect/holdings"], ["Manage fuel costs", "/protect/costs"], ["Portfolio", "/portfolio"]] },
   { title: "Legal", links: LEGAL_DOCS.map((d) => [d.label, d.href] as [string, string]) },
 ];

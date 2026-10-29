@@ -1,13 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { encodeFunctionData, zeroAddress, type Address, type Hex } from "viem";
+import { proofPath } from "@/lib/base/attest";
 import { erc20Abi, USDC, usdcUnits, vaultAbi } from "@/lib/base/contracts";
 import { sendBaseCalls, walletErrorMessage, walletFor } from "@/lib/base/wallet";
 import { LOCKE_THRESHOLDS } from "@/lib/domain/risk";
 import type { VaultView as Detail } from "@/lib/server/baseVaults";
 import { ago, pct, price, shortAddr, signedUsd, usd } from "@/lib/ui/format";
 import { Button, Card, Display, ErrorNote, inputCls, Notice, Stat, StateChip } from "../ui";
+import { BaseMark } from "./BaseMark";
 
 const POLL_MS = 10_000;
 
@@ -108,7 +111,17 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
             Vault {shortAddr(d.address)} on BaseScan
           </a>
         </div>
-        <StateChip status={d.status} level={level === "ok" ? undefined : level} />
+        <div className="flex flex-wrap items-center gap-2">
+          {d.attestation && (
+            <Link
+              href={proofPath(d.attestation)}
+              className="inline-flex h-8 items-center gap-2 rounded-full bg-ink px-3 text-[13px] text-paper transition-colors hover:bg-ink/85"
+            >
+              <BaseMark size={10} /> Protected by Locke · proof
+            </Link>
+          )}
+          <StateChip status={d.status} level={level === "ok" ? undefined : level} />
+        </div>
       </div>
 
       {d.partial.length > 0 && <Notice>Some live data didn&apos;t load ({d.partial.join(", ")}). Showing what&apos;s available; it retries every few seconds.</Notice>}

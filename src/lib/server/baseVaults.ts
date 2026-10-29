@@ -86,6 +86,19 @@ export async function addVaultEvent(vault: string, level: string, message: strin
     values (${vault}, ${level}, ${message}, ${detail ? db().json(detail as never) : null}, ${txHash ?? null})`;
 }
 
+/**
+ * The vault's live "Protected by Locke" attestation: the latest one the keeper issued (an event
+ * whose detail names it) that no later event has revoked. Null when there is none.
+ */
+export async function activeAttestation(vault: string): Promise<string | null> {
+  const [row] = await db()`
+    select e.detail->>'attestation' as uid from base_vault_events e
+    where e.vault = ${vault.toLowerCase()} and e.detail ? 'attestation'
+      and not exists (select 1 from base_vault_events r where r.vault = e.vault and r.detail->>'revoked' = e.detail->>'attestation')
+    order by e.id desc limit 1`;
+  return (row?.uid as string | undefined) ?? null;
+}
+
 export async function listVaults(uid: string) {
   return db()`
     select address, pair_index, type, name, status, risk_level, last_ratio, sizing, created_at
@@ -116,6 +129,8 @@ export interface VaultView {
   mark: number | null;
   marketOpen: boolean | null;
   events: { id: number; level: string; message: string; txHash: string | null; at: string }[];
+  /** The live "Protected by Locke" attestation on Base, if the hedge is open and it has been issued. */
+  attestation: string | null;
   /** Something couldn't be read (Base or Veranta down); the rest is still shown. */
   partial: string[];
 }
@@ -156,8 +171,10 @@ export async function vaultDetail(uid: string, address: string): Promise<VaultVi
 
   const pos = positions?.find((p) => p.pairIndex === market.pairIndex) ?? null;
   const mark = price?.price ?? null;
-  const events = await db()`
-    select id, level, message, tx_hash, created_at from base_vault_events where vault = ${vault} order by id desc limit 30`;
+  const [events, attestation] = await Promise.all([
+    db()`select id, level, message, tx_hash, created_at from base_vault_events where vault = ${vault} order by id desc limit 30`,
+    activeAttestation(vault),
+  ]);
 
   return {
     address: vault,
@@ -189,6 +206,7 @@ export async function vaultDetail(uid: string, address: string): Promise<VaultVi
     mark,
     marketOpen: m ? m.marketOpen : null,
     events: events.map((e) => ({ id: Number(e.id), level: e.level, message: e.message, txHash: e.tx_hash, at: new Date(e.created_at).toISOString() })),
+    attestation,
     partial,
   };
 }

@@ -78,6 +78,9 @@ codes. A middleware gate sends signed-out visitors to `/connect?next=<page>` and
 | `/plans/[id]/strike` | Raw position fields and deposits with transaction links |
 | `/withdraw` | Free balance back to the connected wallet, wallet-signed |
 | `/account` | Wallet, stake pool and DRep, Strike balance, sign out |
+| `/base`, `/base/new`, `/base/vaults/[address]` | Locke on Base: sign in, create a vault, follow it (see below) |
+| `/proof/[uid]` | Public "Protected by Locke" proof, read from EAS on Base |
+| `/metrics` | Public metrics: value protected now on Strike and Base, plans, vaults, live proofs, Builder Code transactions |
 
 ## Architecture
 
@@ -192,6 +195,7 @@ TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration
 | `BASE_RPC_URL` | app, base keeper | Base RPC (default `https://mainnet.base.org`; Veranta's test network: `https://devnet-rpc.veranta.xyz`) |
 | `BASE_BUILDER_CODE` | app, base keeper | Locke's Base Builder Code (`bc_…`), appended to every Base transaction (ERC-8021) |
 | `BASE_KEEPER_PRIVATE_KEY` | base keeper | The keeper key (0x + 64 hex). Trades vaults within their on-chain limits; can never withdraw. Needs a little ETH on Base |
+| `BASE_PAST_KEEPERS` | app | Optional. Comma-separated earlier keeper addresses, so proofs they issued still show as Locke's after a keeper change |
 | `VERANTA_API_URL`, `VERANTA_FEED_URL` | app, base keeper | Veranta's API and signed-price feed (defaults to production) |
 
 ### Deploy
@@ -209,6 +213,8 @@ A second version of Locke under `/base`, for businesses on Base. Each business s
 - **Vaults:** the business's wallet approves USDC and calls `createVault` in one batch (`wallet_sendCalls`; one transaction per call in wallets without batching). The server records a vault only from its `VaultCreated` event in that transaction, checks the owner is the signed-in account and that the limits on Base match the plan. Deposit, withdraw, closing the hedge and removing the keeper all go straight from the owner's wallet to the vault.
 - **Keeper:** `worker/base-keeper.ts` opens the hedge once the deposit is in, adds margin from the vault's buffer when margin use reaches Locke's action level (60%), and marks the vault closed when the owner closes the hedge. Its decisions are in `src/lib/base/keeper.ts`.
 - **Builder Codes:** every transaction from the app and the keeper carries Locke's Base Builder Code (ERC-8021 data suffix) when `BASE_BUILDER_CODE` is set.
+- **Protected by Locke:** when a vault's hedge opens, the keeper issues an [EAS](https://attest.org) attestation on Base to the vault's owner (vault, market, long or short, USD protected, start date; schema in `src/lib/base/attest.ts`, registered by the keeper on first run) and revokes it when the vault closes. `/proof/[uid]` reads it straight from EAS and only calls it Locke's when Locke's keeper (the factory's keeper, or one listed in `BASE_PAST_KEEPERS`) issued it. `contracts/test/fork.eas.test.ts` checks the schema id, attest, read and revoke against the real EAS predeploys on a Base fork.
+- **Metrics:** `/metrics` aggregates Locke's own records for both networks; it names no business or wallet.
 
 ## Security
 
