@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { createPublicClient, custom, decodeEventLog, encodeFunctionData, type Address, type Hex } from "viem";
@@ -213,7 +214,18 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
             </p>
             <label className="flex items-start gap-3 text-[13px] text-paper/85">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#d6f36b]" />
-              <span>I understand the hedge is a leveraged position on Veranta, can lose its margin if prices move far against it, and that fees and funding apply.</span>
+              <span>
+                I understand the hedge is a leveraged position on Veranta, can lose its margin if prices move far against it, and that fees and
+                funding apply. I&apos;ve read the{" "}
+                <Link href="/legal/risk" target="_blank" className="underline underline-offset-2">
+                  Risk Disclosure
+                </Link>{" "}
+                and accept the{" "}
+                <Link href="/legal/terms" target="_blank" className="underline underline-offset-2">
+                  Terms
+                </Link>
+                .
+              </span>
             </label>
             <Button size="lg" variant="paper" onClick={create} busy={busy} disabled={!agreed || !market?.available}>
               Create vault and deposit {usd(sizing.depositUsd)}

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/ui/api";
 import { detectWallets, enableWallet, sameAccount, signText, type ConnectedWallet, type WalletOption } from "@/lib/cardano/wallet";
+import { allowPreferences } from "@/lib/consent";
 
 export interface Me {
   address: string;
@@ -35,9 +36,10 @@ const WalletContext = createContext<Ctx | null>(null);
 export const SCAN_FOR_MS = 6000;
 const LAST_WALLET = "locke.wallet";
 
+/** Remembering the wallet across visits is a preference: only with the visitor's cookie consent. */
 function remember(id: string | null) {
   try {
-    if (id) localStorage.setItem(LAST_WALLET, id);
+    if (id && allowPreferences()) localStorage.setItem(LAST_WALLET, id);
     else localStorage.removeItem(LAST_WALLET);
   } catch {
     /* storage unavailable: the user just picks the wallet again */

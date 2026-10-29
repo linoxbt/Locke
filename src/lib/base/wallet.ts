@@ -17,6 +17,7 @@ import {
 } from "viem";
 import { base } from "viem/chains";
 import { createSiweMessage } from "viem/siwe";
+import { allowPreferences } from "../consent";
 import { BASE_CHAIN_ID } from "./contracts";
 
 export type WalletKind = "base" | "injected";
@@ -51,9 +52,16 @@ export async function providerFor(kind: WalletKind): Promise<EIP1193Provider> {
   return kind === "base" ? baseAccountProvider() : injectedProvider();
 }
 
+/**
+ * Which wallet signed in, so transactions go to the same one. Kept for this tab only (strictly
+ * necessary to send the signed-in account's transactions), and across visits only with the
+ * visitor's consent to preference storage.
+ */
 function rememberKind(kind: WalletKind) {
   try {
-    localStorage.setItem(KIND_KEY, kind);
+    sessionStorage.setItem(KIND_KEY, kind);
+    if (allowPreferences()) localStorage.setItem(KIND_KEY, kind);
+    else localStorage.removeItem(KIND_KEY);
   } catch {
     /* private mode: the next action asks again */
   }
@@ -61,7 +69,8 @@ function rememberKind(kind: WalletKind) {
 
 export function rememberedKind(): WalletKind {
   try {
-    return localStorage.getItem(KIND_KEY) === "injected" ? "injected" : "base";
+    const kind = sessionStorage.getItem(KIND_KEY) ?? localStorage.getItem(KIND_KEY);
+    return kind === "injected" ? "injected" : "base";
   } catch {
     return "base";
   }

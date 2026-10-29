@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PreviewCard } from "../PreviewCard";
@@ -34,7 +35,17 @@ export function RiskCheckbox({ checked, onChange }: { checked: boolean; onChange
         onChange={(e) => onChange(e.target.checked)}
         className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--color-cobalt)]"
       />
-      I understand the risks above and want Locke to open this hedge.
+      <span>
+        I understand the risks above, have read the{" "}
+        <Link href="/legal/risk" target="_blank" className="text-cobalt underline underline-offset-2">
+          Risk Disclosure
+        </Link>{" "}
+        and accept the{" "}
+        <Link href="/legal/terms" target="_blank" className="text-cobalt underline underline-offset-2">
+          Terms
+        </Link>
+        , and want Locke to open this hedge.
+      </span>
     </label>
   );
 }

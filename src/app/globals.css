@@ -274,3 +274,69 @@ input[type="number"]::-webkit-outer-spin-button {
     animation: none !important;
   }
 }
+
+/* Long-form legal text (src/components/legal/LegalPage.tsx). */
+.legal h2 {
+  margin-top: 2.5rem;
+  font-size: 21px;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
+  font-family: var(--font-display);
+}
+.legal h3 {
+  margin-top: 1.5rem;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+.legal p,
+.legal ul,
+.legal ol,
+.legal table {
+  margin-top: 0.85rem;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--color-ink-2);
+}
+.legal ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.legal ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.legal li + li {
+  margin-top: 0.35rem;
+}
+.legal strong {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+.legal a {
+  color: var(--color-cobalt);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.legal th,
+.legal td {
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.6rem 0.75rem 0.6rem 0;
+  text-align: left;
+  vertical-align: top;
+}
+.legal th {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+.legal code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-ink);
+}

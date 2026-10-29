@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Inter_Tight, JetBrains_Mono } from "next/font/google";
+import { CookieConsent } from "@/components/CookieConsent";
 import { Header } from "@/components/Header";
 import { WalletProvider } from "@/components/WalletProvider";
 import { optionalSession } from "@/lib/server/pageAuth";
@@ -40,6 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <WalletProvider initialAddress={session?.addr ?? null}>
           <Header />
           <main>{children}</main>
+          <CookieConsent />
         </WalletProvider>
       </body>
     </html>

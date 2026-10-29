@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { LEGAL_DOCS } from "@/lib/legal";
+import { CookieSettingsLink } from "../CookieConsent";
 import { LockeLogoReverse } from "../Logo";
 
 const COLUMNS: { title: string; links: [string, string][] }[] = [
   { title: "Product", links: [["How it works", "/how-it-works"], ["Holdings plan", "/how-it-works#holdings"], ["Operating costs plan", "/how-it-works#costs"]] },
   { title: "Your plans", links: [["Portfolio", "/portfolio"], ["New plan", "/protect"], ["Withdraw", "/withdraw"], ["Account", "/account"]] },
-  { title: "Get started", links: [["Connect a wallet", "/connect"], ["Protect your ADA", "/protect/holdings"], ["Manage fuel costs", "/protect/costs"]] },
+  { title: "Get started", links: [["Connect a wallet", "/connect"], ["Protect your ADA", "/protect/holdings"], ["Manage fuel costs", "/protect/costs"], ["Locke on Base", "/base"]] },
+  { title: "Legal", links: LEGAL_DOCS.map((d) => [d.label, d.href] as [string, string]) },
 ];
 
 export function SiteFooter() {
@@ -13,7 +16,7 @@ export function SiteFooter() {
       <div className="mx-auto max-w-[1440px] px-5 pt-14 sm:px-14">
         <LockeLogoReverse height={28} />
       </div>
-      <div className="mx-auto grid max-w-[1440px] grid-cols-2 gap-x-6 gap-y-10 px-5 pb-10 pt-10 sm:px-14 md:grid-cols-4">
+      <div className="mx-auto grid max-w-[1440px] grid-cols-2 gap-x-6 gap-y-10 px-5 pb-10 pt-10 sm:px-14 md:grid-cols-5">
         {COLUMNS.map((c) => (
           <div key={c.title}>
             <h2 className="text-[15px]">{c.title}</h2>
@@ -25,6 +28,11 @@ export function SiteFooter() {
                   </Link>
                 </li>
               ))}
+              {c.title === "Legal" && (
+                <li>
+                  <CookieSettingsLink className="text-[15px] text-paper/50 transition-colors hover:text-paper" />
+                </li>
+              )}
             </ul>
           </div>
         ))}

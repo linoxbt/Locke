@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { hasInjectedWallet, signInWithBase, walletErrorMessage, type WalletKind } from "@/lib/base/wallet";
@@ -60,7 +61,15 @@ export function SignInWithBase({ next = "/base" }: { next?: string }) {
         </button>
       )}
       <p className="text-[12px] leading-relaxed text-ink-3">
-        You sign a message to prove the account is yours. It costs nothing and moves no funds.
+        You sign a message to prove the account is yours. It costs nothing and moves no funds. By signing in you accept Locke&apos;s{" "}
+        <Link href="/legal/terms" target="_blank" className="underline underline-offset-2 hover:text-ink">
+          Terms
+        </Link>{" "}
+        and{" "}
+        <Link href="/legal/privacy" target="_blank" className="underline underline-offset-2 hover:text-ink">
+          Privacy Policy
+        </Link>
+        .
       </p>
       <ErrorNote error={error} />
     </div>

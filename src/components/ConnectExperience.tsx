@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { isMobileBrowser, okxUnsupportedReason, walletAppLinks, type WalletAppLink } from "@/lib/cardano/wallet";
@@ -205,7 +206,17 @@ export function ConnectExperience({
           </div>
         )}
 
-        <p className="mt-auto pt-10 text-[12px] text-ink-3">Cardano mainnet · signing is free</p>
+        <p className="mt-auto pt-10 text-[12px] leading-relaxed text-ink-3">
+          Cardano mainnet · signing is free · By signing in you accept Locke&apos;s{" "}
+          <Link href="/legal/terms" target="_blank" className="underline underline-offset-2 hover:text-ink">
+            Terms
+          </Link>{" "}
+          and{" "}
+          <Link href="/legal/privacy" target="_blank" className="underline underline-offset-2 hover:text-ink">
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </div>
 
       {/* C — what you'll sign (dark) */}
