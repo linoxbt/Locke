@@ -241,7 +241,7 @@ export function ConnectExperience({
         </div>
 
         <ul className="mt-4 flex flex-wrap gap-1.5">
-          {["0 ADA moves", `${feePct ?? "—"} fee per trade`, "Withdrawals to this wallet only"].map((t) => (
+          {[`${feePct ?? "—"} fee per trade`, "Withdrawals to this wallet only"].map((t) => (
             <li key={t} className="num rounded-full bg-paper/10 px-3 py-1 text-[11px] text-paper/70">
               {t}
             </li>
