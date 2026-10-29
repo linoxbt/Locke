@@ -12,18 +12,22 @@
     "strike:check": "tsx --env-file-if-exists=.env.local scripts/strike-check.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "worker:base": "tsx --env-file-if-exists=.env.local worker/base-keeper.ts"
   },
   "engines": {
     "node": "22.x"
   },
   "dependencies": {
+    "@base-org/account": "^2.5.13",
     "@noble/hashes": "2.4.0",
     "next": "^15.5.28",
+    "ox": "^1.8.8",
     "postgres": "^3.4.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "tsx": "^4.20.5",
+    "viem": "^2.57.7",
     "ws": "^8.22.0"
   },
   "devDependencies": {

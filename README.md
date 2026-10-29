@@ -188,12 +188,27 @@ TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration
 | `LOCKE_KEY_ENC` | app, worker | 32 bytes hex; encrypts API wallet keys (`openssl rand -hex 32`) |
 | `SESSION_SECRET` | app | At least 32 characters; signs session cookies |
 | `LOCKE_DEMO_ALERTS` | app, worker | `true` lowers alert levels for a demo (labelled on screen) |
+| `BASE_FACTORY_ADDRESS` | app, base keeper | Locke on Base: the deployed `LockeVaultFactory`. Unset, `/base` shows "not live yet" |
+| `BASE_RPC_URL` | app, base keeper | Base RPC (default `https://mainnet.base.org`; Veranta's test network: `https://devnet-rpc.veranta.xyz`) |
+| `BASE_BUILDER_CODE` | app, base keeper | Locke's Base Builder Code (`bc_…`), appended to every Base transaction (ERC-8021) |
+| `BASE_KEEPER_PRIVATE_KEY` | base keeper | The keeper key (0x + 64 hex). Trades vaults within their on-chain limits; can never withdraw. Needs a little ETH on Base |
+| `VERANTA_API_URL`, `VERANTA_FEED_URL` | app, base keeper | Veranta's API and signed-price feed (defaults to production) |
 
 ### Deploy
 
 - **App:** Netlify (`netlify.toml`, Next.js runtime). Set the variables above in the Netlify UI with the Functions scope and mark the secrets as secret.
 - **Worker:** create a Railway service from the same repo with the same `DATABASE_URL` (the **session** pooler, port 5432, or a direct connection: the worker holds an advisory lock so only one instance is active), `LOCKE_KEY_ENC` (must equal the app's) and `STRIKE_BUILDER_FEE_BPS`. `railway.json` runs the schema migration before each deploy, starts `tsx worker/index.ts`, and gates deploys on `/healthz`. The worker exits after two minutes unhealthy so Railway restarts it.
+- **Base keeper (Locke on Base):** a second Railway service from the same repo, start command `npx tsx worker/base-keeper.ts` (override it in the service settings; `railway.json` names the Strike worker), with `DATABASE_URL`, `BASE_FACTORY_ADDRESS`, `BASE_KEEPER_PRIVATE_KEY`, `BASE_BUILDER_CODE` and optionally `BASE_RPC_URL`. It answers `/healthz` (503 when it can't read Base or the database, or is low on ETH) and holds its own advisory lock.
 - **Database:** create a Supabase project, put its connection string in `DATABASE_URL`, and run `npm run db:migrate` (safe to re-run after every schema change).
+
+## Locke on Base
+
+A second version of Locke under `/base`, for businesses on Base. Each business signs in with **Sign in with Base** (Base Account, or any EVM wallet) and creates its own `LockeVault` contract (see `contracts/`): the vault holds its USDC and is the trader on [Veranta](https://www.veranta.xyz) (formerly Avantis), so every payout comes back to it. Holdings plans short ETH or BTC; costs plans go long WTI or Brent.
+
+- **Sign-in:** Sign-In with Ethereum. Base Account answers `wallet_connect` with the signed message; other wallets sign it with `personal_sign`. The server checks the domain, URI, chain (8453), age and a single-use nonce, then the signature: recovered locally for ordinary wallets, verified on Base for smart wallets (ERC-1271, or ERC-6492 before deployment). Its own session cookie and `base_users` table, separate from the Strike sign-in.
+- **Vaults:** the business's wallet approves USDC and calls `createVault` in one batch (`wallet_sendCalls`; one transaction per call in wallets without batching). The server records a vault only from its `VaultCreated` event in that transaction, checks the owner is the signed-in account and that the limits on Base match the plan. Deposit, withdraw, closing the hedge and removing the keeper all go straight from the owner's wallet to the vault.
+- **Keeper:** `worker/base-keeper.ts` opens the hedge once the deposit is in, adds margin from the vault's buffer when margin use reaches Locke's action level (60%), and marks the vault closed when the owner closes the hedge. Its decisions are in `src/lib/base/keeper.ts`.
+- **Builder Codes:** every transaction from the app and the keeper carries Locke's Base Builder Code (ERC-8021 data suffix) when `BASE_BUILDER_CODE` is set.
 
 ## Security
 

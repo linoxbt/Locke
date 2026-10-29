@@ -35,6 +35,18 @@ node scripts/measure-funding.mjs                       # which side pays ETH/BTC
 node scripts/testnet-run.mjs <keys.json> [out.json]    # live run on Veranta's test network (needs test funds)
 ```
 
+### Deploy
+
+```bash
+npx hardhat compile
+RPC_URL=https://mainnet.base.org DEPLOYER_PRIVATE_KEY=0x… \
+ADMIN=0x<Locke multisig> GUARDIAN=0x<Locke multisig> KEEPER=0x<keeper address> \
+MAX_VAULT_USD=1000 MAX_TOTAL_USD=25000 node scripts/deploy.mjs
+```
+
+It prints the factory address for the app's `BASE_FACTORY_ADDRESS`. To rehearse, run it against a
+local Base fork (`FORK=1 npx hardhat node`, then `RPC_URL=http://127.0.0.1:8545`).
+
 The fork test makes a test account a Veranta operator (impersonating Veranta's governance on the fork)
 and fills each vault order with a signed Pyth Lazer price from `feed-v3.veranta.xyz`, the same data
 Veranta's operators post. Set `BASE_RPC_URL` to use another Base RPC.

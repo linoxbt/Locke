@@ -50,7 +50,14 @@ export function Header() {
     };
   }, [open]);
 
-  const links = me
+  // Locke on Base is its own area with its own sign-in: its pages get its own links.
+  const onBase = path === "/base" || path.startsWith("/base/");
+  const links = onBase
+    ? [
+        { href: "/base", label: "Vaults" },
+        { href: "/base/new", label: "New vault" },
+      ]
+    : me
     ? [
         { href: "/portfolio", label: "Portfolio" },
         { href: "/protect", label: "New plan" },
@@ -61,7 +68,8 @@ export function Header() {
         { href: "/protect/holdings", label: "Holdings" },
         { href: "/protect/costs", label: "Operating costs" },
       ];
-  const isOn = (href: string) => path === href || path.startsWith(href + "/") || (href === "/portfolio" && path.startsWith("/plans/"));
+  const isOn = (href: string) =>
+    path === href || (href !== "/base" && path.startsWith(href + "/")) || (href === "/portfolio" && path.startsWith("/plans/")) || (href === "/base" && path.startsWith("/base/vaults/"));
   const cta = me ? { href: "/account", label: shortAddr(me.address) } : { href: "/connect", label: "Get started" };
 
   return (
@@ -84,13 +92,13 @@ export function Header() {
           </nav>
 
           <div className="pointer-events-auto ml-auto flex items-center gap-1 md:ml-0">
-            {!me && path !== "/connect" && (
+            {!onBase && !me && path !== "/connect" && (
               <Link href="/connect" className={`${pill} ${quiet} hidden sm:inline-flex`}>
                 Connect
               </Link>
             )}
             {/* On the sign-in page itself, "Get started" would only link back to it. */}
-            {(me || path !== "/connect") && (
+            {!onBase && (me || path !== "/connect") && (
               <Link
                 href={cta.href}
                 className={`${pill} ${me ? `num ${path === "/account" ? "bg-ink text-paper" : quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}
@@ -133,13 +141,13 @@ export function Header() {
               </button>
             </div>
             <nav aria-label="Menu" className="mt-6 flex flex-col px-3 pb-4">
-              {[...links, ...(me ? [{ href: "/account", label: "Account" }, { href: "/withdraw", label: "Withdraw" }] : [{ href: "/connect", label: "Connect a wallet" }])].map((l) => (
+              {[...links, ...(onBase ? [] : me ? [{ href: "/account", label: "Account" }, { href: "/withdraw", label: "Withdraw" }] : [{ href: "/connect", label: "Connect a wallet" }])].map((l) => (
                 <Link key={l.href} href={l.href} className={`display border-b border-line py-3 text-[26px] ${isOn(l.href) ? "text-ink" : "text-ink-2"}`}>
                   {l.label}
                 </Link>
               ))}
             </nav>
-            {(me || path !== "/connect") && (
+            {!onBase && (me || path !== "/connect") && (
               <Link href={me ? "/protect" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
                 {me ? "New protection plan" : "Get started"}
               </Link>
