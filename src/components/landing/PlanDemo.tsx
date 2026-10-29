@@ -6,8 +6,8 @@ import { costsExposureUsd, costsOutcome } from "@/lib/domain/plans";
 import type { CostsInputs } from "@/lib/domain/types";
 import { local, usd } from "@/lib/ui/format";
 
-/** ETH the demo treasury holds, fully hedged with a short of the same size. */
-const HOLD_ETH = 20;
+/** What each demo treasury holds, fully hedged with a short of the same size. */
+const HOLD = { ada: 50_000, eth: 20 };
 // Lagos diesel at the dated reference pump price, with the crude share Locke would calibrate for it
 // (filled in from the live WTI mark), sized exactly as a real plan is.
 const COST: CostsInputs = {
@@ -23,11 +23,13 @@ const COST: CostsInputs = {
   bufferPct: 25,
 };
 
-type PlanKind = "holdings" | "costs";
+type PlanKind = "ada" | "eth" | "costs";
+type Prices = { ada: number | null; eth: number | null; wti: number };
 
 // Autoplay: the price glides between these moves (%), easing in and out, pausing at each one.
 const WAYPOINTS: Record<PlanKind, number[]> = {
-  holdings: [-30, -50, -15, 25, 0],
+  ada: [-30, -50, -15, 25, 0],
+  eth: [-30, -50, -15, 25, 0],
   costs: [25, 45, 10, -20, 0],
 };
 const GLIDE_MS = 1_700;
@@ -35,11 +37,12 @@ const HOLD_MS = 700;
 const RESUME_MS = 4_000;
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
-function outcome(type: PlanKind, move: number, eth: number, wti: number) {
+function outcome(type: PlanKind, move: number, { ada, eth, wti }: Prices) {
   const m = move / 100;
-  if (type === "holdings") {
-    const without = HOLD_ETH * eth * (1 + m);
-    return { without, with: without + HOLD_ETH * (eth - eth * (1 + m)) };
+  if (type !== "costs") {
+    const entry = (type === "ada" ? ada : eth) ?? 0;
+    const without = HOLD[type] * entry * (1 + m);
+    return { without, with: without + HOLD[type] * (entry - entry * (1 + m)) };
   }
   const c = { ...COST, crudeSharePct: calibratedCrudeShare("diesel", wti, COST.fxRate, COST.pumpPrice) ?? COST.crudeSharePct };
   return costsOutcome(c, costsExposureUsd(c) / wti, wti, wti * (1 + m));
@@ -50,10 +53,18 @@ function outcome(type: PlanKind, move: number, eth: number, wti: number) {
  * plays itself: the price glides through a few moves and the figures follow. Dragging takes over
  * (autoplay resumes after a few idle seconds); the pause button stops it for good.
  */
-export function PlanDemo({ eth, wti }: { eth: number; wti: number }) {
-  const [type, setType] = useState<PlanKind>("holdings");
+export function PlanDemo(prices: Prices) {
+  // ADA is hedged on Strike, ETH on Base; a treasury whose price didn't load is left out.
+  const kinds = (
+    [
+      ["ada", "50,000 ADA"],
+      ["eth", "20 ETH"],
+      ["costs", "2,000 L diesel"],
+    ] as const
+  ).filter(([k]) => k === "costs" || prices[k] != null);
+  const [type, setType] = useState<PlanKind>(kinds[0][0]);
   const [move, setMove] = useState(-30);
-  const target = outcome(type, move, eth, wti);
+  const target = outcome(type, move, prices);
   // Displayed figures ease towards the target, so switching plans rolls the numbers over.
   const [shown, setShown] = useState({ without: target.without, with: target.with });
   const [visible, setVisible] = useState(false);
@@ -127,7 +138,7 @@ export function PlanDemo({ eth, wti }: { eth: number; wti: number }) {
     };
   }, [autoplay, idleUntil, type]);
 
-  const fmt = type === "holdings" ? (n: number) => usd(n, 0) : (n: number) => local(n, "NGN", 0);
+  const fmt = type !== "costs" ? (n: number) => usd(n, 0) : (n: number) => local(n, "NGN", 0);
   const max = Math.max(target.without, target.with) * 1.05;
   const shownMove = Math.round(move);
 
@@ -135,18 +146,13 @@ export function PlanDemo({ eth, wti }: { eth: number; wti: number }) {
     <div ref={ref} className="mx-auto w-full max-w-[760px] rounded-[20px] bg-paper p-4 text-ink sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 rounded-full bg-mist p-1" role="radiogroup" aria-label="Plan type">
-          {(
-            [
-              ["holdings", "20 ETH treasury"],
-              ["costs", "2,000 L diesel a month"],
-            ] as const
-          ).map(([k, label]) => (
+          {kinds.map(([k, label]) => (
             <button
               key={k}
               role="radio"
               aria-checked={type === k}
               onClick={() => setType(k)}
-              className={`h-10 rounded-full px-4 text-[14px] transition ${type === k ? "bg-ink text-paper" : "text-ink-2"}`}
+              className={`h-10 rounded-full px-3 text-[13px] transition sm:px-4 sm:text-[14px] ${type === k ? "bg-ink text-paper" : "text-ink-2"}`}
             >
               {label}
             </button>
@@ -154,7 +160,7 @@ export function PlanDemo({ eth, wti }: { eth: number; wti: number }) {
         </div>
         <div className="flex items-center gap-3">
           <span className="num text-[13px] text-ink-3">
-            {type === "holdings" ? "ETH" : "Crude"} moves{" "}
+            {type === "ada" ? "ADA" : type === "eth" ? "ETH" : "Crude"} moves{" "}
             <span className={`inline-block w-[4ch] text-right ${shownMove < 0 ? "text-danger" : shownMove > 0 ? "text-ok" : ""}`}>
               {shownMove > 0 ? "+" : shownMove < 0 ? "−" : ""}
               {Math.abs(shownMove)}%
@@ -176,8 +182,8 @@ export function PlanDemo({ eth, wti }: { eth: number; wti: number }) {
 
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {[
-          { label: type === "holdings" ? "Treasury without Locke" : "Monthly bill without Locke", v: shown.without, bar: "bg-mist", text: "text-ink-2" },
-          { label: type === "holdings" ? "Treasury with Locke" : "Monthly bill with Locke", v: shown.with, bar: type === "holdings" ? "bg-cobalt" : "bg-lime", text: "text-ink" },
+          { label: type !== "costs" ? "Treasury without Locke" : "Monthly bill without Locke", v: shown.without, bar: "bg-mist", text: "text-ink-2" },
+          { label: type !== "costs" ? "Treasury with Locke" : "Monthly bill with Locke", v: shown.with, bar: type !== "costs" ? "bg-cobalt" : "bg-lime", text: "text-ink" },
         ].map((r) => (
           <div key={r.label} className="rounded-2xl bg-canvas p-4 sm:p-5">
             <div className="text-[14px] text-ink-2">{r.label}</div>
@@ -214,7 +220,7 @@ export function PlanDemo({ eth, wti }: { eth: number; wti: number }) {
         <span>+50%</span>
       </div>
       <p className="mt-4 text-[13px] text-ink-3">
-        Illustration at today&apos;s prices on Veranta, fully hedged, before funding and fees. Your own plan shows these numbers for your amounts.
+        Illustration at today&apos;s prices on Strike and Base, fully hedged, before funding and fees. Your own plan shows these numbers for your amounts.
       </p>
     </div>
   );

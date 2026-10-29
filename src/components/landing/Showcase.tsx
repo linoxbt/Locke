@@ -23,9 +23,9 @@ const HOP_S = 0.55;
 
 const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode }[] = [
   {
-    lead: "Node operators",
+    lead: "Stake pools and node operators",
     rest: "that keep running through grid outages",
-    href: "/base",
+    href: "/how-it-works#costs",
     visual: (
       <div className="relative h-full bg-ink">
         <svg viewBox="0 0 200 100" className="absolute inset-x-0 top-[18%] h-[46%] w-full" preserveAspectRatio="none" aria-hidden>
@@ -58,12 +58,16 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     ),
   },
   {
-    lead: "Treasuries in ETH",
-    rest: "that hold their value when ETH falls",
-    href: "/base",
+    lead: "Treasuries in ADA or ETH",
+    rest: "that hold their value when the market falls",
+    href: "/how-it-works#holdings",
     visual: (
       <div className="relative h-full bg-cobalt">
-        <span className="display absolute left-4 top-3 text-[64px] leading-[0.85] text-paper">ETH</span>
+        <span className="display absolute left-4 top-3 text-[56px] leading-[0.85] text-paper">
+          ADA
+          <br />
+          ETH
+        </span>
         <span className="num absolute bottom-4 right-4 text-[26px] text-paper">−30% → 0%</span>
       </div>
     ),
@@ -71,7 +75,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
   {
     lead: "Generator fleets",
     rest: "with a fuel bill you can budget",
-    href: "/base",
+    href: "/how-it-works#costs",
     visual: (
       <div className="relative h-full bg-lime">
         <div className="absolute inset-x-4 bottom-4 flex h-28 items-end gap-2">
@@ -96,13 +100,13 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     ),
   },
   {
-    lead: "Onchain teams",
-    rest: "paid in ETH, spending in dollars",
-    href: "/base",
+    lead: "Cardano and Base teams",
+    rest: "paid in crypto, spending in dollars",
+    href: "/how-it-works#holdings",
     visual: (
       <div className="relative h-full bg-paper">
         <span className="display absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[44px] leading-none text-ink">
-          Ξ <span className="text-ink-3">→</span> $
+          ₳ Ξ <span className="text-ink-3">→</span> $
         </span>
       </div>
     ),
@@ -110,7 +114,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
   {
     lead: "Logistics businesses",
     rest: "whose margins ride on the price of crude",
-    href: "/base",
+    href: "/how-it-works#costs",
     visual: (
       <div className="relative h-full bg-danger">
         <svg viewBox="0 0 200 100" className="absolute inset-0 h-full w-full" preserveAspectRatio="none" aria-hidden>
@@ -135,7 +139,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
   {
     lead: "Community funds",
     rest: "that can't afford a bad month",
-    href: "/base",
+    href: "/how-it-works#holdings",
     visual: (
       <div className="relative h-full bg-mist">
         <div className="absolute inset-6 grid grid-cols-3 gap-2">

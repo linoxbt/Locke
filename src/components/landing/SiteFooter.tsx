@@ -39,7 +39,7 @@ export function SiteFooter() {
         <div className="col-span-2 md:col-span-1">
           <h2 className="text-[15px]">Locke</h2>
           <p className="mt-3 text-[15px] leading-relaxed text-paper/50">
-            Protection vaults for businesses on Base, hedged on Veranta. Also on Cardano with Strike Finance. A tool, not financial advice.
+            Protection plans for businesses: on Cardano with Strike Finance, and on Base with Veranta. A tool, not financial advice.
           </p>
         </div>
       </div>

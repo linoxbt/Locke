@@ -64,8 +64,10 @@ export function Header() {
         { href: "/how-it-works", label: "How it works" },
       ]
     : [
-        { href: "/base", label: "Vaults on Base" },
         { href: "/how-it-works", label: "How it works" },
+        { href: "/protect/holdings", label: "Holdings" },
+        { href: "/protect/costs", label: "Operating costs" },
+        { href: "/base", label: "Vaults on Base" },
       ];
   const isOn = (href: string) =>
     path === href || (href !== "/base" && path.startsWith(href + "/")) || (href === "/portfolio" && path.startsWith("/plans/")) || (href === "/base" && path.startsWith("/base/vaults/"));

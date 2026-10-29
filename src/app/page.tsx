@@ -3,11 +3,13 @@ import { DropIn } from "@/components/DropIn";
 import { Collage } from "@/components/landing/Collage";
 import { LiveDot, LivePrices, type Quote } from "@/components/landing/LivePrices";
 import { PlanDemo } from "@/components/landing/PlanDemo";
+import { ReplaySpark } from "@/components/landing/ReplaySpark";
 import { Showcase } from "@/components/landing/Showcase";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { BASE_MARKETS } from "@/lib/base/contracts";
 import { optionalBaseSession } from "@/lib/server/basePages";
 import { optionalSession } from "@/lib/server/pageAuth";
+import { getMarkPrice } from "@/lib/strike/client";
 import { getMarkets, getSignedPrice } from "@/lib/veranta/client";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +26,17 @@ async function quote(pairIndex: number): Promise<Quote> {
 }
 
 export default async function HomePage() {
-  const [strike, base, eth, wti] = await Promise.all([optionalSession(), optionalBaseSession(), quote(0), quote(96)]);
+  // Locke hedges on Strike (Cardano) and on Veranta (Base): the page shows live prices from both.
+  const [strike, base, ada, wti, eth, baseWti] = await Promise.all([
+    optionalSession(),
+    optionalBaseSession(),
+    getMarkPrice("ADA-USD").catch(() => null),
+    getMarkPrice("WTI-USD").catch(() => null),
+    quote(0),
+    quote(96),
+  ]);
+  const crude = wti?.mark ?? baseWti?.price ?? null;
+  const mark = (m: typeof ada) => (m ? { mark: m.mark, index: m.index, fundingRate: m.fundingRate } : null);
   // Signed in on either side: straight to a new plan there. Otherwise /connect, which offers both
   // Sign in with Base and the Cardano wallets.
   const start = strike ? { href: "/protect", label: "New protection plan" } : base ? { href: "/base/new", label: "New vault" } : { href: "/connect", label: "Try Locke" };
@@ -33,12 +45,12 @@ export default async function HomePage() {
     <>
       {/* Hero: one card over a drifting collage. */}
       <section className="relative h-[100svh] min-h-[560px] overflow-hidden bg-mist">
-        <Collage eth={eth?.price ?? null} wti={wti?.price ?? null} />
+        <Collage ada={ada?.mark ?? null} eth={eth?.price ?? null} />
         {/* The overlay lets hover through to the collage; only the card itself takes the pointer. */}
         <div className="pointer-events-none relative z-10 flex h-full items-center justify-center px-4">
           <div className="pointer-events-auto w-full max-w-[520px] animate-rise rounded-[14px] bg-paper p-5 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.35)] sm:p-6">
             <h1 className="display text-[24px] leading-[1.04] sm:text-[32px]">
-              Protect what your business holds. <span className="text-ink-3">Manage what it buys, from a vault you own on Base.</span>
+              Protect what your business holds. <span className="text-ink-3">Manage what it buys, from a vault you own.</span>
             </h1>
             <Link
               href={start.href}
@@ -64,38 +76,40 @@ export default async function HomePage() {
           Describe it, preview it, fund it. <span className="text-paper/50">Then move the price and watch the plan hold.</span>
         </h2>
         <div className="mt-8 sm:mt-10">
-          {eth && wti ? (
-            <PlanDemo eth={eth.price} wti={wti.price} />
+          {crude != null && (ada || eth) ? (
+            <PlanDemo ada={ada?.mark ?? null} eth={eth?.price ?? null} wti={crude} />
           ) : (
             <p className="text-center text-paper/50">Live prices are unavailable right now.</p>
           )}
         </div>
-        <p className="mt-10 text-center text-[14px] text-paper/50">From your exposure to a hedged vault on Base in a few minutes</p>
+        <p className="mt-10 text-center text-[14px] text-paper/50">From your exposure to a live hedge on Strike or Base in a few minutes</p>
       </section>
 
       {/* Bento */}
       <section className={`${wrap} py-16 sm:py-24`}>
-        <h2 className="display text-[26px] sm:text-[34px]">Everything a protection vault needs</h2>
+        <h2 className="display text-[26px] sm:text-[34px]">Everything a protection plan needs</h2>
         <DropIn className="mt-8 grid grid-cols-2 gap-2 sm:mt-10 sm:gap-3 lg:grid-cols-4">
           <Tile
             tone="bg-ink text-paper"
             className="col-span-2 row-span-2 min-h-[220px] sm:min-h-[340px]"
             title={
               <>
-                Live prices on Base
+                Live prices on Strike and Base
                 <LiveDot />
               </>
             }
-            sub="From Veranta's signed price feed, the same one the hedge trades on"
+            sub="Plans are sized from these prices the moment you preview"
           >
-            <LivePrices eth={eth} wti={wti} />
+            <LivePrices ada={mark(ada)} wti={mark(wti)} eth={eth} baseWti={baseWti} />
           </Tile>
-          <Tile tone="bg-[#0000ff] text-paper" className="min-h-[150px] sm:min-h-[168px]" title="A vault you own" sub="Its own contract on Base. Only you can withdraw." />
-          <Tile tone="bg-danger text-paper" className="min-h-[150px] sm:min-h-[168px]" title="Limits on-chain" sub="The keeper can't pass the leverage and size written into your vault" />
-          <Tile tone="bg-lime text-ink" className="min-h-[150px] sm:min-h-[168px]" title="Sign in with Base" sub="A passkey account. No extension, no seed phrase." />
-          <Tile tone="bg-watch text-ink" className="min-h-[150px] sm:min-h-[168px]" title="Margin added for you" sub="The keeper tops up from the vault's buffer before liquidation gets close" />
-          <Tile tone="bg-mist text-ink" className="col-span-2 min-h-[150px] sm:min-h-[168px]" title="Exit any time" sub="Close the hedge or withdraw from your own wallet, even if Locke is offline." />
-          <Tile tone="bg-paper text-ink" className="col-span-2 min-h-[150px] sm:min-h-[168px]" title="One request to start" sub="A single wallet request approves the USDC and creates your vault with its limits and deposit." />
+          <Tile tone="bg-[#0000ff] text-paper" className="min-h-[150px] sm:min-h-[168px]" title="A vault you own" sub="On Base: its own contract, and only you can withdraw" />
+          <Tile tone="bg-cobalt text-paper" className="min-h-[150px] sm:min-h-[168px]" title="Isolated margin" sub="On Strike: trouble in one plan never touches another" />
+          <Tile tone="bg-lime text-ink" className="min-h-[150px] sm:min-h-[168px]" title="Replay" sub="Your plan against 180 days of real prices">
+            <ReplaySpark />
+          </Tile>
+          <Tile tone="bg-watch text-ink" className="min-h-[150px] sm:min-h-[168px]" title="Margin kept topped up" sub="One tap on Strike. On Base the keeper does it, within your vault's limits." />
+          <Tile tone="bg-mist text-ink" className="col-span-2 min-h-[150px] sm:min-h-[168px]" title="Still staked, still voting" sub="On Cardano, hedged ADA never leaves your wallet. Only margin moves." />
+          <Tile tone="bg-paper text-ink" className="col-span-2 min-h-[150px] sm:min-h-[168px]" title="Your wallet signs every move" sub="Sign in with Base or a Cardano wallet. Withdrawals only go back to you, and on Base you can exit even if Locke is offline." />
         </DropIn>
       </section>
 
@@ -109,22 +123,16 @@ export default async function HomePage() {
           >
             Get started
           </Link>
-          <h2 className="display text-[26px] sm:text-[34px]">Protect what your business runs on, on Base</h2>
+          <h2 className="display text-[26px] sm:text-[34px]">Protect what your business runs on</h2>
         </div>
         <p className="mt-10 text-center text-[13px] text-ink-3">Works with</p>
         <ul className="mx-auto mt-6 flex max-w-[1100px] flex-wrap items-center justify-center gap-x-8 gap-y-3 text-[17px] text-ink sm:text-[19px]">
-          {["Base", "Base Account", "Veranta", "USDC", "Pyth", "Coinbase Wallet"].map((n) => (
+          {["Strike", "Cardano", "Eternl", "Lace", "Vespr", "Base", "Base Account", "Veranta", "USDC"].map((n) => (
             <li key={n} className="display">
               {n}
             </li>
           ))}
         </ul>
-        <p className="mt-8 text-center text-[13px] text-ink-3">
-          Also on Cardano:{" "}
-          <Link href="/connect" className="underline underline-offset-4 hover:text-ink">
-            Locke with Strike Finance
-          </Link>
-        </p>
       </section>
 
       <SiteFooter />
