@@ -62,7 +62,7 @@ export function CookieConsent() {
     setCustomize(false);
   };
 
-  const button = "h-12 flex-1 rounded-full bg-cobalt px-5 text-[16px] font-medium text-paper transition hover:bg-cobalt-deep active:scale-[0.98]";
+  const button = "h-11 flex-1 rounded-full bg-cobalt px-5 text-[14px] font-medium text-paper transition hover:bg-cobalt-deep active:scale-[0.98] sm:flex-none sm:min-w-[120px]";
   const policy = (
     <Link href="/legal/cookies" className="text-cobalt underline underline-offset-2 hover:text-cobalt-deep">
       Cookie Policy
@@ -78,46 +78,48 @@ export function CookieConsent() {
         role="dialog"
         aria-modal={docked ? undefined : true}
         aria-labelledby={titleId}
-        className="pointer-events-auto w-full max-w-[560px] animate-rise rounded-[28px] bg-white p-6 text-ink shadow-[0_24px_60px_-20px_rgb(0_0_0/0.45)] sm:p-8"
+        className={`pointer-events-auto w-full animate-rise rounded-[24px] bg-white p-5 text-ink shadow-[0_24px_60px_-20px_rgb(0_0_0/0.45)] sm:p-6 ${customize ? "max-w-[560px]" : "max-w-[920px]"}`}
       >
         {!customize ? (
           <>
             <h2 id={titleId} className="sr-only">
               Cookies on Locke
             </h2>
-            <p className="text-[15px] leading-[1.65] sm:text-[16px]">
-              Locke uses cookies to keep you signed in and to make the app work. With your OK, it also remembers which wallet you used, so it
-              reconnects next time. No analytics, no advertising. For more about the cookies and storage Locke uses, read the {policy}. To
-              choose what Locke keeps, click Customize cookies.
-            </p>
-            <div className="mt-6 text-center">
-              <button type="button" onClick={() => setCustomize(true)} className="text-[16px] font-medium underline underline-offset-4 hover:text-cobalt">
-                Customize cookies
-              </button>
-            </div>
-            <div className="mt-6 flex gap-3">
-              <button type="button" onClick={() => choose(false)} className={button}>
-                Reject
-              </button>
-              <button type="button" onClick={() => choose(true)} className={button}>
-                Accept
-              </button>
+            {/* Stacked on phones; one row (text, then the choices) from sm up. */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
+              <p className="text-[13px] leading-relaxed sm:flex-1 sm:text-[14px]">
+                Locke uses cookies to keep you signed in. With your OK, it also remembers your wallet for next time. No analytics, no ads.
+                See the {policy}.
+              </p>
+              <div className="flex shrink-0 flex-col gap-3 sm:items-end">
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => choose(false)} className={button}>
+                    Reject
+                  </button>
+                  <button type="button" onClick={() => choose(true)} className={button}>
+                    Accept
+                  </button>
+                </div>
+                <button type="button" onClick={() => setCustomize(true)} className="text-[13px] font-medium underline underline-offset-4 hover:text-cobalt">
+                  Customize cookies
+                </button>
+              </div>
             </div>
           </>
         ) : (
           <>
-            <h2 id={titleId} className="display text-[22px]">
+            <h2 id={titleId} className="display text-[20px]">
               Cookie settings
             </h2>
-            <p className="mt-2 text-[14px] leading-relaxed text-ink-2">
+            <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
               Choose what Locke may keep in your browser. You can change this any time from Cookie settings at the bottom of the site. Details
               are in the {policy}.
             </p>
-            <ul className="mt-5 divide-y divide-line rounded-2xl bg-mist">
+            <ul className="mt-4 divide-y divide-line rounded-2xl bg-mist">
               <li className="flex items-start justify-between gap-4 p-4">
                 <div>
-                  <div className="text-[15px] font-medium">Strictly necessary</div>
-                  <p className="mt-1 text-[13px] leading-relaxed text-ink-2">
+                  <div className="text-[14px] font-medium">Strictly necessary</div>
+                  <p className="mt-1 text-[12px] leading-relaxed text-ink-2">
                     Keep you signed in, finish a deposit you started, send transactions from the wallet you signed in with, and remember
                     this choice. The app can&apos;t work without them.
                   </p>
@@ -126,22 +128,22 @@ export function CookieConsent() {
               </li>
               <li className="flex items-start justify-between gap-4 p-4">
                 <div>
-                  <label htmlFor="consent-preferences" className="text-[15px] font-medium">
+                  <label htmlFor="consent-preferences" className="text-[14px] font-medium">
                     Preferences
                   </label>
-                  <p className="mt-1 text-[13px] leading-relaxed text-ink-2">Remember which wallet you used, so it reconnects on your next visit.</p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-ink-2">Remember which wallet you used, so it reconnects on your next visit.</p>
                 </div>
                 <Toggle id="consent-preferences" checked={preferences} onChange={setPreferences} />
               </li>
               <li className="flex items-start justify-between gap-4 p-4">
                 <div>
-                  <div className="text-[15px] font-medium">Analytics and advertising</div>
-                  <p className="mt-1 text-[13px] leading-relaxed text-ink-2">Locke uses none.</p>
+                  <div className="text-[14px] font-medium">Analytics and advertising</div>
+                  <p className="mt-1 text-[12px] leading-relaxed text-ink-2">Locke uses none.</p>
                 </div>
                 <span className="mt-0.5 shrink-0 rounded-full bg-paper px-3 py-1 text-[12px] text-ink-3">Not used</span>
               </li>
             </ul>
-            <div className="mt-6 flex gap-3">
+            <div className="mt-5 flex gap-2 sm:justify-end">
               <button type="button" onClick={() => choose(preferences)} className={button}>
                 Save choices
               </button>

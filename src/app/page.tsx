@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BaseMark, SignInWithBase } from "@/components/base/SignInWithBase";
+import { BaseMark } from "@/components/base/BaseMark";
 import { DropIn } from "@/components/DropIn";
 import { Collage } from "@/components/landing/Collage";
 import { LiveDot, LivePrices, type Quote } from "@/components/landing/LivePrices";
@@ -8,6 +8,7 @@ import { Showcase } from "@/components/landing/Showcase";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { BASE_MARKETS } from "@/lib/base/contracts";
 import { optionalBaseSession } from "@/lib/server/basePages";
+import { optionalSession } from "@/lib/server/pageAuth";
 import { getMarkets, getSignedPrice } from "@/lib/veranta/client";
 
 export const dynamic = "force-dynamic";
@@ -24,16 +25,18 @@ async function quote(pairIndex: number): Promise<Quote> {
 }
 
 export default async function HomePage() {
-  const [session, eth, wti] = await Promise.all([optionalBaseSession(), quote(0), quote(96)]);
-  const start = session ? "/base/new" : "/base";
+  const [strike, base, eth, wti] = await Promise.all([optionalSession(), optionalBaseSession(), quote(0), quote(96)]);
+  // Signed in on either side: straight to a new plan there. Otherwise /connect, which offers both
+  // Sign in with Base and the Cardano wallets.
+  const start = strike ? { href: "/protect", label: "New protection plan" } : base ? { href: "/base/new", label: "New vault" } : { href: "/connect", label: "Try Locke" };
 
   return (
     <>
       {/* Hero: one card over a drifting collage. */}
-      <section className="relative h-[100svh] min-h-[640px] overflow-hidden bg-mist">
+      <section className="relative h-[100svh] min-h-[560px] overflow-hidden bg-mist">
         <Collage eth={eth?.price ?? null} wti={wti?.price ?? null} />
         {/* The overlay lets hover through to the collage; only the card itself takes the pointer. */}
-        <div className="pointer-events-none relative z-10 flex h-full items-center justify-center px-4 pt-14">
+        <div className="pointer-events-none relative z-10 flex h-full items-center justify-center px-4">
           <div className="pointer-events-auto w-full max-w-[520px] animate-rise rounded-[14px] bg-paper p-5 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.35)] sm:p-6">
             <span className="eyebrow flex items-center gap-2 text-ink-2">
               <BaseMark size={12} /> Built on Base
@@ -41,25 +44,11 @@ export default async function HomePage() {
             <h1 className="display mt-3 text-[24px] leading-[1.04] sm:text-[32px]">
               Protect what your business holds. <span className="text-ink-3">Manage what it buys, from a vault you own on Base.</span>
             </h1>
-            <div className="mt-8 sm:mt-10">
-              {session ? (
-                <div className="flex flex-col gap-3">
-                  <Link
-                    href="/base/new"
-                    className="flex h-12 items-center justify-center rounded-full bg-cobalt text-[16px] text-paper transition-colors hover:bg-cobalt-deep sm:h-14 sm:text-[18px]"
-                  >
-                    New vault
-                  </Link>
-                  <Link href="/base" className="flex h-11 items-center justify-center rounded-full bg-mist text-[15px] text-ink transition-colors hover:bg-line">
-                    Your vaults
-                  </Link>
-                </div>
-              ) : (
-                <SignInWithBase next="/base" />
-              )}
-            </div>
-            <Link href="/connect" className="mt-4 inline-block text-[13px] text-ink-3 underline-offset-4 hover:text-ink hover:underline">
-              On Cardano? Use Locke with Strike →
+            <Link
+              href={start.href}
+              className="mt-10 flex h-12 items-center justify-center rounded-full bg-cobalt text-[16px] text-paper transition-colors hover:bg-cobalt-deep sm:mt-14 sm:h-14 sm:text-[18px]"
+            >
+              {start.label}
             </Link>
           </div>
         </div>
@@ -119,7 +108,7 @@ export default async function HomePage() {
         {/* Button centred above the headline, at every width. */}
         <div className={`${wrap} flex flex-col items-center gap-5 text-center`}>
           <Link
-            href={start}
+            href={start.href}
             className="inline-flex h-11 shrink-0 items-center rounded-full bg-cobalt px-5 text-[15px] text-paper transition-colors hover:bg-cobalt-deep"
           >
             Get started

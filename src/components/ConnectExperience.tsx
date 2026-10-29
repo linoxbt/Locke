@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { isMobileBrowser, okxUnsupportedReason, walletAppLinks, type WalletAppLink } from "@/lib/cardano/wallet";
 import { api, errorMessage } from "@/lib/ui/api";
+import { BaseMark } from "./base/BaseMark";
+import { SignInWithBase } from "./base/SignInWithBase";
 import { Arrow, ErrorNote, Spinner } from "./ui";
 import { useWallet, type SignInStep } from "./WalletProvider";
 
@@ -43,7 +45,8 @@ function tileStatus(stage: Stage, name: string, unsupported: boolean): string {
 
 /**
  * The sign-in page: a dark panel that shows what signing does (step track, the message the wallet
- * will show, three facts) beside the wallet chooser. One flow, so both sides share state.
+ * will show, three facts) beside the chooser: Sign in with Base, then the Cardano wallets. The
+ * dark panel follows the Cardano flow, so both sides share its state.
  */
 export function ConnectExperience({
   next,
@@ -135,9 +138,17 @@ export function ConnectExperience({
 
       {/* B — the wallet chooser */}
       <div className="flex flex-col bg-canvas px-5 py-8 sm:px-10 lg:row-span-2 lg:px-14 lg:pb-10 lg:pt-28">
-        <h2 className="display text-[20px] sm:text-[22px]">Choose a wallet</h2>
+        <h2 className="display text-[20px] sm:text-[22px]">Choose how to sign in</h2>
 
-        <div className="mt-5 max-w-[460px] space-y-2">
+        <h3 className="eyebrow mt-6 flex items-center gap-2 text-ink-2">
+          <BaseMark size={12} /> On Base
+        </h3>
+        <div className={`mt-3 max-w-[460px] rounded-[14px] bg-paper p-4 transition ${active ? "pointer-events-none opacity-40" : ""}`}>
+          <SignInWithBase next="/base" />
+        </div>
+
+        <h3 className="eyebrow mt-8 text-ink-2">On Cardano · with Strike</h3>
+        <div className="mt-3 max-w-[460px] space-y-2">
           {wallets.length === 0 && !scanned && (
             <div className="flex h-16 items-center gap-3 rounded-[14px] bg-paper px-4 text-[13px] text-ink-2">
               <Spinner /> Looking for wallets…
@@ -223,7 +234,7 @@ export function ConnectExperience({
       <div className="bg-ink px-5 pb-10 pt-6 text-paper sm:px-10 lg:px-14 lg:pt-0">
         <div className={`max-w-[520px] rounded-[14px] p-4 ring-1 transition ${stage === "sign" ? "bg-paper/10 ring-lime" : "bg-paper/5 ring-paper/10"}`}>
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[12px] text-paper/60">You&apos;ll sign</p>
+            <p className="text-[12px] text-paper/60">With a Cardano wallet, you&apos;ll sign</p>
             {stage === "sign" && <span className="num rounded-full bg-lime px-2.5 py-0.5 text-[11px] text-ink">waiting for you</span>}
           </div>
           <MessagePreview message={message} feePct={feePct} />
