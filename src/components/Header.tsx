@@ -137,7 +137,7 @@ export function Header() {
               </button>
             </div>
             <nav aria-label="Menu" className="mt-6 flex flex-col px-3 pb-4">
-              {[...links, ...(onBase ? [] : me ? [{ href: "/account", label: "Account" }, { href: "/withdraw", label: "Withdraw" }] : [{ href: "/connect", label: "Sign in" }])].map((l) => (
+              {[...links, ...(onBase ? [] : me ? [{ href: "/account", label: "Account" }, { href: "/withdraw", label: "Withdraw" }] : [])].map((l) => (
                 <Link key={l.href} href={l.href} className={`display border-b border-line py-3 text-[26px] ${isOn(l.href) ? "text-ink" : "text-ink-2"}`}>
                   {l.label}
                 </Link>
