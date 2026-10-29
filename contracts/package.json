@@ -11,6 +11,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.19.43",
     "chai": "^4.5.0",
+    "fast-check": "^3.23.2",
     "hardhat": "^2.22.17",
     "mocha": "^10.8.2",
     "ts-node": "^10.9.2",

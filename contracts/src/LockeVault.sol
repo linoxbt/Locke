@@ -7,15 +7,26 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IVerantaRouter, IVerantaTradingStorage} from "./interfaces/IVeranta.sol";
 
+/// @notice What a vault reads from its factory: who may pause, where fees go, and the deposit caps.
+interface ILockeFactory {
+    function guardian() external view returns (address);
+    function paused() external view returns (bool);
+    function feeCollector() external view returns (address);
+    function recordDeposit(uint256 amount, uint256 vaultNetDeposits) external;
+    function recordWithdraw(uint256 amount) external;
+}
+
 /**
  * @title LockeVault
  * @notice One business's protection vault on Base. It holds the business's USDC and is the
  * trader on Veranta, so every payout lands back here. Three roles:
- *  - owner: deposits, withdraws idle USDC at any time, closes any hedge, sets the plan limits
- *    and replaces or removes the keeper;
- *  - keeper (Locke's server): opens, closes and tops up hedges, only within the plan limits,
- *    and can never send USDC anywhere but Veranta;
- *  - guardian (Locke's multisig): pauses new deposits and new hedges, never exits.
+ *  - owner: deposits, withdraws idle USDC at any time, closes any hedge, moves margin, sets the
+ *    plan limits and replaces or removes the keeper;
+ *  - keeper (Locke's server): opens, closes and tops up hedges, only within the plan limits and
+ *    at most one open per market per hour, and can never send USDC anywhere but Veranta and,
+ *    when the vault was created with a fee, Locke's fee on each open;
+ *  - guardian (Locke's multisig, set on the factory): pauses new deposits and new hedges, never
+ *    exits.
  * Deployed as a clone by LockeVaultFactory; not upgradeable.
  */
 contract LockeVault is Initializable, ReentrancyGuard {
@@ -24,47 +35,65 @@ contract LockeVault is Initializable, ReentrancyGuard {
     uint8 private constant MARKET = 0;
     uint8 private constant DEPOSIT = 0;
     uint256 private constant PRECISION = 1e10;
+    uint256 private constant BPS = 10_000;
+    /// @notice Hard ceiling on Locke's fee: 0.20% of the notional of each hedge the keeper opens.
+    uint16 public constant MAX_FEE_BPS = 20;
+    /// @notice A keeper may open a market at most once per hour, so a stolen keeper key cannot churn fees.
+    uint256 public constant OPEN_COOLDOWN = 1 hours;
 
     /// @notice What the keeper may do on one Veranta pair.
     struct Plan {
         bool enabled;
         bool buy; // hedge side: true = long (costs plans), false = short (holdings plans)
         uint64 maxLeverage; // 1e10
-        uint128 maxNotional; // collateral x leverage, USDC 1e6
+        uint128 maxNotional; // collateral x leverage, USDC 1e6; also caps the collateral in one position
     }
 
-    address public owner;
-    address public keeper;
-    address public guardian;
-    bool public paused;
-
+    ILockeFactory public factory;
     IERC20 public usdc;
     IVerantaRouter public router;
     IVerantaTradingStorage public tradingStorage;
 
+    address public owner;
+    address public pendingOwner;
+    address public keeper;
+    bool public pausedByGuardian;
+    /// @notice Locke's fee in basis points of notional, fixed when the vault was created.
+    uint16 public feeBps;
+    /// @notice Deposits less withdrawals (never below zero); what the launch caps count.
+    uint256 public netDeposits;
+
     mapping(uint256 pairIndex => Plan) public plans;
+    mapping(uint256 pairIndex => uint256) public lastOpenAt;
 
     event Deposited(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
     event PlanSet(uint256 indexed pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional);
     event KeeperSet(address indexed keeper);
+    event OwnershipTransferStarted(address indexed from, address indexed to);
     event OwnerSet(address indexed owner);
     event Paused(bool paused);
+    event FeePaid(uint256 indexed pairIndex, address indexed collector, uint256 amount);
     event HedgeOpenRequested(uint256 indexed pairIndex, uint256 orderId, bool buy, uint256 collateral, uint256 leverage);
     event HedgeCloseRequested(uint256 indexed pairIndex, uint256 indexed index, uint256 orderId, uint256 collateral, address by);
     event MarginUpdated(uint256 indexed pairIndex, uint256 indexed index, uint8 updateType, uint256 amount, address by);
 
     error NotOwner();
+    error NotPendingOwner();
     error NotKeeper();
     error NotGuardian();
     error IsPaused();
     error PlanDisabled();
-    error WrongSide();
+    error BadPlan();
     error LeverageTooHigh();
     error NotionalTooHigh();
+    error CollateralTooHigh();
     error PositionExists();
+    error TooSoon();
+    error FeeTooHigh();
     error ZeroAddress();
     error ZeroAmount();
+    error UseWithdraw();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -80,34 +109,51 @@ contract LockeVault is Initializable, ReentrancyGuard {
         _disableInitializers();
     }
 
+    /// @dev Called once by the factory, in the same transaction that deploys the clone.
     function initialize(
         address owner_,
         address keeper_,
-        address guardian_,
+        uint16 feeBps_,
+        uint256 pairIndex,
+        Plan calldata plan,
         IERC20 usdc_,
         IVerantaRouter router_,
         IVerantaTradingStorage tradingStorage_
     ) external initializer {
-        if (owner_ == address(0) || guardian_ == address(0) || address(usdc_) == address(0)) revert ZeroAddress();
+        if (owner_ == address(0) || address(usdc_) == address(0)) revert ZeroAddress();
         if (address(router_) == address(0) || address(tradingStorage_) == address(0)) revert ZeroAddress();
-        owner = owner_;
-        keeper = keeper_;
-        guardian = guardian_;
+        if (feeBps_ > MAX_FEE_BPS) revert FeeTooHigh();
+        factory = ILockeFactory(msg.sender);
         usdc = usdc_;
         router = router_;
         tradingStorage = tradingStorage_;
+        owner = owner_;
+        keeper = keeper_;
+        feeBps = feeBps_;
+        _setPlan(pairIndex, plan.enabled, plan.buy, plan.maxLeverage, plan.maxNotional);
         // Veranta pulls collateral from the trader through TradingStorage.
         usdc_.forceApprove(address(tradingStorage_), type(uint256).max);
         emit OwnerSet(owner_);
         emit KeeperSet(keeper_);
     }
 
+    /// @notice True while new deposits and new hedges are stopped, by this vault's guardian or for all vaults.
+    function paused() public view returns (bool) {
+        return pausedByGuardian || factory.paused();
+    }
+
+    function guardian() public view returns (address) {
+        return factory.guardian();
+    }
+
     // ------------------------------------------------------------------ owner
 
     /// @notice Add USDC from the caller. Anyone may top the vault up; only the owner takes it out.
     function deposit(uint256 amount) external nonReentrant {
-        if (paused) revert IsPaused();
+        if (paused()) revert IsPaused();
         if (amount == 0) revert ZeroAmount();
+        netDeposits += amount;
+        factory.recordDeposit(amount, netDeposits); // reverts above the launch caps
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         emit Deposited(msg.sender, amount);
     }
@@ -116,28 +162,37 @@ contract LockeVault is Initializable, ReentrancyGuard {
     function withdraw(address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
+        uint256 counted = amount < netDeposits ? amount : netDeposits;
+        if (counted != 0) {
+            netDeposits -= counted;
+            factory.recordWithdraw(counted);
+        }
         usdc.safeTransfer(to, amount);
         emit Withdrawn(to, amount);
     }
 
-    function setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional)
-        external
-        onlyOwner
-    {
-        plans[pairIndex] = Plan(enabled, buy, maxLeverage, maxNotional);
-        emit PlanSet(pairIndex, enabled, buy, maxLeverage, maxNotional);
+    function setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional) external onlyOwner {
+        _setPlan(pairIndex, enabled, buy, maxLeverage, maxNotional);
     }
 
-    /// @notice Replace the keeper, or pass address(0) to remove it. The owner keeps every exit.
+    /// @notice Replace the keeper, or pass address(0) to remove it (deliberately allowed). The owner keeps every exit.
     function setKeeper(address keeper_) external onlyOwner {
         keeper = keeper_;
         emit KeeperSet(keeper_);
     }
 
-    function transferOwnership(address owner_) external onlyOwner {
-        if (owner_ == address(0)) revert ZeroAddress();
-        owner = owner_;
-        emit OwnerSet(owner_);
+    /// @notice Start handing the vault to a new owner; it takes effect when they accept.
+    function transferOwnership(address to) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        pendingOwner = to;
+        emit OwnershipTransferStarted(owner, to);
+    }
+
+    function acceptOwnership() external {
+        if (msg.sender != pendingOwner) revert NotPendingOwner();
+        owner = msg.sender;
+        pendingOwner = address(0);
+        emit OwnerSet(msg.sender);
     }
 
     /// @notice Close all or part of a hedge directly on Veranta, without Locke.
@@ -165,10 +220,17 @@ contract LockeVault is Initializable, ReentrancyGuard {
         emit MarginUpdated(pairIndex, index, updateType, amount, msg.sender);
     }
 
+    /// @notice Recover any other token sent here by mistake. USDC leaves only through `withdraw`.
+    function rescueToken(IERC20 token, address to, uint256 amount) external onlyOwner nonReentrant {
+        if (address(token) == address(usdc)) revert UseWithdraw();
+        token.safeTransfer(to, amount);
+    }
+
     /// @notice Return ETH left over from oracle fees.
     function sweepEth(address payable to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
         (bool ok,) = to.call{value: address(this).balance}("");
-        require(ok);
+        require(ok, "ETH transfer failed");
     }
 
     // ------------------------------------------------------------------ keeper
@@ -184,15 +246,27 @@ contract LockeVault is Initializable, ReentrancyGuard {
         nonReentrant
         returns (uint256 orderId)
     {
-        if (paused) revert IsPaused();
+        if (paused()) revert IsPaused();
         Plan memory plan = plans[pairIndex];
         if (!plan.enabled) revert PlanDisabled();
         if (leverage > plan.maxLeverage) revert LeverageTooHigh();
-        if ((collateral * leverage) / PRECISION > plan.maxNotional) revert NotionalTooHigh();
+        uint256 notional = (collateral * leverage) / PRECISION;
+        if (notional > plan.maxNotional) revert NotionalTooHigh();
+        if (block.timestamp < lastOpenAt[pairIndex] + OPEN_COOLDOWN) revert TooSoon();
         if (
             tradingStorage.openTradesCount(address(this), pairIndex) != 0
                 || tradingStorage.pendingMarketOpenCount(address(this), pairIndex) != 0
         ) revert PositionExists();
+        lastOpenAt[pairIndex] = block.timestamp;
+
+        uint256 fee = (collateral * leverage * feeBps) / (PRECISION * BPS);
+        if (fee != 0) {
+            address collector = factory.feeCollector();
+            if (collector != address(0)) {
+                usdc.safeTransfer(collector, fee);
+                emit FeePaid(pairIndex, collector, fee);
+            }
+        }
 
         IVerantaTradingStorage.Trade memory t = IVerantaTradingStorage.Trade({
             trader: address(this),
@@ -223,7 +297,11 @@ contract LockeVault is Initializable, ReentrancyGuard {
         emit HedgeCloseRequested(pairIndex, index, orderId, collateral, msg.sender);
     }
 
-    /// @notice Add margin to a hedge to keep it away from liquidation. Allowed while paused.
+    /**
+     * @notice Add margin to a hedge to keep it away from liquidation. Allowed while paused. The
+     * position's collateral may not pass the plan's notional cap, which bounds what the keeper
+     * can move out of the vault's idle balance.
+     */
     function topUpMargin(
         uint256 pairIndex,
         uint256 index,
@@ -232,6 +310,8 @@ contract LockeVault is Initializable, ReentrancyGuard {
         uint8 priceSourcing
     ) external payable onlyKeeper nonReentrant returns (uint256 orderId) {
         if (amount == 0) revert ZeroAmount();
+        uint256 collateral = tradingStorage.openTrades(address(this), pairIndex, index).initialPosToken;
+        if (collateral + amount > plans[pairIndex].maxNotional) revert CollateralTooHigh();
         orderId = router.updateMargin{value: msg.value}(pairIndex, index, DEPOSIT, amount, priceUpdateData, priceSourcing);
         emit MarginUpdated(pairIndex, index, DEPOSIT, amount, msg.sender);
     }
@@ -240,10 +320,16 @@ contract LockeVault is Initializable, ReentrancyGuard {
 
     /// @notice Stop new deposits and new hedges. Withdrawals, closes and top-ups keep working.
     function setPaused(bool paused_) external {
-        if (msg.sender != guardian) revert NotGuardian();
-        paused = paused_;
+        if (msg.sender != guardian()) revert NotGuardian();
+        pausedByGuardian = paused_;
         emit Paused(paused_);
     }
 
     receive() external payable {}
+
+    function _setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional) private {
+        if (enabled && (maxLeverage < PRECISION || maxNotional == 0)) revert BadPlan();
+        plans[pairIndex] = Plan(enabled, buy, maxLeverage, maxNotional);
+        emit PlanSet(pairIndex, enabled, buy, maxLeverage, maxNotional);
+    }
 }

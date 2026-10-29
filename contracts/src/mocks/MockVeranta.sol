@@ -38,6 +38,13 @@ contract MockVeranta {
         return 0;
     }
 
+    function openTrades(address trader, uint256 pairIndex, uint256) external view returns (IVerantaTradingStorage.Trade memory t) {
+        t.trader = trader;
+        t.pairIndex = pairIndex;
+        t.initialPosToken = collateralOf[trader][pairIndex];
+        t.leverage = openCount[trader][pairIndex] == 0 ? 0 : 1e10;
+    }
+
     // Router
     function openTrade(IVerantaTradingStorage.Trade calldata t, uint8, uint256) external payable returns (uint256) {
         usdc.transferFrom(msg.sender, address(this), t.positionSizeUSDC);

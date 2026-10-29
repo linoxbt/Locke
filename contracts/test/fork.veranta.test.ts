@@ -47,15 +47,18 @@ describe("LockeVault on Veranta (Base fork)", function () {
     await test.setStorageAt({ address: VERANTA.usdc, index: usdcBalanceSlot(owner.account.address), value: asSlotValue(USD(1000)) });
 
     const factory = await hre.viem.deployContract("LockeVaultFactory", [
-      keeper.account.address,
+      owner.account.address, // admin
       guardian.account.address,
+      keeper.account.address,
       VERANTA.usdc,
       VERANTA.router,
       VERANTA.storage,
+      USD(1000), // launch cap per vault
+      USD(10_000), // launch cap across vaults
     ]);
     await owner.writeContract({ address: VERANTA.usdc, abi: usdcAbi, functionName: "approve", args: [factory.address, USD(500)] });
     // Costs plan: long WTI, up to 5x and $200 of notional, funded with $400.
-    const hash = await factory.write.createVault([{ pairIndex: PAIR.WTI, buy: true, maxLeverage: 5n * P10, maxNotional: USD(200) }, USD(400)], {
+    const hash = await factory.write.createVault([PAIR.WTI, { enabled: true, buy: true, maxLeverage: 5n * P10, maxNotional: USD(200) }, USD(400)], {
       account: owner.account,
     });
     const receipt = await pub.waitForTransactionReceipt({ hash });
@@ -114,7 +117,7 @@ describe("LockeVault on Veranta (Base fork)", function () {
     console.log(`      WTI hedge open: collateral ${Number(t1!.initialPosToken) / 1e6} USDC at ${Number(t1!.openPrice) / 1e10}`);
 
     // --- Plan limits hold on chain.
-    await expectRevert(vault.write.hedgeOpen([PAIR.WTI, USD(20), 2n * P10, wti.price, P10], { account: keeper.account }), "PositionExists");
+    await expectRevert(vault.write.hedgeOpen([PAIR.WTI, USD(20), 2n * P10, wti.price, P10], { account: keeper.account }), "TooSoon");
     await expectRevert(vault.write.hedgeOpen([PAIR.ETH, USD(50), 2n * P10, wti.price, P10], { account: keeper.account }), "PlanDisabled");
     await expectRevert(vault.write.hedgeOpen([PAIR.WTI, USD(20), 2n * P10, wti.price, P10], { account: stranger.account }), "NotKeeper");
 

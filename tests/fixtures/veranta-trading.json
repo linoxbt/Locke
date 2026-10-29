@@ -1,0 +1,191 @@
+{
+ "pairInfos": {
+  "0": {
+   "index": 0,
+   "from": "ETH",
+   "to": "USD",
+   "groupIndex": 0,
+   "isPairListed": true,
+   "pairMinLevPosUSDC": 100,
+   "leverages": {
+    "minLeverage": 1,
+    "maxLeverage": 50,
+    "pnlMinLeverage": 75,
+    "pnlMaxLeverage": 500
+   },
+   "openFeeP": 0.045,
+   "closeFeeP": 0.045,
+   "spreadP": 0.01,
+   "fundingRate": {
+    "long": 0.00120006,
+    "short": -0.00123882003164059
+   },
+   "marginFee": {
+    "long": 0,
+    "short": 0
+   },
+   "pairMaxOI": 20517306.268000003,
+   "openInterest": {
+    "long": 341454.54,
+    "short": 350536.56
+   },
+   "additionalPairParams2": {
+    "closeOnlyMode": false
+   },
+   "feed": {
+    "attributes": {
+     "isOpen": true
+    }
+   },
+   "storagePairParams": {
+    "lazerFeedId": 2
+   }
+  },
+  "65": {
+   "index": 65,
+   "from": "USOILSPOT",
+   "to": "USD",
+   "groupIndex": 3,
+   "isPairListed": false,
+   "pairMinLevPosUSDC": 100,
+   "leverages": {
+    "minLeverage": 1,
+    "maxLeverage": 50,
+    "pnlMinLeverage": 1,
+    "pnlMaxLeverage": 50
+   },
+   "openFeeP": 0.08,
+   "closeFeeP": 0,
+   "spreadP": 0.03,
+   "fundingRate": {
+    "long": 0,
+    "short": 0
+   },
+   "marginFee": {
+    "long": 0,
+    "short": 0
+   },
+   "pairMaxOI": 320582.9105,
+   "openInterest": {
+    "long": 0,
+    "short": 0
+   },
+   "additionalPairParams2": {
+    "closeOnlyMode": false
+   },
+   "feed": {
+    "attributes": {
+     "isOpen": false
+    }
+   },
+   "storagePairParams": {
+    "lazerFeedId": 3032
+   }
+  },
+  "96": {
+   "index": 96,
+   "from": "WTI",
+   "to": "USD",
+   "groupIndex": 3,
+   "isPairListed": true,
+   "pairMinLevPosUSDC": 10,
+   "leverages": {
+    "minLeverage": 1,
+    "maxLeverage": 25,
+    "pnlMinLeverage": 1,
+    "pnlMaxLeverage": 25
+   },
+   "openFeeP": 0.1,
+   "closeFeeP": 0,
+   "spreadP": 0.06,
+   "fundingRate": {
+    "long": 0,
+    "short": 0
+   },
+   "marginFee": {
+    "long": 0.0002853,
+    "short": 0.00651114
+   },
+   "pairMaxOI": 26608381.5715,
+   "openInterest": {
+    "long": 8111.15,
+    "short": 9381.79
+   },
+   "additionalPairParams2": {
+    "closeOnlyMode": false
+   },
+   "feed": {
+    "attributes": {
+     "isOpen": true
+    }
+   },
+   "storagePairParams": {
+    "lazerFeedId": 3455
+   }
+  },
+  "97": {
+   "index": 97,
+   "from": "BRENT",
+   "to": "USD",
+   "groupIndex": 3,
+   "isPairListed": true,
+   "pairMinLevPosUSDC": 10,
+   "leverages": {
+    "minLeverage": 1,
+    "maxLeverage": 25,
+    "pnlMinLeverage": 1,
+    "pnlMaxLeverage": 25
+   },
+   "openFeeP": 0.1,
+   "closeFeeP": 0,
+   "spreadP": 0.06,
+   "fundingRate": {
+    "long": 0,
+    "short": 0
+   },
+   "marginFee": {
+    "long": 0.0002853,
+    "short": 0.01141542
+   },
+   "pairMaxOI": 26608381.5715,
+   "openInterest": {
+    "long": 1345.96,
+    "short": 1314.38
+   },
+   "additionalPairParams2": {
+    "closeOnlyMode": false
+   },
+   "feed": {
+    "attributes": {
+     "isOpen": true
+    }
+   },
+   "storagePairParams": {
+    "lazerFeedId": 3682
+   }
+  }
+ },
+ "groupInfo": {
+  "0": {
+   "name": "CRYPTO1"
+  },
+  "1": {
+   "name": "CRYPTO2"
+  },
+  "2": {
+   "name": "FOREX"
+  },
+  "3": {
+   "name": "COMMODITIES"
+  },
+  "4": {
+   "name": "CRYPTO3"
+  },
+  "5": {
+   "name": "CRYPTO4"
+  },
+  "6": {
+   "name": "EQUITIES"
+  }
+ }
+}

@@ -104,12 +104,17 @@ if (ownerUsdc < USD(300) || gas.some((g) => g < parseEther("0.001"))) {
 log("funded", { owner: owner.account.address, usdc: ownerUsdc });
 
 // 2. Factory and vault: ETH holdings plan, short up to 3x and $300 of notional, funded with $300
-const deployHash = await owner.deployContract({ abi: Factory.abi, bytecode: Factory.bytecode, args: [keeper.account.address, guardian.account.address, USDC, ROUTER, STORAGE] });
+const deployHash = await owner.deployContract({
+  abi: Factory.abi,
+  bytecode: Factory.bytecode,
+  // admin, guardian, keeper, USDC, Veranta, launch caps ($1,000 a vault, $10,000 in total)
+  args: [owner.account.address, guardian.account.address, keeper.account.address, USDC, ROUTER, STORAGE, USD(1000), USD(10_000)],
+});
 const factory = (await pub.waitForTransactionReceipt({ hash: deployHash })).contractAddress;
 await send(owner, { address: USDC, abi: erc20, functionName: "approve", args: [factory, USD(300)] });
 const created = await send(owner, {
   address: factory, abi: Factory.abi, functionName: "createVault",
-  args: [{ pairIndex: ETH, buy: false, maxLeverage: 3n * P10, maxNotional: USD(300) }, USD(300)],
+  args: [ETH, { enabled: true, buy: false, maxLeverage: 3n * P10, maxNotional: USD(300) }, USD(300)],
 });
 const vault = parseEventLogs({ abi: Factory.abi, logs: created.logs, eventName: "VaultCreated" })[0].args.vault;
 log("vault created", { factory, vault });

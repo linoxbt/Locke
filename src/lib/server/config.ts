@@ -21,6 +21,13 @@ export const config = {
   get strikeUserWsUrl() {
     return process.env.STRIKE_WS_USER_URL ?? `${this.strikeApiUrl.replace(/^http/, "ws")}/ws/user-api`;
   },
+  /** Veranta (formerly Avantis) on Base: data and core APIs behind one gateway, and its signed price feed. */
+  get verantaApiUrl() {
+    return (process.env.VERANTA_API_URL ?? "https://prod-api.veranta.xyz").replace(/\/+$/, "");
+  },
+  get verantaFeedUrl() {
+    return (process.env.VERANTA_FEED_URL ?? "https://feed-v3.veranta.xyz").replace(/\/+$/, "");
+  },
   get strikePriceWsUrl() {
     return process.env.STRIKE_WS_PRICE_URL ?? `${this.strikeApiUrl.replace(/^http/, "ws")}/ws/price`;
   },
