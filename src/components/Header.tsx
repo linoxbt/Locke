@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { BaseMark } from "./base/BaseMark";
 import { LockeMark } from "./Logo";
 import { useWallet } from "./WalletProvider";
 import { shortAddr } from "@/lib/ui/format";
@@ -64,13 +65,14 @@ export function Header() {
         { href: "/how-it-works", label: "How it works" },
       ]
     : [
+        { href: "/base", label: "Vaults on Base" },
         { href: "/how-it-works", label: "How it works" },
-        { href: "/protect/holdings", label: "Holdings" },
-        { href: "/protect/costs", label: "Operating costs" },
+        { href: "/connect", label: "On Cardano" },
       ];
   const isOn = (href: string) =>
     path === href || (href !== "/base" && path.startsWith(href + "/")) || (href === "/portfolio" && path.startsWith("/plans/")) || (href === "/base" && path.startsWith("/base/vaults/"));
-  const cta = me ? { href: "/account", label: shortAddr(me.address) } : { href: "/connect", label: "Get started" };
+  // Signed out, the action is Locke on Base; a Cardano (Strike) session keeps its account pill.
+  const cta = me ? { href: "/account", label: shortAddr(me.address) } : { href: "/base", label: "Sign in with Base" };
 
   return (
     <>
@@ -92,17 +94,12 @@ export function Header() {
           </nav>
 
           <div className="pointer-events-auto ml-auto flex items-center gap-1 md:ml-0">
-            {!onBase && !me && path !== "/connect" && (
-              <Link href="/connect" className={`${pill} ${quiet} hidden sm:inline-flex`}>
-                Connect
-              </Link>
-            )}
-            {/* On the sign-in page itself, "Get started" would only link back to it. */}
-            {!onBase && (me || path !== "/connect") && (
+            {!onBase && (
               <Link
                 href={cta.href}
-                className={`${pill} ${me ? `num ${path === "/account" ? "bg-ink text-paper" : quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}
+                className={`${pill} ${me ? `num ${path === "/account" ? "bg-ink text-paper" : quiet}` : "gap-2 bg-ink text-paper hover:bg-ink/85"}`}
               >
+                {!me && <BaseMark size={12} />}
                 {cta.label}
               </Link>
             )}
@@ -141,15 +138,19 @@ export function Header() {
               </button>
             </div>
             <nav aria-label="Menu" className="mt-6 flex flex-col px-3 pb-4">
-              {[...links, ...(onBase ? [] : me ? [{ href: "/account", label: "Account" }, { href: "/withdraw", label: "Withdraw" }] : [{ href: "/connect", label: "Connect a wallet" }])].map((l) => (
+              {[...links, ...(onBase || !me ? [] : [{ href: "/account", label: "Account" }, { href: "/withdraw", label: "Withdraw" }])].map((l) => (
                 <Link key={l.href} href={l.href} className={`display border-b border-line py-3 text-[26px] ${isOn(l.href) ? "text-ink" : "text-ink-2"}`}>
                   {l.label}
                 </Link>
               ))}
             </nav>
-            {!onBase && (me || path !== "/connect") && (
-              <Link href={me ? "/protect" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
-                {me ? "New protection plan" : "Get started"}
+            {!onBase && (
+              <Link
+                href={me ? "/protect" : "/base"}
+                className={`mt-4 flex h-12 items-center justify-center gap-2 rounded-full text-[15px] text-paper ${me ? "bg-cobalt" : "bg-ink"}`}
+              >
+                {!me && <BaseMark size={14} />}
+                {me ? "New protection plan" : "Sign in with Base"}
               </Link>
             )}
           </div>

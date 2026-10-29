@@ -23,9 +23,9 @@ const HOP_S = 0.55;
 
 const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode }[] = [
   {
-    lead: "Stake pools",
+    lead: "Node operators",
     rest: "that keep running through grid outages",
-    href: "/how-it-works#costs",
+    href: "/base",
     visual: (
       <div className="relative h-full bg-ink">
         <svg viewBox="0 0 200 100" className="absolute inset-x-0 top-[18%] h-[46%] w-full" preserveAspectRatio="none" aria-hidden>
@@ -58,12 +58,12 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     ),
   },
   {
-    lead: "Treasuries in ADA",
-    rest: "that hold their value when ADA falls",
-    href: "/how-it-works#holdings",
+    lead: "Treasuries in ETH",
+    rest: "that hold their value when ETH falls",
+    href: "/base",
     visual: (
       <div className="relative h-full bg-cobalt">
-        <span className="display absolute left-4 top-3 text-[64px] leading-[0.85] text-paper">ADA</span>
+        <span className="display absolute left-4 top-3 text-[64px] leading-[0.85] text-paper">ETH</span>
         <span className="num absolute bottom-4 right-4 text-[26px] text-paper">−30% → 0%</span>
       </div>
     ),
@@ -71,7 +71,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
   {
     lead: "Generator fleets",
     rest: "with a fuel bill you can budget",
-    href: "/how-it-works#costs",
+    href: "/base",
     visual: (
       <div className="relative h-full bg-lime">
         <div className="absolute inset-x-4 bottom-4 flex h-28 items-end gap-2">
@@ -96,13 +96,13 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     ),
   },
   {
-    lead: "Cardano teams",
-    rest: "paid in ADA, spending in dollars",
-    href: "/how-it-works#holdings",
+    lead: "Onchain teams",
+    rest: "paid in ETH, spending in dollars",
+    href: "/base",
     visual: (
       <div className="relative h-full bg-paper">
         <span className="display absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[44px] leading-none text-ink">
-          ₳ <span className="text-ink-3">→</span> $
+          Ξ <span className="text-ink-3">→</span> $
         </span>
       </div>
     ),
@@ -110,7 +110,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
   {
     lead: "Logistics businesses",
     rest: "whose margins ride on the price of crude",
-    href: "/how-it-works#costs",
+    href: "/base",
     visual: (
       <div className="relative h-full bg-danger">
         <svg viewBox="0 0 200 100" className="absolute inset-0 h-full w-full" preserveAspectRatio="none" aria-hidden>
@@ -135,7 +135,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
   {
     lead: "Community funds",
     rest: "that can't afford a bad month",
-    href: "/how-it-works#holdings",
+    href: "/base",
     visual: (
       <div className="relative h-full bg-mist">
         <div className="absolute inset-6 grid grid-cols-3 gap-2">

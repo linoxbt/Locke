@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { pct } from "@/lib/ui/format";
 
-type Mark = { mark: number; index: number; fundingRate: number } | null;
+/** A Veranta market on the landing: its price and what holding Locke's side costs per day (%). */
+export type Quote = { price: number; carryPctPerDay: number | null } | null;
 
-const POLL_MS = 3_000;
+const POLL_MS = 5_000;
 const COUNT_MS = 1_400;
 const TWEEN_MS = 900;
 const ease = (t: number) => 1 - Math.pow(1 - t, 5);
@@ -49,13 +50,17 @@ function useTween(target: number | null, started: boolean) {
   return value;
 }
 
-// One more decimal than the app's usual price format: Strike's marks move in small steps.
-const live = (n: number, big: boolean) => (n < 10 ? n.toFixed(big ? 5 : 6) : n.toFixed(3));
+// One more decimal than the app's usual price format, so small moves show.
+const live = (n: number) => (n < 10 ? n.toFixed(5) : n.toFixed(3));
 
-function Price({ symbol, m, started }: { symbol: string; m: Mark; started: boolean }) {
-  const target = m?.mark ?? null;
+function carry(c: number | null | undefined): string {
+  if (c == null) return "—";
+  return c < 0 ? `paid ${pct(-c / 100, 3)}/day` : `costs ${pct(c / 100, 3)}/day`;
+}
+
+function Price({ symbol, side, q, started }: { symbol: string; side: string; q: Quote; started: boolean }) {
+  const target = q?.price ?? null;
   const shown = useTween(target, started);
-  const index = useTween(m?.index ?? null, started);
 
   const prev = useRef(target);
   const [flash, setFlash] = useState<"up" | "down" | null>(null);
@@ -79,18 +84,18 @@ function Price({ symbol, m, started }: { symbol: string; m: Mark; started: boole
           flash === "up" ? "text-lime" : flash === "down" ? "text-danger" : ""
         }`}
       >
-        {shown == null ? "—" : live(shown, true)}
+        {shown == null ? "—" : live(shown)}
       </dd>
-      <dd className="num mt-2 text-[12px] text-paper/50">index {index == null ? "—" : live(index, false)}</dd>
-      <dd className="num mt-0.5 text-[12px] text-paper/50">funding {m ? `${pct(m.fundingRate * 24, 3)}/day` : "—"}</dd>
+      <dd className="num mt-2 text-[12px] text-paper/50">{side}</dd>
+      <dd className="num mt-0.5 text-[12px] text-paper/50">{carry(q?.carryPctPerDay)}</dd>
     </div>
   );
 }
 
-/** Live ADA and WTI marks: count up when scrolled into view, then poll while visible. */
-export function LivePrices({ ada, wti }: { ada: Mark; wti: Mark }) {
+/** Live ETH and WTI prices from Veranta on Base: count up when scrolled into view, then poll while visible. */
+export function LivePrices({ eth, wti }: { eth: Quote; wti: Quote }) {
   const ref = useRef<HTMLDListElement>(null);
-  const [marks, setMarks] = useState({ ada, wti });
+  const [quotes, setQuotes] = useState({ eth, wti });
   const [visible, setVisible] = useState(false);
   const [started, setStarted] = useState(false);
 
@@ -111,13 +116,17 @@ export function LivePrices({ ada, wti }: { ada: Mark; wti: Mark }) {
     const tick = async () => {
       if (document.hidden) return;
       try {
-        const r = await fetch("/api/market", { cache: "no-store" });
+        const r = await fetch("/api/base/markets", { cache: "no-store" });
         if (!r.ok) return;
-        const d = (await r.json()) as { ada: Mark; wti: Mark };
-        // A market that didn't answer this time keeps its last mark.
-        if (!cancelled) setMarks((prev) => ({ ada: d.ada ?? prev.ada, wti: d.wti ?? prev.wti }));
+        const { markets } = (await r.json()) as { markets: { pairIndex: number; price: number | null; carryPctPerHour: number | null }[] };
+        const pick = (i: number): Quote => {
+          const m = markets.find((x) => x.pairIndex === i);
+          return m?.price ? { price: m.price, carryPctPerDay: m.carryPctPerHour == null ? null : m.carryPctPerHour * 24 } : null;
+        };
+        // A market that didn't answer this time (or is closed) keeps its last price.
+        if (!cancelled) setQuotes((prev) => ({ eth: pick(0) ?? prev.eth, wti: pick(96) ?? prev.wti }));
       } catch {
-        // Keep showing the last mark; the next poll retries.
+        // Keep showing the last price; the next poll retries.
       }
     };
     const id = setInterval(tick, POLL_MS);
@@ -129,8 +138,8 @@ export function LivePrices({ ada, wti }: { ada: Mark; wti: Mark }) {
 
   return (
     <dl ref={ref} className="mt-auto grid grid-cols-2 gap-4">
-      <Price symbol="ADA-USD" m={marks.ada} started={started} />
-      <Price symbol="WTI-USD" m={marks.wti} started={started} />
+      <Price symbol="ETH/USD" side="Locke shorts it" q={quotes.eth} started={started} />
+      <Price symbol="WTI/USD" side="Locke goes long" q={quotes.wti} started={started} />
     </dl>
   );
 }

@@ -4,9 +4,9 @@ import { CookieSettingsLink } from "../CookieConsent";
 import { LockeLogoReverse } from "../Logo";
 
 const COLUMNS: { title: string; links: [string, string][] }[] = [
+  { title: "Locke on Base", links: [["Sign in with Base", "/base"], ["New vault", "/base/new"]] },
   { title: "Product", links: [["How it works", "/how-it-works"], ["Holdings plan", "/how-it-works#holdings"], ["Operating costs plan", "/how-it-works#costs"]] },
-  { title: "Your plans", links: [["Portfolio", "/portfolio"], ["New plan", "/protect"], ["Withdraw", "/withdraw"], ["Account", "/account"]] },
-  { title: "Get started", links: [["Connect a wallet", "/connect"], ["Protect your ADA", "/protect/holdings"], ["Manage fuel costs", "/protect/costs"], ["Locke on Base", "/base"]] },
+  { title: "On Cardano", links: [["Connect a wallet", "/connect"], ["Protect your ADA", "/protect/holdings"], ["Manage fuel costs", "/protect/costs"], ["Portfolio", "/portfolio"]] },
   { title: "Legal", links: LEGAL_DOCS.map((d) => [d.label, d.href] as [string, string]) },
 ];
 
@@ -39,13 +39,13 @@ export function SiteFooter() {
         <div className="col-span-2 md:col-span-1">
           <h2 className="text-[15px]">Locke</h2>
           <p className="mt-3 text-[15px] leading-relaxed text-paper/50">
-            Protection plans for businesses, built on Strike Finance and Cardano. A tool, not financial advice.
+            Protection vaults for businesses on Base, hedged on Veranta. Also on Cardano with Strike Finance. A tool, not financial advice.
           </p>
         </div>
       </div>
       <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-5 pb-10 text-[13px] text-paper/55 sm:flex-row sm:justify-between sm:px-14">
         <span>Hedges can lose money on their own, and positions can be liquidated if margin runs out.</span>
-        <span>Check Strike&apos;s eligibility rules before you use it.</span>
+        <span>Check Veranta&apos;s and Strike&apos;s eligibility rules before you use them.</span>
       </div>
     </footer>
   );

@@ -71,9 +71,7 @@ export function CookieConsent() {
 
   return (
     <div
-      // Kept clear of the bottom-right corner on phones, where hosts float badges (Netlify's
-      // "Powered by" frame sits over that spot and would swallow taps on Accept).
-      className={docked ? "pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center px-3 pb-20 pt-3 sm:p-5" : "fixed inset-0 z-[60] flex items-center justify-center bg-ink/45 p-3 backdrop-blur-[2px] sm:p-6"}
+      className={docked ? "pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center p-3 sm:p-5" : "fixed inset-0 z-[60] flex items-end justify-center bg-ink/45 p-3 backdrop-blur-[2px] sm:p-6"}
     >
       <div
         ref={card}

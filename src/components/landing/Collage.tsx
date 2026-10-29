@@ -20,7 +20,7 @@ function Spark({ up = false, color = "currentColor" }: { up?: boolean; color?: s
   );
 }
 
-function tiles(ada: number | null, wti: number | null): Tile[][] {
+function tiles(eth: number | null, wti: number | null): Tile[][] {
   const t = (h: string, node: React.ReactNode): Tile => ({ h, node });
   return [
     [
@@ -38,8 +38,8 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       )),
       t("h-44", (
         <div className="flex h-full flex-col bg-paper p-4">
-          <span className="num text-[12px] text-ink-3">ADA-USD · mark</span>
-          <span className="num mt-1 text-[24px]">{ada ? price(ada) : "—"}</span>
+          <span className="num text-[12px] text-ink-3">ETH/USD · Veranta</span>
+          <span className="num mt-1 text-[24px]">{eth ? price(eth) : "—"}</span>
           <span className="mt-auto text-cobalt"><Spark /></span>
         </div>
       )),
@@ -48,7 +48,7 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
       t("h-80", (
         <div className="relative h-full overflow-hidden bg-danger">
           <span className={`${POSTER} bottom-2 left-3 text-[60px] leading-none text-paper group-hover:bottom-4 group-hover:left-4 group-hover:text-[44px]`}>−50%</span>
-          <span className="eyebrow absolute left-4 top-4 text-paper/80">ADA moves</span>
+          <span className="eyebrow absolute left-4 top-4 text-paper/80">ETH moves</span>
         </div>
       )),
       t("h-52", (
@@ -71,15 +71,15 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
     [
       t("h-48", (
         <div className="flex h-full flex-col bg-ink p-4 text-paper">
-          <span className="inline-flex w-fit rounded-full bg-danger px-3 py-1 text-[12px]">Action needed</span>
-          <span className="display mt-auto text-[22px]">Top up $48</span>
-          <span className="mt-3 inline-flex h-9 w-fit items-center rounded-full bg-paper px-4 text-[13px] text-ink">Sign top-up →</span>
+          <span className="inline-flex w-fit rounded-full bg-lime px-3 py-1 text-[12px] text-ink">Keeper</span>
+          <span className="display mt-auto text-[22px]">Margin +$48</span>
+          <span className="mt-3 inline-flex h-9 w-fit items-center rounded-full bg-paper px-4 text-[13px] text-ink">Within your vault&apos;s limits</span>
         </div>
       )),
       t("h-72", (
-        <div className="relative h-full overflow-hidden bg-paper">
-          <span className={`${POSTER} -right-4 top-2 text-[104px] leading-[0.82] text-cobalt group-hover:right-4 group-hover:top-10 group-hover:text-[60px]`}>ADA</span>
-          <span className="eyebrow absolute bottom-4 left-4 text-ink-2">Still staked · still voting</span>
+        <div className="relative h-full overflow-hidden bg-[#0000ff]">
+          <span className={`${POSTER} -right-4 top-2 text-[104px] leading-[0.82] text-paper group-hover:right-4 group-hover:top-10 group-hover:text-[60px]`}>Base</span>
+          <span className="eyebrow absolute bottom-4 left-4 text-paper/80">Your vault · your keys</span>
         </div>
       )),
       t("h-52", (
@@ -92,7 +92,7 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
     [
       t("h-44", (
         <div className="flex h-full flex-col bg-paper p-4">
-          <span className="num text-[12px] text-ink-3">WTI-USD · mark</span>
+          <span className="num text-[12px] text-ink-3">WTI/USD · Veranta</span>
           <span className="num mt-1 text-[24px]">{wti ? price(wti) : "—"}</span>
           <span className="mt-auto text-ink"><Spark up /></span>
         </div>
@@ -117,9 +117,9 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
     [
       t("h-64", (
         <div className="flex h-full flex-col bg-paper p-4">
-          <span className="eyebrow text-ink-2">Fund this plan</span>
-          <span className="num mt-auto text-[24px] leading-none">3,756 ADA</span>
-          <span className="mt-4 inline-flex h-10 items-center justify-center rounded-full bg-cobalt text-[14px] text-paper">Sign deposit →</span>
+          <span className="eyebrow text-ink-2">Create vault</span>
+          <span className="num mt-auto text-[24px] leading-none">375.55 USDC</span>
+          <span className="mt-4 inline-flex h-10 items-center justify-center rounded-full bg-cobalt text-[14px] text-paper">Approve in wallet →</span>
         </div>
       )),
       t("h-48", (
@@ -129,17 +129,20 @@ function tiles(ada: number | null, wti: number | null): Tile[][] {
         </div>
       )),
       t("h-56", (
-        <div className="flex h-full flex-col bg-danger p-4 text-paper">
-          <span className="eyebrow text-paper/75">Margin call</span>
-          <span className="num mt-auto text-[36px] leading-none">70%</span>
+        <div className="flex h-full flex-col bg-paper p-4 text-ink">
+          <span className="eyebrow text-ink-2">Sign in with Base</span>
+          <span className="mt-auto inline-flex items-center gap-3 text-[20px]">
+            <span className="inline-block h-6 w-6 rounded-[4px] bg-[#0000ff]" />
+            Passkey, no seed phrase
+          </span>
         </div>
       )),
     ],
   ];
 }
 
-export function Collage({ ada, wti }: { ada: number | null; wti: number | null }) {
-  const cols = tiles(ada, wti);
+export function Collage({ eth, wti }: { eth: number | null; wti: number | null }) {
+  const cols = tiles(eth, wti);
   return (
     <FallIn aria-hidden className="absolute inset-0 grid grid-cols-2 gap-2 overflow-hidden p-2 sm:grid-cols-3 lg:grid-cols-5">
       {cols.map((col, i) => (

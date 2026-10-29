@@ -5,11 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { hasInjectedWallet, signInWithBase, walletErrorMessage, type WalletKind } from "@/lib/base/wallet";
 import { ErrorNote } from "../ui";
+import { BaseMark } from "./BaseMark";
 
-/** Base's mark: a blue square with rounded corners. */
-export function BaseMark({ size = 16 }: { size?: number }) {
-  return <span aria-hidden className="inline-block shrink-0 rounded-[3px] bg-[#0000ff]" style={{ width: size, height: size }} />;
-}
+export { BaseMark };
 
 /**
  * Sign in with Base (Base Account: a passkey wallet, no extension or seed phrase), or with any EVM
