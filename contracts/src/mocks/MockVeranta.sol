@@ -25,6 +25,10 @@ contract MockVeranta {
     uint256 public nextOrderId = 1;
     uint256 public lastMargin;
     uint256 public lastValue;
+    /// @dev When set, opens wait as pending orders (like an unfilled market order) until filled or cancelled.
+    bool public holdOpens;
+    mapping(address => mapping(uint256 => uint256)) public pendingCount;
+    mapping(address => mapping(uint256 => uint256)) public pendingCollateral;
 
     constructor(IERC20 usdc_) {
         usdc = usdc_;
@@ -35,8 +39,28 @@ contract MockVeranta {
         return openCount[trader][pairIndex];
     }
 
-    function pendingMarketOpenCount(address, uint256) external pure returns (uint256) {
-        return 0;
+    function pendingMarketOpenCount(address trader, uint256 pairIndex) external view returns (uint256) {
+        return pendingCount[trader][pairIndex];
+    }
+
+    function setHoldOpens(bool hold) external {
+        holdOpens = hold;
+    }
+
+    /// @dev The operator fills a pending open.
+    function fillPending(address trader, uint256 pairIndex) external {
+        openCount[trader][pairIndex] += pendingCount[trader][pairIndex];
+        collateralOf[trader][pairIndex] += pendingCollateral[trader][pairIndex];
+        pendingCount[trader][pairIndex] = 0;
+        pendingCollateral[trader][pairIndex] = 0;
+    }
+
+    /// @dev The operator cancels a pending open (price moved past the slippage): collateral goes back.
+    function cancelPending(address trader, uint256 pairIndex) external {
+        uint256 c = pendingCollateral[trader][pairIndex];
+        pendingCount[trader][pairIndex] = 0;
+        pendingCollateral[trader][pairIndex] = 0;
+        usdc.transfer(trader, c);
     }
 
     function openTrades(address trader, uint256 pairIndex, uint256) external view returns (IVerantaTradingStorage.Trade memory t) {
@@ -49,8 +73,13 @@ contract MockVeranta {
     // Router
     function openTrade(IVerantaTradingStorage.Trade calldata t, uint8, uint256) external payable returns (uint256) {
         usdc.transferFrom(msg.sender, address(this), t.positionSizeUSDC);
-        openCount[msg.sender][t.pairIndex] += 1;
-        collateralOf[msg.sender][t.pairIndex] += t.positionSizeUSDC;
+        if (holdOpens) {
+            pendingCount[msg.sender][t.pairIndex] += 1;
+            pendingCollateral[msg.sender][t.pairIndex] += t.positionSizeUSDC;
+        } else {
+            openCount[msg.sender][t.pairIndex] += 1;
+            collateralOf[msg.sender][t.pairIndex] += t.positionSizeUSDC;
+        }
         lastValue = msg.value;
         return nextOrderId++;
     }

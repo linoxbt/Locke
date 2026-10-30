@@ -15,6 +15,7 @@ interface ILockeFactory {
     function feeCollector() external view returns (address);
     function recordDeposit(uint256 amount, uint256 vaultNetDeposits) external;
     function recordWithdraw(uint256 amount) external;
+    function keeperRevoked(address keeper) external view returns (bool);
 }
 
 /**
@@ -24,10 +25,13 @@ interface ILockeFactory {
  *  - owner: deposits, withdraws idle USDC at any time, closes any hedge, moves margin, sets the
  *    plan limits and replaces or removes the keeper;
  *  - keeper (Locke's server): opens, closes and tops up hedges, only within the plan limits and
- *    at most one open per market per hour, and can never send USDC anywhere but Veranta and,
- *    when the vault was created with a fee, Locke's fee on each open;
- *  - guardian (Locke's multisig, set on the factory): pauses new deposits and new hedges, never
- *    exits.
+ *    at most one open per market per hour, with bounded slippage, and can never send USDC anywhere
+ *    but Veranta and, when the vault was created with a fee, Locke's fee: owed when an open is
+ *    placed, paid only once the trade exists, at most once per market per 30 days;
+ *  - guardian (Locke's multisig, set on the factory): pauses new deposits and new hedges, and
+ *    revokes a compromised keeper key for every vault at once; never touches exits.
+ * Veranta pulls exactly the USDC each order needs: the vault approves that amount for the call
+ * and resets the approval to zero, so no standing allowance exposes its idle balance.
  * "Protect as you get paid": the owner's Base Account may sign a spend permission naming this
  * vault as spender; the keeper then moves part of the owner's incoming USDC into the vault, never
  * more per period than the owner allowed, and only ever from the owner to this vault.
@@ -44,6 +48,10 @@ contract LockeVault is Initializable, ReentrancyGuard {
     uint16 public constant MAX_FEE_BPS = 20;
     /// @notice A keeper may open a market at most once per hour, so a stolen keeper key cannot churn fees.
     uint256 public constant OPEN_COOLDOWN = 1 hours;
+    /// @notice Most slippage an open may allow: 3% (Veranta's 1e10 = 1%).
+    uint256 public constant MAX_SLIPPAGE_P = 3e10;
+    /// @notice Locke's fee is charged at most once per market in this period, however often a hedge is reopened.
+    uint256 public constant FEE_PERIOD = 30 days;
     /// @notice Base Account's SpendPermissionManager (the same address on Base and Base Sepolia).
     ISpendPermissionManager public constant SPEND_PERMISSIONS = ISpendPermissionManager(0xf85210B21cC50302F477BA56686d2019dC9b67Ad);
 
@@ -71,6 +79,10 @@ contract LockeVault is Initializable, ReentrancyGuard {
 
     mapping(uint256 pairIndex => Plan) public plans;
     mapping(uint256 pairIndex => uint256) public lastOpenAt;
+    /// @notice Fee owed for an open that was placed and not yet seen as a trade.
+    mapping(uint256 pairIndex => uint256) public feeOwed;
+    /// @notice When Locke's fee was last paid for this market.
+    mapping(uint256 pairIndex => uint256) public lastFeeAt;
 
     event Deposited(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
@@ -84,6 +96,11 @@ contract LockeVault is Initializable, ReentrancyGuard {
     event HedgeCloseRequested(uint256 indexed pairIndex, uint256 indexed index, uint256 orderId, uint256 collateral, address by);
     event MarginUpdated(uint256 indexed pairIndex, uint256 indexed index, uint8 updateType, uint256 amount, address by);
     event IncomeCollected(address indexed from, uint256 amount);
+    event FeeAccrued(uint256 indexed pairIndex, uint256 amount);
+    event FeeCancelled(uint256 indexed pairIndex, uint256 amount);
+    event TokenRescued(address indexed token, address indexed to, uint256 amount);
+    event EthSwept(address indexed to, uint256 amount);
+    event OwnershipTransferCancelled(address indexed pendingOwner);
 
     error NotOwner();
     error NotPendingOwner();
@@ -103,14 +120,17 @@ contract LockeVault is Initializable, ReentrancyGuard {
     error UseWithdraw();
     error BadPermission();
     error ShortReceipt();
+    error SlippageOutOfRange();
+    error LeverageTooLow();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
         _;
     }
 
+    /// @dev The vault's keeper, unless Locke's guardian revoked that key for every vault.
     modifier onlyKeeper() {
-        if (msg.sender != keeper) revert NotKeeper();
+        if (msg.sender != keeper || factory.keeperRevoked(msg.sender)) revert NotKeeper();
         _;
     }
 
@@ -140,8 +160,6 @@ contract LockeVault is Initializable, ReentrancyGuard {
         keeper = keeper_;
         feeBps = feeBps_;
         _setPlan(pairIndex, plan.enabled, plan.buy, plan.maxLeverage, plan.maxNotional);
-        // Veranta pulls collateral from the trader through TradingStorage.
-        usdc_.forceApprove(address(tradingStorage_), type(uint256).max);
         emit OwnerSet(owner_);
         emit KeeperSet(keeper_);
     }
@@ -197,6 +215,12 @@ contract LockeVault is Initializable, ReentrancyGuard {
         emit OwnershipTransferStarted(owner, to);
     }
 
+    /// @notice Withdraw a handover that hasn't been accepted.
+    function cancelOwnershipTransfer() external onlyOwner {
+        emit OwnershipTransferCancelled(pendingOwner);
+        pendingOwner = address(0);
+    }
+
     function acceptOwnership() external {
         if (msg.sender != pendingOwner) revert NotPendingOwner();
         owner = msg.sender;
@@ -212,6 +236,7 @@ contract LockeVault is Initializable, ReentrancyGuard {
         nonReentrant
         returns (uint256 orderId)
     {
+        _settleFee(pairIndex);
         orderId = router.closeTradeMarket{value: msg.value}(pairIndex, index, collateral, wantedPrice);
         emit HedgeCloseRequested(pairIndex, index, orderId, collateral, msg.sender);
     }
@@ -225,7 +250,10 @@ contract LockeVault is Initializable, ReentrancyGuard {
         bytes[] calldata priceUpdateData,
         uint8 priceSourcing
     ) external payable onlyOwner nonReentrant returns (uint256 orderId) {
+        _settleFee(pairIndex);
+        if (updateType == DEPOSIT) usdc.forceApprove(address(tradingStorage), amount);
         orderId = router.updateMargin{value: msg.value}(pairIndex, index, updateType, amount, priceUpdateData, priceSourcing);
+        if (updateType == DEPOSIT) usdc.forceApprove(address(tradingStorage), 0);
         emit MarginUpdated(pairIndex, index, updateType, amount, msg.sender);
     }
 
@@ -233,13 +261,24 @@ contract LockeVault is Initializable, ReentrancyGuard {
     function rescueToken(IERC20 token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (address(token) == address(usdc)) revert UseWithdraw();
         token.safeTransfer(to, amount);
+        emit TokenRescued(address(token), to, amount);
     }
 
     /// @notice Return ETH left over from oracle fees.
     function sweepEth(address payable to) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
-        (bool ok,) = to.call{value: address(this).balance}("");
+        uint256 amount = address(this).balance;
+        emit EthSwept(to, amount);
+        (bool ok,) = to.call{value: amount}("");
         require(ok, "ETH transfer failed");
+    }
+
+    /**
+     * @notice Settle Locke's fee for an open: paid once the trade exists, cancelled if the order
+     * ended without one. Anyone may call it; the keeper does once the hedge opens.
+     */
+    function settleFee(uint256 pairIndex) external nonReentrant {
+        _settleFee(pairIndex);
     }
 
     // ------------------------------------------------------------------ keeper
@@ -258,7 +297,10 @@ contract LockeVault is Initializable, ReentrancyGuard {
         if (paused()) revert IsPaused();
         Plan memory plan = plans[pairIndex];
         if (!plan.enabled) revert PlanDisabled();
+        if (leverage < PRECISION) revert LeverageTooLow();
         if (leverage > plan.maxLeverage) revert LeverageTooHigh();
+        // Slippage is the vault's only protection on the fill price: never off, never wide.
+        if (slippageP == 0 || slippageP > MAX_SLIPPAGE_P) revert SlippageOutOfRange();
         uint256 notional = (collateral * leverage) / PRECISION;
         if (notional > plan.maxNotional) revert NotionalTooHigh();
         if (block.timestamp < lastOpenAt[pairIndex] + OPEN_COOLDOWN) revert TooSoon();
@@ -266,14 +308,16 @@ contract LockeVault is Initializable, ReentrancyGuard {
             tradingStorage.openTradesCount(address(this), pairIndex) != 0
                 || tradingStorage.pendingMarketOpenCount(address(this), pairIndex) != 0
         ) revert PositionExists();
+        // No trade and no pending order: any fee still owed is for an open that never filled.
+        _cancelFee(pairIndex);
         lastOpenAt[pairIndex] = block.timestamp;
 
-        uint256 fee = (collateral * leverage * feeBps) / (PRECISION * BPS);
-        if (fee != 0) {
-            address collector = factory.feeCollector();
-            if (collector != address(0)) {
-                usdc.safeTransfer(collector, fee);
-                emit FeePaid(pairIndex, collector, fee);
+        // The fee is owed now and paid only once the trade exists (settleFee), at most once a period.
+        if (feeBps != 0 && block.timestamp >= lastFeeAt[pairIndex] + FEE_PERIOD) {
+            uint256 fee = (collateral * leverage * feeBps) / (PRECISION * BPS);
+            if (fee != 0) {
+                feeOwed[pairIndex] = fee;
+                emit FeeAccrued(pairIndex, fee);
             }
         }
 
@@ -290,7 +334,9 @@ contract LockeVault is Initializable, ReentrancyGuard {
             sl: 0,
             timestamp: 0
         });
+        usdc.forceApprove(address(tradingStorage), collateral);
         orderId = router.openTrade{value: msg.value}(t, MARKET, slippageP);
+        usdc.forceApprove(address(tradingStorage), 0);
         emit HedgeOpenRequested(pairIndex, orderId, plan.buy, collateral, leverage);
     }
 
@@ -302,6 +348,7 @@ contract LockeVault is Initializable, ReentrancyGuard {
         nonReentrant
         returns (uint256 orderId)
     {
+        _settleFee(pairIndex);
         orderId = router.closeTradeMarket{value: msg.value}(pairIndex, index, collateral, wantedPrice);
         emit HedgeCloseRequested(pairIndex, index, orderId, collateral, msg.sender);
     }
@@ -321,7 +368,10 @@ contract LockeVault is Initializable, ReentrancyGuard {
         if (amount == 0) revert ZeroAmount();
         uint256 collateral = tradingStorage.openTrades(address(this), pairIndex, index).initialPosToken;
         if (collateral + amount > plans[pairIndex].maxNotional) revert CollateralTooHigh();
+        _settleFee(pairIndex);
+        usdc.forceApprove(address(tradingStorage), amount);
         orderId = router.updateMargin{value: msg.value}(pairIndex, index, DEPOSIT, amount, priceUpdateData, priceSourcing);
+        usdc.forceApprove(address(tradingStorage), 0);
         emit MarginUpdated(pairIndex, index, DEPOSIT, amount, msg.sender);
     }
 
@@ -360,6 +410,38 @@ contract LockeVault is Initializable, ReentrancyGuard {
     }
 
     receive() external payable {}
+
+    function _settleFee(uint256 pairIndex) private {
+        uint256 owed = feeOwed[pairIndex];
+        if (owed == 0) return;
+        if (tradingStorage.openTradesCount(address(this), pairIndex) != 0) {
+            _payFee(pairIndex, owed);
+        } else if (tradingStorage.pendingMarketOpenCount(address(this), pairIndex) == 0) {
+            _cancelFee(pairIndex);
+        }
+    }
+
+    function _cancelFee(uint256 pairIndex) private {
+        uint256 owed = feeOwed[pairIndex];
+        if (owed == 0) return;
+        feeOwed[pairIndex] = 0;
+        emit FeeCancelled(pairIndex, owed);
+    }
+
+    /// @dev Never reverts: a fee transfer that fails (collector blocked, balance short) must not stop
+    /// an owner's close or margin change. What can't be paid stays owed.
+    function _payFee(uint256 pairIndex, uint256 owed) private {
+        address collector = factory.feeCollector();
+        if (collector == address(0)) return _cancelFee(pairIndex);
+        uint256 balance = usdc.balanceOf(address(this));
+        uint256 amount = owed < balance ? owed : balance;
+        if (amount == 0) return;
+        (bool ok, bytes memory ret) = address(usdc).call(abi.encodeCall(IERC20.transfer, (collector, amount)));
+        if (!ok || (ret.length != 0 && !abi.decode(ret, (bool)))) return;
+        feeOwed[pairIndex] = owed - amount;
+        lastFeeAt[pairIndex] = block.timestamp;
+        emit FeePaid(pairIndex, collector, amount);
+    }
 
     function _setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional) private {
         if (enabled && (maxLeverage < PRECISION || maxNotional == 0)) revert BadPlan();

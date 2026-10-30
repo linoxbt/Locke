@@ -13,7 +13,8 @@ import {IVerantaRouter, IVerantaTradingStorage} from "./interfaces/IVeranta.sol"
  * runs for all vaults:
  *  - admin (Locke multisig): sets the guardian, the keeper and fee for new vaults, the fee
  *    collector and the launch deposit caps; two-step handover;
- *  - guardian: pauses new deposits and new hedges for all vaults or one vault, never exits.
+ *  - guardian: pauses new deposits and new hedges for all vaults or one vault, and revokes a
+ *    compromised keeper key for every vault at once (only the admin restores it); never exits.
  * Nothing here can move a vault's USDC or block a withdrawal, close or top-up.
  */
 contract LockeVaultFactory {
@@ -40,6 +41,8 @@ contract LockeVaultFactory {
     uint256 public totalDeposits;
 
     mapping(address => bool) public isVault;
+    /// @notice Keeper keys no vault accepts any more (read by every vault's keeper check).
+    mapping(address => bool) public keeperRevoked;
     uint256 public vaultCount;
 
     event VaultCreated(address indexed owner, address indexed vault, uint256 indexed pairIndex, bool buy, uint128 maxNotional, uint16 feeBps);
@@ -50,6 +53,9 @@ contract LockeVaultFactory {
     event FeeSet(uint16 feeBps, address indexed collector);
     event CapsSet(uint256 maxVaultDeposits, uint256 maxTotalDeposits);
     event Paused(bool paused);
+    event KeeperRevoked(address indexed keeper, bool revoked);
+    event DepositRecorded(address indexed vault, uint256 amount, uint256 totalDeposits);
+    event WithdrawRecorded(address indexed vault, uint256 amount, uint256 totalDeposits);
 
     error NotAdmin();
     error NotPendingAdmin();
@@ -122,12 +128,14 @@ contract LockeVaultFactory {
         if (vaultNetDeposits > maxVaultDeposits) revert VaultCapReached();
         if (totalDeposits + amount > maxTotalDeposits) revert TotalCapReached();
         totalDeposits += amount;
+        emit DepositRecorded(msg.sender, amount, totalDeposits);
     }
 
     /// @dev Called by a vault on withdrawal. Never reverts for a vault, so it can never block an exit.
     function recordWithdraw(uint256 amount) external {
         if (!isVault[msg.sender]) revert NotVault();
         totalDeposits = amount < totalDeposits ? totalDeposits - amount : 0;
+        emit WithdrawRecorded(msg.sender, amount, totalDeposits);
     }
 
     // ------------------------------------------------------------------ Locke
@@ -169,6 +177,20 @@ contract LockeVaultFactory {
         admin = msg.sender;
         pendingAdmin = address(0);
         emit AdminSet(msg.sender);
+    }
+
+    /**
+     * @notice Revoke a keeper key for every vault (guardian or admin), or restore it (admin only).
+     * Owners' own functions never depend on it.
+     */
+    function setKeeperRevoked(address keeper_, bool revoked) external {
+        if (revoked) {
+            if (msg.sender != guardian && msg.sender != admin) revert NotGuardian();
+        } else if (msg.sender != admin) {
+            revert NotAdmin();
+        }
+        keeperRevoked[keeper_] = revoked;
+        emit KeeperRevoked(keeper_, revoked);
     }
 
     /// @notice Stop new vaults, deposits and hedges everywhere. Exits keep working.

@@ -3,7 +3,7 @@ import hre from "hardhat";
 import { expect } from "chai";
 import { zeroAddress } from "viem";
 import { P10, USD, expectRevert } from "./helpers";
-import { deployFixture, WTI, ETH } from "./fixture";
+import { deployFixture, WTI, ETH, HOUR } from "./fixture";
 
 const lower = (a: string) => a.toLowerCase();
 
@@ -38,6 +38,37 @@ describe("LockeVault (unit)", () => {
   });
 
   describe("keeper", () => {
+    it("keeps slippage on and at most 3%, and leverage at least 1x", async () => {
+      const { keeper, vault } = await deployFixture();
+      await expectRevert(vault.write.hedgeOpen([WTI, USD(10), 2n * P10, 0n, 0n], { account: keeper.account }), "SlippageOutOfRange");
+      await expectRevert(vault.write.hedgeOpen([WTI, USD(10), 2n * P10, 0n, 3n * P10 + 1n], { account: keeper.account }), "SlippageOutOfRange");
+      await expectRevert(vault.write.hedgeOpen([WTI, USD(10), P10 - 1n, 0n, P10], { account: keeper.account }), "LeverageTooLow");
+      await vault.write.hedgeOpen([WTI, USD(10), 2n * P10, 0n, 3n * P10], { account: keeper.account });
+    });
+
+    it("leaves Veranta no standing allowance on the vault's USDC", async () => {
+      const { keeper, vault, veranta, usdc } = await deployFixture();
+      expect(await usdc.read.allowance([vault.address, veranta.address])).to.equal(0n);
+      await vault.write.hedgeOpen([WTI, USD(50), 2n * P10, 0n, P10], { account: keeper.account });
+      expect(await usdc.read.allowance([vault.address, veranta.address])).to.equal(0n);
+      await vault.write.topUpMargin([WTI, 0n, USD(10), [], 1], { account: keeper.account });
+      expect(await usdc.read.allowance([vault.address, veranta.address])).to.equal(0n);
+    });
+
+    it("stops a revoked keeper key in every vault at once; only the admin restores it", async () => {
+      const { keeper, guardian, admin, stranger, factory, vault, owner, usdcOf } = await deployFixture();
+      await expectRevert(factory.write.setKeeperRevoked([keeper.account.address, true], { account: stranger.account }), "NotGuardian");
+      await factory.write.setKeeperRevoked([keeper.account.address, true], { account: guardian.account });
+      await expectRevert(vault.write.hedgeOpen([WTI, USD(10), 2n * P10, 0n, P10], { account: keeper.account }), "NotKeeper");
+      await expectRevert(vault.write.hedgeClose([WTI, 0n, USD(10), 0n], { account: keeper.account }), "NotKeeper");
+      // The owner's exits don't depend on it.
+      await vault.write.withdraw([owner.account.address, USD(10)], { account: owner.account });
+      expect(await usdcOf(vault.address)).to.equal(USD(290));
+      await expectRevert(factory.write.setKeeperRevoked([keeper.account.address, false], { account: guardian.account }), "NotAdmin");
+      await factory.write.setKeeperRevoked([keeper.account.address, false], { account: admin.account });
+      await vault.write.hedgeOpen([WTI, USD(10), 2n * P10, 0n, P10], { account: keeper.account });
+    });
+
     it("hedges only within the plan", async () => {
       const { keeper, stranger, veranta, vault } = await deployFixture();
       await expectRevert(vault.write.hedgeOpen([WTI, USD(10), 2n * P10, 0n, P10], { account: stranger.account }), "NotKeeper");
@@ -95,12 +126,57 @@ describe("LockeVault (unit)", () => {
   });
 
   describe("fee", () => {
-    it("charges the vault's fee on each open, to Locke's collector", async () => {
-      const { keeper, collector, vault, usdcOf } = await deployFixture({ feeBps: 10 });
+    it("owes the fee when an open is placed and pays it to Locke's collector once the trade exists", async () => {
+      const { keeper, collector, vault, usdcOf, stranger } = await deployFixture({ feeBps: 10 });
       expect(await vault.read.feeBps()).to.equal(10);
       await vault.write.hedgeOpen([WTI, USD(50), 2n * P10, 0n, P10], { account: keeper.account }); // $100 notional
-      expect(await usdcOf(collector.account.address)).to.equal(USD(0.1)); // 0.10%
+      expect(await vault.read.feeOwed([WTI])).to.equal(USD(0.1)); // 0.10%
+      expect(await usdcOf(collector.account.address)).to.equal(0n);
+      await vault.write.settleFee([WTI], { account: stranger.account }); // anyone may settle
+      expect(await usdcOf(collector.account.address)).to.equal(USD(0.1));
+      expect(await vault.read.feeOwed([WTI])).to.equal(0n);
       expect(await usdcOf(vault.address)).to.equal(USD(300 - 50 - 0.1));
+    });
+
+    it("never keeps a fee for an open that didn't fill", async () => {
+      const { keeper, collector, vault, veranta, usdcOf, later } = await deployFixture({ feeBps: 10 });
+      await veranta.write.setHoldOpens([true]);
+      await vault.write.hedgeOpen([WTI, USD(50), 2n * P10, 0n, P10], { account: keeper.account });
+      await vault.write.settleFee([WTI]); // still pending: nothing moves
+      expect(await vault.read.feeOwed([WTI])).to.equal(USD(0.1));
+      await veranta.write.cancelPending([vault.address, WTI]); // the operator cancels it
+      await vault.write.settleFee([WTI]);
+      expect(await vault.read.feeOwed([WTI])).to.equal(0n);
+      expect(await usdcOf(collector.account.address)).to.equal(0n);
+      expect(await usdcOf(vault.address)).to.equal(USD(300));
+      // The next open clears anything left owed by a cancelled one before owing its own.
+      await later();
+      await vault.write.hedgeOpen([WTI, USD(50), 2n * P10, 0n, P10], { account: keeper.account });
+      expect(await vault.read.feeOwed([WTI])).to.equal(USD(0.1));
+    });
+
+    it("charges a market at most once in 30 days, however often the hedge is reopened", async () => {
+      const { keeper, owner, collector, vault, usdcOf, later } = await deployFixture({ feeBps: 10 });
+      await vault.write.hedgeOpen([WTI, USD(50), 2n * P10, 0n, P10], { account: keeper.account });
+      await vault.write.settleFee([WTI]);
+      await vault.write.ownerClose([WTI, 0n, USD(50), 0n], { account: owner.account });
+      await later();
+      await vault.write.hedgeOpen([WTI, USD(50), 2n * P10, 0n, P10], { account: keeper.account });
+      expect(await vault.read.feeOwed([WTI])).to.equal(0n);
+      expect(await usdcOf(collector.account.address)).to.equal(USD(0.1));
+      await vault.write.ownerClose([WTI, 0n, USD(50), 0n], { account: owner.account });
+      await later(30 * 24 * HOUR);
+      await vault.write.hedgeOpen([WTI, USD(50), 2n * P10, 0n, P10], { account: keeper.account });
+      expect(await vault.read.feeOwed([WTI])).to.equal(USD(0.1));
+    });
+
+    it("never lets a failed fee payment block the owner's close", async () => {
+      const { keeper, owner, vault, usdcOf } = await deployFixture({ feeBps: 10 });
+      await vault.write.hedgeOpen([WTI, USD(50), 2n * P10, 0n, P10], { account: keeper.account });
+      // The owner empties the idle balance first: the fee can't be paid in full, and the close still works.
+      await vault.write.withdraw([owner.account.address, await usdcOf(vault.address)], { account: owner.account });
+      await vault.write.ownerClose([WTI, 0n, USD(50), 0n], { account: owner.account });
+      expect(await usdcOf(vault.address)).to.equal(USD(50));
     });
 
     it("keeps an existing vault's fee when Locke changes it, and caps it at 0.20%", async () => {
@@ -120,6 +196,13 @@ describe("LockeVault (unit)", () => {
   });
 
   describe("owner", () => {
+    it("can withdraw an ownership handover that wasn't accepted", async () => {
+      const { owner, owner2, vault } = await deployFixture();
+      await vault.write.transferOwnership([owner2.account.address], { account: owner.account });
+      await vault.write.cancelOwnershipTransfer({ account: owner.account });
+      await expectRevert(vault.write.acceptOwnership({ account: owner2.account }), "NotPendingOwner");
+    });
+
     it("removes the keeper and exits alone", async () => {
       const { owner, keeper, veranta, vault, usdcOf } = await deployFixture();
       await vault.write.hedgeOpen([WTI, USD(40), 2n * P10, 0n, P10], { account: keeper.account });

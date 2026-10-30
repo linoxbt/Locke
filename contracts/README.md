@@ -116,3 +116,43 @@ keeper never receives the USDC.
   the owner revokes.
 - **Slither:** `collectIncome` now checks `approveWithSignature`'s return; no new findings remain.
 
+## v1.1: audit fixes (30 Oct 2026)
+
+An independent review (Slither, a Base-fork proof of concept, and reading against Veranta's verified
+source) found these; all are fixed and tested:
+
+- **Fee on fill, not on request.** `hedgeOpen` now only records `feeOwed`; `settleFee` (anyone; the
+  keeper calls it once the hedge is open, and closes and top-ups settle it first) pays it once the
+  trade exists and cancels it if the order ended without one. A Veranta order that misses its
+  slippage is never filled and its fee is never kept (`test/fork.fee.test.ts`, on the real Veranta).
+  Paying never reverts, so a blocked collector or a short balance can't stop an owner's close.
+- **Fee at most once per market per 30 days** (`FEE_PERIOD`), so closing and reopening can't churn it.
+- **Bounded slippage:** `0 < slippageP <= 3%` (`MAX_SLIPPAGE_P`). Slippage is the vault's only
+  protection on Veranta's fill price; a keeper can no longer switch it off or widen it to 80%.
+- **No standing allowance:** the vault approves exactly the collateral or margin for each Veranta call
+  and resets it to zero, instead of an unlimited approval to Veranta's upgradeable TradingStorage.
+- **Keeper revocation:** `factory.setKeeperRevoked(key, true)` (guardian or admin; only the admin
+  restores) stops a compromised keeper key in every vault at once. Owner functions never check it.
+- **Leverage at least 1x,** so the notional cap also bounds the collateral in a position.
+- **`cancelOwnershipTransfer`**, and events for `rescueToken`, `sweepEth` and the factory's cap accounting.
+
+Known and accepted, documented here rather than fixed:
+
+- A pending open that Veranta never fills holds its collateral until Veranta's operator cancels it;
+  only Veranta's operators can cancel pending orders (no trader-side cancel exists). Bounded slippage
+  stops a keeper creating unfillable orders on purpose with a wide band, but a wanted price far from
+  the market still produces one; the 1-hour cooldown limits how often.
+- Exits depend on Veranta itself being unpaused (`closeTradeMarket` and `updateMargin` are gated by
+  Veranta's own pause and position-roll state); Locke's own roles can't block them.
+- Launch caps count deposits made through the vault: a plain USDC transfer to a vault isn't counted,
+  trading losses don't lower `netDeposits`, and anyone can fill the total cap with their own vaults
+  (fully withdrawable). The admin raises caps with `setCaps`; they are a launch-time brake, not a limit
+  on exposure.
+- The fee collector is read from the factory when a fee is paid, so the admin can redirect fees.
+
+Tests: 33 unit tests (including pending and cancelled orders in the mock), the fuzz/invariant run,
+and four fork tests (Veranta end to end, fee on the real Veranta, EAS, Base Account income).
+Slither: the remaining findings are the keeper zero-checks (removing the keeper is allowed on
+purpose), the timestamp cooldowns, the low-level ETH sweep and the non-reverting fee transfer, and
+"strict equality" on Veranta's trade counts (a count of zero is exactly what is checked).
+

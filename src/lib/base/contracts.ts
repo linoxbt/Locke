@@ -47,6 +47,8 @@ export const factoryAbi = parseAbi([
   "function maxTotalDeposits() view returns (uint256)",
   "function totalDeposits() view returns (uint256)",
   "function isVault(address) view returns (bool)",
+  "function feeCollector() view returns (address)",
+  "function keeperRevoked(address) view returns (bool)",
   "event VaultCreated(address indexed owner, address indexed vault, uint256 indexed pairIndex, bool buy, uint128 maxNotional, uint16 feeBps)",
 ]);
 
@@ -59,6 +61,9 @@ export const vaultAbi = parseAbi([
   "function netDeposits() view returns (uint256)",
   "function plans(uint256 pairIndex) view returns (bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional)",
   "function lastOpenAt(uint256 pairIndex) view returns (uint256)",
+  "function feeOwed(uint256 pairIndex) view returns (uint256)",
+  "function lastFeeAt(uint256 pairIndex) view returns (uint256)",
+  "function settleFee(uint256 pairIndex)",
   "function deposit(uint256 amount)",
   "function withdraw(address to, uint256 amount)",
   "function setKeeper(address keeper)",
