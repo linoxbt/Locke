@@ -151,6 +151,12 @@ describe("Sign in with Base", () => {
     const multi = msg().replace("Sign in to Locke on Base.", "Sign in to Locke.\nThis request will not trigger a transaction.");
     expect(checkSiweMessage(multi, { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718" });
     expect(checkSiweMessage(msg().replace(/\n/g, "\r\n"), { host: "trylocke.online", now }).nonce).toBe("a1b2c3d4e5f60718");
+    // Coinbase Wallet's own message: no Version and no Issued At (as logged on the preview).
+    const coinbase = `trylocke.online wants you to sign in with your Ethereum account:\n${acct.address}\n\nURI: https://trylocke.online\nChain ID: 8453\nNonce: a1b2c3d4e5f60718`;
+    expect(checkSiweMessage(coinbase, { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718" });
+    expect(() => checkSiweMessage(coinbase.replace("Chain ID: 8453", "Chain ID: 1"), { host: "trylocke.online", now })).toThrow(/Base/);
+    expect(() => checkSiweMessage(`${coinbase}\nNonce: ffffffffffffffff`, { host: "trylocke.online", now })).toThrow(/Invalid/);
+    expect(() => checkSiweMessage(coinbase.replace("URI: https://trylocke.online\n", ""), { host: "trylocke.online", now })).toThrow(/Invalid/);
     const evil = multi.replace("trylocke.online wants", "evil.example wants");
     expect(() => checkSiweMessage(evil, { host: "trylocke.online", now })).toThrow(/another site/);
   });

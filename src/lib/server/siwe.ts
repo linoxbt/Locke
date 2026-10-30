@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { getAddress, isAddressEqual, recoverMessageAddress, type Address, type Hex } from "viem";
-import { parseSiweMessage } from "viem/siwe";
 import { BASE_CHAIN_ID } from "../base/contracts";
 import { basePublicClient } from "./baseChain";
 import { db } from "./db";
@@ -37,47 +36,72 @@ export interface SignInFields {
 }
 
 const HEADER = /^(?:[a-zA-Z][a-zA-Z0-9+\-.]*:\/\/)?(?<domain>[a-zA-Z0-9+\-.]*(?::[0-9]{1,5})?) wants you to sign in with your Ethereum account:\n(?<address>0x[a-fA-F0-9]{40})\n/;
+const FIELDS = { URI: "uri", Version: "version", "Chain ID": "chainId", Nonce: "nonce", "Issued At": "issuedAt", "Expiration Time": "expirationTime", "Not Before": "notBefore" } as const;
+type Field = (typeof FIELDS)[keyof typeof FIELDS];
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+export interface SiweFields {
+  domain?: string;
+  address?: Address;
+  fields: Partial<Record<Field, string>>;
+}
 
 /**
- * viem's parser, plus the header read on its own: viem's only allows a one-line statement, and a
- * wallet may write a longer one (Base Account writes its own). Line endings are normalised first.
- * Reading is lenient only here; the signature is still checked over the exact message signed.
+ * The header (site and account) and the "Key: value" lines of a Sign-In with Ethereum message.
+ * Read line by line rather than with EIP-4361's fixed layout, because wallets differ: Coinbase
+ * Wallet (Base Account) leaves out Version and Issued At, and some write a multi-line statement.
+ * A key given twice makes the message unreadable. The signature is checked over the exact message.
  */
-export function readSiweMessage(message: string): ReturnType<typeof parseSiweMessage> {
+export function readSiweMessage(message: string): SiweFields {
   const text = message.replace(/\r\n?/g, "\n");
-  const m = parseSiweMessage(text);
-  if (m.domain && m.address) return m;
   const head = text.match(HEADER)?.groups;
-  return head ? { ...m, domain: head.domain, address: head.address as Address } : m;
+  const fields: SiweFields["fields"] = {};
+  for (const line of text.slice(head ? text.match(HEADER)![0].length : 0).split("\n")) {
+    const kv = line.match(/^([A-Za-z ]+): (.+)$/);
+    const key = kv && FIELDS[kv[1] as keyof typeof FIELDS];
+    if (!key) continue;
+    if (fields[key] !== undefined) return { fields: {} };
+    fields[key] = kv[2].trim();
+  }
+  return { domain: head?.domain, address: head?.address as Address | undefined, fields };
+}
+
+/** An EIP-4361 date-time; undefined when absent, NaN when present but malformed. */
+function time(v: string | undefined): number | undefined {
+  if (v === undefined) return undefined;
+  return DATE_TIME.test(v) ? new Date(v).getTime() : Number.NaN;
 }
 
 /**
  * Everything about a Sign-In with Ethereum message except the signature and the nonce's
- * freshness: it is for this site (domain and URI), for Base, and inside its time window.
+ * freshness: it is for this site (domain and URI), for Base, and inside its time window. Without
+ * an Issued At, freshness rests on the nonce alone, which Locke issued and expires in 10 minutes.
  */
 export function checkSiweMessage(message: string, expected: { host: string; now?: number }): SignInFields {
   if (typeof message !== "string" || message.length > 4096) throw new HttpError(400, "Invalid sign-in message");
-  const m = readSiweMessage(message);
+  const { domain, address, fields: f } = readSiweMessage(message);
   const now = expected.now ?? Date.now();
-  if (!m.address || !m.nonce || !m.domain || !m.uri || m.version !== "1") {
+  if (!address || !domain || !f.nonce || !f.uri || !f.chainId || (f.version !== undefined && f.version !== "1")) {
     // Logged so a wallet whose message we can't read can be diagnosed; it holds no secret.
     console.warn("[siwe] unreadable sign-in message", JSON.stringify(message));
     throw new HttpError(400, "Invalid sign-in message");
   }
-  if (m.domain !== expected.host) throw new HttpError(400, "This sign-in was made for another site");
+  if (domain !== expected.host) throw new HttpError(400, "This sign-in was made for another site");
   let uriHost: string;
   try {
-    uriHost = new URL(m.uri).host;
+    uriHost = new URL(f.uri).host;
   } catch {
     throw new HttpError(400, "Invalid sign-in message");
   }
   if (uriHost !== expected.host) throw new HttpError(400, "This sign-in was made for another site");
-  if (m.chainId !== BASE_CHAIN_ID) throw new HttpError(400, "Sign in on Base");
-  if (!m.issuedAt || m.issuedAt.getTime() > now + SKEW_MS || now - m.issuedAt.getTime() > MAX_AGE_MS) throw new HttpError(400, "This sign-in expired. Try again.");
-  if (m.expirationTime && m.expirationTime.getTime() <= now) throw new HttpError(400, "This sign-in expired. Try again.");
-  if (m.notBefore && m.notBefore.getTime() > now + SKEW_MS) throw new HttpError(400, "This sign-in isn't valid yet");
-  if (!/^[A-Za-z0-9]{8,64}$/.test(m.nonce)) throw new HttpError(400, "Invalid sign-in message");
-  return { address: getAddress(m.address), nonce: m.nonce };
+  if (!/^\d+$/.test(f.chainId) || Number(f.chainId) !== BASE_CHAIN_ID) throw new HttpError(400, "Sign in on Base");
+  const [issuedAt, expiresAt, notBefore] = [time(f.issuedAt), time(f.expirationTime), time(f.notBefore)];
+  if ([issuedAt, expiresAt, notBefore].some((t) => Number.isNaN(t))) throw new HttpError(400, "Invalid sign-in message");
+  if (issuedAt !== undefined && (issuedAt > now + SKEW_MS || now - issuedAt > MAX_AGE_MS)) throw new HttpError(400, "This sign-in expired. Try again.");
+  if (expiresAt !== undefined && expiresAt <= now) throw new HttpError(400, "This sign-in expired. Try again.");
+  if (notBefore !== undefined && notBefore > now + SKEW_MS) throw new HttpError(400, "This sign-in isn't valid yet");
+  if (!/^[A-Za-z0-9]{8,64}$/.test(f.nonce)) throw new HttpError(400, "Invalid sign-in message");
+  return { address: getAddress(address), nonce: f.nonce };
 }
 
 /**
