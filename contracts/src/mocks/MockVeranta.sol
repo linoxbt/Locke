@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVerantaTradingStorage} from "../interfaces/IVeranta.sol";
+import {ISpendPermissionManager} from "../interfaces/ISpendPermissionManager.sol";
 
 /// @dev Test-only stand-ins for USDC and Veranta, for the offline unit tests.
 contract MockUSDC is ERC20("USD Coin", "USDC") {
@@ -76,5 +77,36 @@ contract MockVeranta {
         lastMargin = amount;
         lastValue = msg.value;
         return nextOrderId++;
+    }
+}
+
+/// @dev Test double of Base Account's SpendPermissionManager, installed at its real address with
+/// hardhat_setCode. The account pre-approves this contract on the token (a real Base Account lets
+/// the manager move funds as one of its owners). Allowance is per permission over its lifetime.
+contract MockSpendPermissionManager {
+    mapping(bytes32 => bool) public approvedHash;
+    mapping(bytes32 => uint256) public spent;
+
+    function _hash(ISpendPermissionManager.SpendPermission calldata p) private pure returns (bytes32) {
+        return keccak256(abi.encode(p.account, p.spender, p.token, p.allowance, p.period, p.start, p.end, p.salt, keccak256(p.extraData)));
+    }
+
+    function approveWithSignature(ISpendPermissionManager.SpendPermission calldata p, bytes calldata signature) external returns (bool) {
+        require(keccak256(signature) == keccak256("owner-signed"), "bad signature");
+        approvedHash[_hash(p)] = true;
+        return true;
+    }
+
+    function isApproved(ISpendPermissionManager.SpendPermission calldata p) external view returns (bool) {
+        return approvedHash[_hash(p)];
+    }
+
+    function spend(ISpendPermissionManager.SpendPermission calldata p, uint160 value) external {
+        bytes32 h = _hash(p);
+        require(msg.sender == p.spender, "InvalidSender");
+        require(approvedHash[h], "UnauthorizedSpendPermission");
+        require(spent[h] + value <= p.allowance, "ExceededSpendPermission");
+        spent[h] += value;
+        IERC20(p.token).transferFrom(p.account, p.spender, value);
     }
 }

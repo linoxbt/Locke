@@ -247,3 +247,20 @@ alter table base_users        enable row level security;
 alter table base_auth_nonces  enable row level security;
 alter table base_vaults       enable row level security;
 alter table base_vault_events enable row level security;
+
+-- "Protect as you get paid": a vault owner's spend permission (signed by their Base Account, the
+-- vault as spender) and what the keeper has counted and moved under it. One per vault.
+create table if not exists base_income (
+  vault          text primary key references base_vaults(address) on delete cascade,
+  permission     jsonb not null,                -- the SpendPermission struct, big numbers as strings
+  signature      text not null,                 -- used for the first collection, until approved on chain
+  share_pct      int  not null check (share_pct between 5 and 50),
+  status         text not null default 'on' check (status in ('on', 'off')),
+  pending_usd    numeric not null default 0,    -- share of income counted but not yet moved
+  collected_usd  numeric not null default 0,
+  last_block     bigint not null,               -- income is counted from the block after this
+  last_collected_at timestamptz,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+alter table base_income enable row level security;

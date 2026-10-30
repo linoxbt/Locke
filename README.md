@@ -81,6 +81,7 @@ codes. A middleware gate sends signed-out visitors to `/connect?next=<page>` and
 | `/base`, `/base/new`, `/base/vaults/[address]` | Locke on Base: sign in, create a vault, follow it (see below) |
 | `/proof/[uid]` | Public "Protected by Locke" proof, read from EAS on Base |
 | `/metrics` | Public metrics: value protected now on Strike and Base, plans, vaults, live proofs, Builder Code transactions |
+| `/agents` | The agent API: endpoints, x402 prices, an example client |
 
 ## Architecture
 
@@ -196,6 +197,9 @@ TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration
 | `BASE_BUILDER_CODE` | app, base keeper | Locke's Base Builder Code (`bc_…`), appended to every Base transaction (ERC-8021) |
 | `BASE_KEEPER_PRIVATE_KEY` | base keeper | The keeper key (0x + 64 hex). Trades vaults within their on-chain limits; can never withdraw. Needs a little ETH on Base |
 | `BASE_PAST_KEEPERS` | app | Optional. Comma-separated earlier keeper addresses, so proofs they issued still show as Locke's after a keeper change |
+| `X402_PAY_TO` | app | Optional. Address that receives agent API payments (USDC on Base). Unset: `/api/agent/*` paid calls answer 503 |
+| `X402_SETTLER_PRIVATE_KEY` | app | Optional. Gas wallet that settles agent payments when Locke is its own facilitator. Holds a little ETH on Base, never USDC |
+| `X402_FACILITATOR_URL` | app | Optional. A hosted x402 facilitator instead of settling locally |
 | `VERANTA_API_URL`, `VERANTA_FEED_URL` | app, base keeper | Veranta's API and signed-price feed (defaults to production) |
 
 ### Deploy
@@ -215,6 +219,8 @@ A second version of Locke under `/base`, for businesses on Base. Each business s
 - **Builder Codes:** every transaction from the app and the keeper carries Locke's Base Builder Code (ERC-8021 data suffix) when `BASE_BUILDER_CODE` is set.
 - **Protected by Locke:** when a vault's hedge opens, the keeper issues an [EAS](https://attest.org) attestation on Base to the vault's owner (vault, market, long or short, USD protected, start date; schema in `src/lib/base/attest.ts`, registered by the keeper on first run) and revokes it when the vault closes. `/proof/[uid]` reads it straight from EAS and only calls it Locke's when Locke's keeper (the factory's keeper, or one listed in `BASE_PAST_KEEPERS`) issued it. `contracts/test/fork.eas.test.ts` checks the schema id, attest, read and revoke against the real EAS predeploys on a Base fork.
 - **Metrics:** `/metrics` aggregates Locke's own records for both networks; it names no business or wallet.
+- **Protect as you get paid:** on a vault page the owner's Base Account signs one spend permission (the vault as spender, a weekly USDC cap; `requestSpendPermission`). The server checks it is the owner's, to that vault, in USDC and weekly, and that Base Account's SpendPermissionManager accepts the signature (simulated on Base), then stores it in `base_income`. The keeper counts USDC arriving in the owner's account (not money back from the vault), and calls `LockeVault.collectIncome` to move the owner's share into the vault, never more per week than the cap; the money goes straight from the owner's account to the vault. Turning it off stops the keeper and asks the wallet to revoke. Rules in `src/lib/base/income.ts`; `contracts/test/fork.income.test.ts` runs it against a real Coinbase Smart Wallet and the real manager.
+- **Agent API (x402):** `/api/agent` lets AI agents and on-chain treasuries quote ($0.01) and get the wallet calls that open a vault ($0.05), paid per call in USDC on Base with [x402](https://x402.org); registering a vault and reading its status are free. A call settles only when it succeeds. Locke is its own facilitator by default (`X402_SETTLER_PRIVATE_KEY`, a gas wallet that submits the agent's signed USDC authorization), or uses a hosted one (`X402_FACILITATOR_URL`). Prices in `src/lib/agent/catalog.ts`; the payment layer in `src/lib/server/x402.ts`.
 
 ## Security
 

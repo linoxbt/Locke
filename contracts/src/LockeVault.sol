@@ -6,6 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IVerantaRouter, IVerantaTradingStorage} from "./interfaces/IVeranta.sol";
+import {ISpendPermissionManager} from "./interfaces/ISpendPermissionManager.sol";
 
 /// @notice What a vault reads from its factory: who may pause, where fees go, and the deposit caps.
 interface ILockeFactory {
@@ -27,6 +28,9 @@ interface ILockeFactory {
  *    when the vault was created with a fee, Locke's fee on each open;
  *  - guardian (Locke's multisig, set on the factory): pauses new deposits and new hedges, never
  *    exits.
+ * "Protect as you get paid": the owner's Base Account may sign a spend permission naming this
+ * vault as spender; the keeper then moves part of the owner's incoming USDC into the vault, never
+ * more per period than the owner allowed, and only ever from the owner to this vault.
  * Deployed as a clone by LockeVaultFactory; not upgradeable.
  */
 contract LockeVault is Initializable, ReentrancyGuard {
@@ -40,6 +44,8 @@ contract LockeVault is Initializable, ReentrancyGuard {
     uint16 public constant MAX_FEE_BPS = 20;
     /// @notice A keeper may open a market at most once per hour, so a stolen keeper key cannot churn fees.
     uint256 public constant OPEN_COOLDOWN = 1 hours;
+    /// @notice Base Account's SpendPermissionManager (the same address on Base and Base Sepolia).
+    ISpendPermissionManager public constant SPEND_PERMISSIONS = ISpendPermissionManager(0xf85210B21cC50302F477BA56686d2019dC9b67Ad);
 
     /// @notice What the keeper may do on one Veranta pair.
     struct Plan {
@@ -77,6 +83,7 @@ contract LockeVault is Initializable, ReentrancyGuard {
     event HedgeOpenRequested(uint256 indexed pairIndex, uint256 orderId, bool buy, uint256 collateral, uint256 leverage);
     event HedgeCloseRequested(uint256 indexed pairIndex, uint256 indexed index, uint256 orderId, uint256 collateral, address by);
     event MarginUpdated(uint256 indexed pairIndex, uint256 indexed index, uint8 updateType, uint256 amount, address by);
+    event IncomeCollected(address indexed from, uint256 amount);
 
     error NotOwner();
     error NotPendingOwner();
@@ -94,6 +101,8 @@ contract LockeVault is Initializable, ReentrancyGuard {
     error ZeroAddress();
     error ZeroAmount();
     error UseWithdraw();
+    error BadPermission();
+    error ShortReceipt();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -314,6 +323,31 @@ contract LockeVault is Initializable, ReentrancyGuard {
         if (collateral + amount > plans[pairIndex].maxNotional) revert CollateralTooHigh();
         orderId = router.updateMargin{value: msg.value}(pairIndex, index, DEPOSIT, amount, priceUpdateData, priceSourcing);
         emit MarginUpdated(pairIndex, index, DEPOSIT, amount, msg.sender);
+    }
+
+    /**
+     * @notice Keeper: move USDC the owner set aside for protection from the owner's Base Account
+     * into this vault, under a spend permission the owner signed naming this vault as spender.
+     * The manager enforces the allowance per period; the amount counts as a deposit (launch caps
+     * apply). Pass the owner's signature until the permission is approved on chain, then empty.
+     */
+    function collectIncome(ISpendPermissionManager.SpendPermission calldata permission, bytes calldata signature, uint160 amount)
+        external
+        onlyKeeper
+        nonReentrant
+    {
+        if (paused()) revert IsPaused();
+        if (amount == 0) revert ZeroAmount();
+        if (permission.account != owner || permission.spender != address(this) || permission.token != address(usdc)) revert BadPermission();
+        netDeposits += amount;
+        factory.recordDeposit(amount, netDeposits); // reverts above the launch caps
+        if (signature.length != 0 && !SPEND_PERMISSIONS.isApproved(permission)) {
+            if (!SPEND_PERMISSIONS.approveWithSignature(permission, signature)) revert BadPermission();
+        }
+        uint256 before = usdc.balanceOf(address(this));
+        SPEND_PERMISSIONS.spend(permission, amount);
+        if (usdc.balanceOf(address(this)) - before != amount) revert ShortReceipt();
+        emit IncomeCollected(permission.account, amount);
     }
 
     // ------------------------------------------------------------------ guardian

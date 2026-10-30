@@ -31,6 +31,7 @@ npx hardhat test                                       # offline unit + property
 FUZZ_RUNS=1000 npx hardhat test test/fuzz.invariants.test.ts   # a longer property-based run
 FORK=1 npx hardhat test test/fork.veranta.test.ts      # against the real Veranta contracts on a Base fork
 FORK=1 npx hardhat test test/fork.eas.test.ts          # Protected by Locke attestations on the real EAS predeploys
+FORK=1 npx hardhat test test/fork.income.test.ts       # Protect as you get paid: a real Coinbase Smart Wallet and SpendPermissionManager
 node scripts/measure-fills.mjs                         # how fast Veranta fills directly-sent orders
 node scripts/measure-funding.mjs                       # which side pays ETH/BTC funding right now
 node scripts/testnet-run.mjs <keys.json> [out.json]    # live run on Veranta's test network (needs test funds)
@@ -96,3 +97,22 @@ event emitted after an external call in `createVault`. Six findings remain, all 
 | No zero check on the keeper (vault `initialize`, `setKeeper`; factory constructor, `setKeeper`) | Zero means "no keeper": the owner removes Locke this way, and a factory with no keeper makes vaults Locke cannot trade. |
 | `block.timestamp` in `hedgeOpen` | The hourly cooldown; a few seconds of validator drift do not matter. |
 | Low-level call in `sweepEth` | Sending ETH needs it; owner-only, checked, reentrancy-guarded. |
+
+## Protect as you get paid (30 Oct 2026)
+
+`LockeVault.collectIncome(permission, signature, amount)` lets the keeper move USDC from the owner's
+Base Account into the vault under a spend permission the owner signed. The vault refuses any permission
+that isn't the owner's, to this vault, in USDC; Base Account's SpendPermissionManager enforces the
+weekly allowance; the amount counts as a deposit (launch caps apply) and is refused while paused. The
+keeper never receives the USDC.
+
+- **Unit tests** (`test/income.test.ts`, a stand-in manager at the real address): moves the owner's USDC
+  and approves with the signature once; never above the allowance; only the keeper, only the owner's
+  money, only to this vault, only USDC; stops while paused and above the caps; refuses an unsigned
+  permission. 26 unit tests pass in all.
+- **Fork test** (`test/fork.income.test.ts`): a real Coinbase Smart Wallet (with the manager as an
+  owner, as a Base Account has) owns a vault and signs a $50-a-week permission the way the wallet does;
+  the keeper collects $30 then $20, is refused at $51, collects again after a week, and is refused after
+  the owner revokes.
+- **Slither:** `collectIncome` now checks `approveWithSignature`'s return; no new findings remain.
+

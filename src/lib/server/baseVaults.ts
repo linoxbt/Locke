@@ -7,6 +7,7 @@ import { BasePlanError, parseBaseInputs, planLimits, planName, sizeBasePlan, typ
 import { verantaLiquidationPrice, verantaMarginRatio, verantaPnl, type VerantaMarket, type VerantaPosition } from "../domain/veranta";
 import { getMarket, getPositions, getSignedPrice } from "../veranta/client";
 import { basePublicClient } from "./baseChain";
+import { incomeFor, type IncomeView } from "./baseIncome";
 import { config } from "./config";
 import { db } from "./db";
 import { HttpError } from "./errors";
@@ -28,6 +29,22 @@ export function marketTerms(m: VerantaMarket) {
  * Locke's factory, name this user as owner, and carry exactly the limits these inputs give,
  * so the record can't claim someone else's vault or a plan that differs from what is on chain.
  */
+/** The address that created a vault through Locke's factory in this transaction (the VaultCreated owner). */
+export async function vaultCreator(txHash: string): Promise<Address> {
+  const factory = requireFactory();
+  const receipt = await basePublicClient().getTransactionReceipt({ hash: txHash as Hex }).catch(() => null);
+  if (!receipt) throw new HttpError(404, "That transaction isn't on Base yet. Try again in a moment.");
+  for (const l of receipt.logs) {
+    if (!isAddressEqual(l.address, factory)) continue;
+    try {
+      return decodeEventLog({ abi: factoryAbi, data: l.data, topics: l.topics, eventName: "VaultCreated" }).args.owner;
+    } catch {
+      /* another factory event */
+    }
+  }
+  throw new HttpError(400, "That transaction didn't create a Locke vault");
+}
+
 export async function recordVault(user: { uid: string; addr: string }, txHash: string, rawInputs: unknown) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) throw new HttpError(400, "Invalid transaction hash");
   const factory = requireFactory();
@@ -131,6 +148,8 @@ export interface VaultView {
   events: { id: number; level: string; message: string; txHash: string | null; at: string }[];
   /** The live "Protected by Locke" attestation on Base, if the hedge is open and it has been issued. */
   attestation: string | null;
+  /** "Protect as you get paid", when the owner has turned it on at some point. */
+  income: IncomeView | null;
   /** Something couldn't be read (Base or Veranta down); the rest is still shown. */
   partial: string[];
 }
@@ -171,9 +190,10 @@ export async function vaultDetail(uid: string, address: string): Promise<VaultVi
 
   const pos = positions?.find((p) => p.pairIndex === market.pairIndex) ?? null;
   const mark = price?.price ?? null;
-  const [events, attestation] = await Promise.all([
+  const [events, attestation, income] = await Promise.all([
     db()`select id, level, message, tx_hash, created_at from base_vault_events where vault = ${vault} order by id desc limit 30`,
     activeAttestation(vault),
+    incomeFor(vault),
   ]);
 
   return {
@@ -207,6 +227,7 @@ export async function vaultDetail(uid: string, address: string): Promise<VaultVi
     marketOpen: m ? m.marketOpen : null,
     events: events.map((e) => ({ id: Number(e.id), level: e.level, message: e.message, txHash: e.tx_hash, at: new Date(e.created_at).toISOString() })),
     attestation,
+    income,
     partial,
   };
 }

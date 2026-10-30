@@ -11,6 +11,7 @@ import type { VaultView as Detail } from "@/lib/server/baseVaults";
 import { ago, pct, price, shortAddr, signedUsd, usd } from "@/lib/ui/format";
 import { Button, Card, Display, ErrorNote, inputCls, Notice, Stat, StateChip } from "../ui";
 import { BaseMark } from "./BaseMark";
+import { IncomeCard } from "./IncomeCard";
 
 const POLL_MS = 10_000;
 
@@ -213,6 +214,10 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
           <ErrorNote error={error} />
         </Card>
       </div>
+
+      {(d.status !== "closed" || d.income?.status === "on") && owner && (
+        <IncomeCard vault={d.address} owner={owner} income={d.income} closed={d.status === "closed"} dataSuffix={dataSuffix} onChange={refresh} />
+      )}
     </div>
   );
 }

@@ -95,6 +95,24 @@ export const config = {
     if (!/^0x[0-9a-fA-F]{64}$/.test(k)) throw new ConfigError("BASE_KEEPER_PRIVATE_KEY", "must be 32 bytes of hex with 0x");
     return k as `0x${string}`;
   },
+  /** Where agents' x402 payments for the agent API go (USDC on Base). Unset: the agent API answers 503. */
+  get x402PayTo(): `0x${string}` | null {
+    const a = process.env.X402_PAY_TO;
+    if (!a) return null;
+    if (!/^0x[0-9a-fA-F]{40}$/.test(a)) throw new ConfigError("X402_PAY_TO", "must be an address");
+    return a as `0x${string}`;
+  },
+  /** A hosted x402 facilitator to verify and settle payments. Unset: Locke settles them itself with X402_SETTLER_PRIVATE_KEY. */
+  get x402FacilitatorUrl(): string | null {
+    return process.env.X402_FACILITATOR_URL || null;
+  },
+  /** The gas wallet that settles agents' payments on Base when Locke is its own facilitator. Holds a little ETH, never USDC. */
+  get x402SettlerKey(): `0x${string}` | null {
+    const k = process.env.X402_SETTLER_PRIVATE_KEY;
+    if (!k) return null;
+    if (!/^0x[0-9a-fA-F]{64}$/.test(k)) throw new ConfigError("X402_SETTLER_PRIVATE_KEY", "must be 32 bytes of hex with 0x");
+    return k as `0x${string}`;
+  },
   get demoAlerts() {
     return process.env.LOCKE_DEMO_ALERTS === "true";
   },

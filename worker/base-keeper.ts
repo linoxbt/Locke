@@ -8,18 +8,21 @@
 // - sends the transaction from the keeper key, with Locke's Builder Code appended, and records
 //   what happened for the vault page;
 // - issues a "Protected by Locke" attestation on EAS once the hedge is open, and revokes it once
-//   the vault closes (src/lib/base/attest.ts).
+//   the vault closes (src/lib/base/attest.ts);
+// - for owners who turned on "Protect as you get paid", counts USDC arriving in their Base Account
+//   and moves their chosen share into the vault under their spend permission (src/lib/base/income.ts).
 // The keeper key can only trade within each vault's on-chain limits; it can never withdraw.
 // /healthz answers 503 when Base or the database can't be read, or the keeper is out of gas money.
 // A Postgres advisory lock keeps an overlapping deploy on standby.
 
 import http from "node:http";
-import { createWalletClient, formatEther, getAddress, http as httpTransport, parseEther, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
+import { createWalletClient, formatEther, getAddress, http as httpTransport, parseAbiItem, parseEther, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { EAS_ADDRESS, easAbi, PROTECTION_SCHEMA, PROTECTION_SCHEMA_UID, protectionRequest, SCHEMA_REGISTRY_ADDRESS, schemaRegistryAbi } from "../src/lib/base/attest";
 import { builderSuffix } from "../src/lib/base/builderCode";
 import { baseMarket, erc20Abi, fromUsdcUnits, LAZER_FEE_WEI, P10, PRICE_SOURCING_LAZER, USDC, usdcUnits, vaultAbi } from "../src/lib/base/contracts";
+import { collectIncomeAbi, incomeUsd, nextCollectionUsd, onChain, SPEND_PERMISSION_MANAGER, spendPermissionManagerAbi, type SpendPermission } from "../src/lib/base/income";
 import { decide, type VaultState, type VaultStatus } from "../src/lib/base/keeper";
 import type { BaseSizing } from "../src/lib/domain/basePlans";
 import type { RiskLevel } from "../src/lib/domain/types";
@@ -37,6 +40,9 @@ const LOCK = 7_310_001; // advisory lock id: one active Base keeper
 const SLIPPAGE = P10;
 /** Below this the keeper can't pay for its transactions; health goes red well before it runs out. */
 const MIN_GAS_ETH = parseEther("0.0005");
+/** Blocks of USDC transfers read per call when counting income (public RPCs cap log ranges). */
+const SCAN_BLOCKS = 1000n;
+const USDC_TRANSFER = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 /** Repeat a "needs attention" event at most this often per vault. */
 const NOTICE_EVERY_MS = 30 * 60_000;
 
@@ -206,6 +212,88 @@ async function revokeClosed() {
   }
 }
 
+interface IncomeRow {
+  vault: string;
+  vault_status: string;
+  permission: SpendPermission;
+  signature: Hex;
+  share_pct: number;
+  pending_usd: string;
+  last_block: string;
+}
+
+/** "Protect as you get paid", for every vault that has it on. */
+async function collectIncome() {
+  let rows: IncomeRow[];
+  try {
+    rows = (await db()`
+      select i.vault, v.status as vault_status, i.permission, i.signature, i.share_pct, i.pending_usd, i.last_block
+      from base_income i join base_vaults v on v.address = i.vault where i.status = 'on'`) as unknown as IncomeRow[];
+  } catch (e) {
+    if ((e as { code?: string }).code === "42P01") return; // not migrated yet
+    throw e;
+  }
+  if (rows.length === 0) return;
+  const latest = await client.getBlockNumber();
+  for (const r of rows) {
+    try {
+      await tendIncome(r, latest);
+    } catch (e) {
+      log("income", r.vault, "failed:", (e as Error).message);
+    }
+  }
+}
+
+async function tendIncome(r: IncomeRow, latest: bigint) {
+  const sql = db();
+  const off = async (why: string) => {
+    await sql`update base_income set status = 'off', updated_at = now() where vault = ${r.vault}`;
+    await addVaultEvent(r.vault, "info", why);
+  };
+  if (r.vault_status === "closed") return off("Vault closed: Protect as you get paid is off");
+  const vault = getAddress(r.vault);
+  const p = onChain(r.permission);
+  const manager = <T>(functionName: "isRevoked" | "isApproved" | "getCurrentPeriod") =>
+    client.readContract({ address: SPEND_PERMISSION_MANAGER, abi: spendPermissionManagerAbi, functionName, args: [p] }) as Promise<T>;
+  if (await manager<boolean>("isRevoked")) return off("You revoked the permission in your wallet: Protect as you get paid is off");
+
+  // Count the owner's new income, a block range at a time.
+  let pending = Number(r.pending_usd);
+  const from = BigInt(r.last_block) + 1n;
+  if (from <= latest) {
+    const to = latest < from + SCAN_BLOCKS - 1n ? latest : from + SCAN_BLOCKS - 1n;
+    const logs = await client.getLogs({ address: USDC, event: USDC_TRANSFER, args: { to: p.account }, fromBlock: from, toBlock: to });
+    const income = incomeUsd(logs.map((l) => ({ from: l.args.from!, valueUsd: Number(l.args.value!) / 1e6 })), p.account, vault);
+    const add = (income * r.share_pct) / 100;
+    await sql`update base_income set last_block = ${to.toString()}, pending_usd = pending_usd + ${add}, updated_at = now() where vault = ${r.vault}`;
+    pending += add;
+  }
+
+  // Move what's owed, within this week's allowance.
+  const period = await manager<{ spend: bigint }>("getCurrentPeriod");
+  const amount = nextCollectionUsd(pending, Number(p.allowance - period.spend) / 1e6);
+  if (amount == null) return;
+  const keeper = (await client.readContract({ address: vault, abi: vaultAbi, functionName: "keeper" })) as Address;
+  if (keeper.toLowerCase() !== account.address.toLowerCase()) return; // the owner removed Locke's keeper
+  const approved = await manager<boolean>("isApproved");
+  const { request } = await client.simulateContract({
+    account,
+    address: vault,
+    abi: collectIncomeAbi,
+    functionName: "collectIncome",
+    args: [p, approved ? "0x" : r.signature, usdcUnits(amount)],
+  });
+  const hash = await wallet.writeContract(request);
+  const receipt = await client.waitForTransactionReceipt({ hash, timeout: 90_000 });
+  if (receipt.status !== "success") throw new Error(`collectIncome reverted in ${hash}`);
+  await sql`
+    update base_income set pending_usd = greatest(pending_usd - ${amount}, 0), collected_usd = collected_usd + ${amount},
+      last_collected_at = now(), updated_at = now()
+    where vault = ${r.vault}`;
+  log("collected income", r.vault, amount, hash);
+  await addVaultEvent(r.vault, "info", `Moved $${amount.toFixed(2)} of incoming USDC into the vault`, undefined, hash);
+}
+
 /** EAS assigns the schema its id from its text; register it the first time any keeper runs. */
 async function ensureSchema() {
   const known = await client.readContract({ address: SCHEMA_REGISTRY_ADDRESS, abi: schemaRegistryAbi, functionName: "getSchema", args: [PROTECTION_SCHEMA_UID] });
@@ -232,6 +320,7 @@ async function loop() {
     }
   }
   await revokeClosed();
+  await collectIncome();
   const gas = await client.getBalance({ address: account.address });
   gasLow = gas < MIN_GAS_ETH;
   if (gasLow) log(`keeper ${account.address} is low on ETH: ${formatEther(gas)}`);
