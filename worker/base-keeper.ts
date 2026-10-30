@@ -53,6 +53,7 @@ const lastNotice = new Map<string, { note: string; at: number }>();
 let healthy = false;
 let lastLoopOk = 0;
 let gasLow = false;
+let failing = 0;
 let schemaReady = false;
 /** Each vault's Avantis TradingStorage (fixed at creation) and how many looks in a row it showed no trade. */
 const storageOf = new Map<string, Address>();
@@ -116,13 +117,54 @@ async function snapshot(row: Row): Promise<VaultState> {
   };
 }
 
-async function send(vault: Address, functionName: "hedgeOpen" | "topUpMargin", args: readonly unknown[], value = 0n): Promise<Hex> {
-  // Simulate first: a revert costs nothing and says why.
-  const { request } = await client.simulateContract({ account, address: vault, abi: vaultAbi, functionName, args: args as never, value });
+async function send(
+  vault: Address,
+  functionName: "hedgeOpen" | "topUpMargin" | "settleFee",
+  args: readonly unknown[],
+  value = 0n,
+  beforeSend?: () => Promise<unknown>
+): Promise<Hex> {
+  // Simulate first: a revert costs nothing and says why. Only then record that it is being sent.
+  const { request } = await client.simulateContract({ account, address: vault, abi: vaultAbi, functionName, args: args as never, value: value as never });
+  await beforeSend?.();
   const hash = await wallet.writeContract(request as never);
   const receipt = await client.waitForTransactionReceipt({ hash, timeout: 90_000 });
   if (receipt.status !== "success") throw new Error(`${functionName} reverted in ${hash}`);
   return hash;
+}
+
+/** Why an action failed, in words an owner can read: a contract's own error, or Base/Avantis being unreachable. */
+function reason(e: unknown): string {
+  const err = e as { shortMessage?: string; message?: string; cause?: { data?: { errorName?: string } } };
+  const name = err.cause?.data?.errorName ?? /reverted with the following reason:\s*\n?\s*(\w+)|Error: (\w+)\(/.exec(err.shortMessage ?? err.message ?? "")?.slice(1).find(Boolean);
+  const known: Record<string, string> = {
+    NotKeeper: "Locke's keeper isn't allowed on this vault",
+    IsPaused: "Locke has paused new hedges",
+    PlanDisabled: "the vault's plan is turned off",
+    NotionalTooHigh: "it would pass the vault's limit",
+    CollateralTooHigh: "it would pass the vault's limit",
+    LeverageTooHigh: "it would pass the vault's leverage limit",
+    TooSoon: "the vault allows one open per hour",
+    PositionExists: "an order is already pending on Avantis",
+  };
+  if (name && known[name]) return known[name];
+  const text = err.shortMessage ?? err.message ?? String(e);
+  if (/insufficient funds/i.test(text)) return "Locke's keeper is out of gas money";
+  return text.split("\n")[0].slice(0, 160);
+}
+
+/** Consecutive failed rounds per vault: shown to the owner after a minute, and counted in health. */
+const failures = new Map<string, number>();
+const FAILURE_NOTE_AFTER = 4;
+const FAILURE_NOTE_PREFIX = "Locke couldn't act on this vault in the last minute:";
+
+async function failed(row: Row, e: unknown) {
+  const n = (failures.get(row.address) ?? 0) + 1;
+  failures.set(row.address, n);
+  log("vault", row.address, `failed (${n} in a row):`, reason(e));
+  if (n === FAILURE_NOTE_AFTER) {
+    await note(row.address, `${FAILURE_NOTE_PREFIX} ${reason(e)}. It keeps retrying every 15 seconds.`, "action").catch(() => null);
+  }
 }
 
 /** Record a note on the vault and, at most every half hour per note, an event the owner sees. */
@@ -151,8 +193,11 @@ async function tend(row: Row) {
       where address = ${row.address}`;
   }
   if (row.status !== "active" && d.status === "active") await addVaultEvent(row.address, "info", "Hedge open on Avantis: the vault is protected");
-  // The public proof follows the hedge. A failure here never holds up the hedge; the next round retries.
-  if (d.status === "active") await attest(row).catch((e) => log("attest", row.address, "failed:", (e as Error).message));
+  // Locke's fee is owed from the open and paid once Base shows the trade (whatever the API says yet).
+  // Never holds up the hedge; the next round retries.
+  if (state.chainTrades > 0) await settleFee(row).catch((e) => log("settleFee", row.address, "failed:", reason(e)));
+  // The public proof follows the hedge.
+  if (d.status === "active") await attest(row).catch((e) => log("attest", row.address, "failed:", reason(e)));
   if (d.level !== row.risk_level && d.level !== "ok") await addVaultEvent(row.address, "action", `Margin ${Math.round((d.ratio ?? 0) * 100)}% used`, { level: d.level });
 
   const a = d.action;
@@ -168,8 +213,9 @@ async function tend(row: Row) {
       const price = await getSignedPrice(row.pair_index);
       if (!price) return note(row.address, "No price from Avantis right now; opening shortly.");
       const lev = BigInt(Math.round(a.leverage * 1e10));
-      await sql`update base_vaults set open_sent_at = now(), status = 'opening', updated_at = now() where address = ${row.address}`;
-      const hash = await send(vault, "hedgeOpen", [BigInt(row.pair_index), usdcUnits(a.collateralUsd), lev, BigInt(Math.round(price.price * 1e10)), SLIPPAGE]);
+      const hash = await send(vault, "hedgeOpen", [BigInt(row.pair_index), usdcUnits(a.collateralUsd), lev, BigInt(Math.round(price.price * 1e10)), SLIPPAGE], 0n, () =>
+        sql`update base_vaults set open_sent_at = now(), status = 'opening', updated_at = now() where address = ${row.address}`
+      );
       log("opened", row.address, a, hash);
       await addVaultEvent(row.address, "info", `Hedge sent to Avantis: ${row.sizing.buy ? "long" : "short"} $${row.sizing.notionalUsd.toFixed(2)} at ${a.leverage}x`, undefined, hash);
       return note(row.address, "Waiting for Avantis to fill the hedge.");
@@ -185,8 +231,42 @@ async function tend(row: Row) {
   }
 }
 
+async function settleFee(row: Row) {
+  const vault = getAddress(row.address);
+  const pair = BigInt(row.pair_index);
+  const owed = (await client.readContract({ address: vault, abi: vaultAbi, functionName: "feeOwed", args: [pair] })) as bigint;
+  if (owed === 0n) return;
+  // Paid only once the trade exists: while the order is still pending, there is nothing to send.
+  const storage = storageOf.get(row.address);
+  if (storage && (await client.readContract({ address: storage, abi: tradingStorageAbi, functionName: "openTradesCount", args: [vault, pair] })) === 0n) return;
+  const hash = await send(vault, "settleFee", [BigInt(row.pair_index)]);
+  log("settled fee", row.address, Number(owed) / 1e6, hash);
+}
+
+/**
+ * An attestation sent but not yet recorded (the receipt timed out, or the process stopped):
+ * recorded from its receipt now, so it is never issued twice or left unrevocable. True while it
+ * is still unresolved.
+ */
+async function resolvePendingAttestation(row: Row): Promise<boolean> {
+  const [pending] = await db()`
+    select e.detail->>'attestTx' as tx from base_vault_events e
+    where e.vault = ${row.address} and e.detail ? 'attestTx'
+      and not exists (select 1 from base_vault_events r where r.vault = e.vault and r.detail->>'tx' = e.detail->>'attestTx')
+    order by e.id desc limit 1`;
+  if (!pending) return false;
+  const hash = pending.tx as Hex;
+  const receipt = await client.getTransactionReceipt({ hash }).catch(() => null);
+  if (!receipt) return true; // not mined yet (or dropped): look again next round
+  const [ev] = receipt.status === "success" ? parseEventLogs({ abi: easAbi, logs: receipt.logs, eventName: "Attested" }) : [];
+  if (ev) await addVaultEvent(row.address, "info", "Protected by Locke: proof published on Base", { attestation: ev.args.uid, tx: hash }, hash);
+  else await addVaultEvent(row.address, "info", "The proof didn't publish; Locke tries again", { tx: hash, failed: true }, hash);
+  return false;
+}
+
 /** Issue the vault's "Protected by Locke" attestation to its owner, unless it already has one. */
 async function attest(row: Row) {
+  if (await resolvePendingAttestation(row)) return;
   if (await activeAttestation(row.address)) return;
   if (!schemaReady) await ensureSchema();
   const vault = getAddress(row.address);
@@ -200,11 +280,11 @@ async function attest(row: Row) {
   });
   const { request: tx } = await client.simulateContract({ account, address: EAS_ADDRESS, abi: easAbi, functionName: "attest", args: [request] });
   const hash = await wallet.writeContract(tx);
-  const receipt = await client.waitForTransactionReceipt({ hash, timeout: 90_000 });
-  const [ev] = parseEventLogs({ abi: easAbi, logs: receipt.logs, eventName: "Attested" });
-  if (receipt.status !== "success" || !ev) throw new Error(`attest failed in ${hash}`);
-  log("attested", row.address, ev.args.uid, hash);
-  await addVaultEvent(row.address, "info", "Protected by Locke: proof published on Base", { attestation: ev.args.uid }, hash);
+  // Recorded before waiting, so a timeout or restart resolves this transaction instead of sending another.
+  await addVaultEvent(row.address, "info", "Publishing the Protected by Locke proof on Base", { attestTx: hash }, hash);
+  await client.waitForTransactionReceipt({ hash, timeout: 90_000 }).catch(() => null);
+  await resolvePendingAttestation(row);
+  log("attest sent", row.address, hash);
 }
 
 /** Revoke the attestation of every vault that has closed, so the proof never outlives the hedge. */
@@ -216,6 +296,12 @@ async function revokeClosed() {
     const uid = await activeAttestation(address);
     if (!uid) continue;
     try {
+      // Already revoked (a revoke whose receipt timed out last round): just record it.
+      const current = await client.readContract({ address: EAS_ADDRESS, abi: easAbi, functionName: "getAttestation", args: [uid as Hex] });
+      if (current.revocationTime > 0n) {
+        await addVaultEvent(address, "info", "Vault closed: the Protected by Locke proof is revoked", { revoked: uid });
+        continue;
+      }
       const args = [{ schema: PROTECTION_SCHEMA_UID, data: { uid: uid as Hex, value: 0n } }] as const;
       const { request } = await client.simulateContract({ account, address: EAS_ADDRESS, abi: easAbi, functionName: "revoke", args });
       const hash = await wallet.writeContract(request);
@@ -237,14 +323,23 @@ interface IncomeRow {
   share_pct: number;
   pending_usd: string;
   last_block: string;
+  inflight_tx: Hex | null;
+  inflight_usd: string | null;
+  inflight_at: Date | null;
 }
+
+/** Blocks a USDC transfer must be under before it counts as income (shallow reorgs). */
+const INCOME_CONFIRMATIONS = 2n;
+/** A sent collection with no receipt after this long was dropped: forget it and try again. */
+const INFLIGHT_DROPPED_MS = 10 * 60_000;
 
 /** "Protect as you get paid", for every vault that has it on. */
 async function collectIncome() {
   let rows: IncomeRow[];
   try {
     rows = (await db()`
-      select i.vault, v.status as vault_status, i.permission, i.signature, i.share_pct, i.pending_usd, i.last_block
+      select i.vault, v.status as vault_status, i.permission, i.signature, i.share_pct, i.pending_usd, i.last_block,
+             i.inflight_tx, i.inflight_usd, i.inflight_at
       from base_income i join base_vaults v on v.address = i.vault where i.status = 'on'`) as unknown as IncomeRow[];
   } catch (e) {
     if ((e as { code?: string }).code === "42P01") return; // not migrated yet
@@ -274,15 +369,29 @@ async function tendIncome(r: IncomeRow, latest: bigint) {
     client.readContract({ address: SPEND_PERMISSION_MANAGER, abi: spendPermissionManagerAbi, functionName, args: [p] }) as Promise<T>;
   if (await manager<boolean>("isRevoked")) return off("You revoked the permission in your wallet: Protect as you get paid is off");
 
-  // Count the owner's new income, a block range at a time.
+  // A collection still in flight is booked (or forgotten) before anything new is sent.
+  if (r.inflight_tx) {
+    const booked = await bookCollection(r.vault, r.inflight_tx, Number(r.inflight_usd));
+    if (booked === "waiting" && r.inflight_at && Date.now() - new Date(r.inflight_at).getTime() > INFLIGHT_DROPPED_MS) {
+      await sql`update base_income set inflight_tx = null, inflight_usd = null, inflight_at = null where vault = ${r.vault} and inflight_tx = ${r.inflight_tx}`;
+      log("income", r.vault, "collection dropped:", r.inflight_tx);
+    }
+    return;
+  }
+
+  // Count the owner's new income, a block range at a time, a couple of blocks behind the head.
   let pending = Number(r.pending_usd);
+  const head = latest - INCOME_CONFIRMATIONS;
   const from = BigInt(r.last_block) + 1n;
-  if (from <= latest) {
-    const to = latest < from + SCAN_BLOCKS - 1n ? latest : from + SCAN_BLOCKS - 1n;
+  if (from <= head) {
+    const to = head < from + SCAN_BLOCKS - 1n ? head : from + SCAN_BLOCKS - 1n;
     const logs = await client.getLogs({ address: USDC, event: USDC_TRANSFER, args: { to: p.account }, fromBlock: from, toBlock: to });
     const income = incomeUsd(logs.map((l) => ({ from: l.args.from!, valueUsd: Number(l.args.value!) / 1e6 })), p.account, vault);
     const add = (income * r.share_pct) / 100;
-    await sql`update base_income set last_block = ${to.toString()}, pending_usd = pending_usd + ${add}, updated_at = now() where vault = ${r.vault}`;
+    // Only if nothing changed since this round read the row (the owner turning it off and on resets it).
+    const [moved] = await sql`update base_income set last_block = ${to.toString()}, pending_usd = pending_usd + ${add}, updated_at = now()
+                              where vault = ${r.vault} and last_block = ${r.last_block} and status = 'on' returning vault`;
+    if (!moved) return;
     pending += add;
   }
 
@@ -301,14 +410,31 @@ async function tendIncome(r: IncomeRow, latest: bigint) {
     args: [p, approved ? "0x" : r.signature, usdcUnits(amount)],
   });
   const hash = await wallet.writeContract(request);
-  const receipt = await client.waitForTransactionReceipt({ hash, timeout: 90_000 });
-  if (receipt.status !== "success") throw new Error(`collectIncome reverted in ${hash}`);
-  await sql`
+  // Marked before waiting: a timeout or restart books this transaction next round instead of sending another.
+  await sql`update base_income set inflight_tx = ${hash}, inflight_usd = ${amount}, inflight_at = now() where vault = ${r.vault}`;
+  await client.waitForTransactionReceipt({ hash, timeout: 90_000 }).catch(() => null);
+  await bookCollection(r.vault, hash, amount);
+}
+
+/** Book a sent collection from its receipt, once. "waiting" while it has no receipt yet. */
+async function bookCollection(vaultAddr: string, hash: Hex, amount: number): Promise<"booked" | "failed" | "waiting"> {
+  const sql = db();
+  const receipt = await client.getTransactionReceipt({ hash }).catch(() => null);
+  if (!receipt) return "waiting";
+  if (receipt.status !== "success") {
+    await sql`update base_income set inflight_tx = null, inflight_usd = null, inflight_at = null where vault = ${vaultAddr} and inflight_tx = ${hash}`;
+    log("income", vaultAddr, "collection reverted:", hash);
+    return "failed";
+  }
+  const [row] = await sql`
     update base_income set pending_usd = greatest(pending_usd - ${amount}, 0), collected_usd = collected_usd + ${amount},
-      last_collected_at = now(), updated_at = now()
-    where vault = ${r.vault}`;
-  log("collected income", r.vault, amount, hash);
-  await addVaultEvent(r.vault, "info", `Moved $${amount.toFixed(2)} of incoming USDC into the vault`, undefined, hash);
+      last_collected_at = now(), inflight_tx = null, inflight_usd = null, inflight_at = null, updated_at = now()
+    where vault = ${vaultAddr} and inflight_tx = ${hash} returning vault`;
+  if (row) {
+    log("collected income", vaultAddr, amount, hash);
+    await addVaultEvent(vaultAddr, "info", `Moved $${amount.toFixed(2)} of incoming USDC into the vault`, undefined, hash);
+  }
+  return "booked";
 }
 
 /** EAS assigns the schema its id from its text; register it the first time any keeper runs. */
@@ -325,15 +451,24 @@ async function ensureSchema() {
   log("registered the Protected by Locke schema", PROTECTION_SCHEMA_UID, hash);
 }
 
+/** Vaults failing this many rounds in a row (about two minutes) make the keeper unhealthy. */
+const UNHEALTHY_AFTER = 8;
+
 async function loop() {
+  // Live hedges first, the most at risk first: a slow vault mustn't delay a margin top-up.
   const rows = (await db()`
     select address, pair_index, status, sizing, risk_level, status_note, open_sent_at, opened_at
-    from base_vaults where status <> 'closed' order by created_at`) as unknown as Row[];
+    from base_vaults where status <> 'closed'
+    order by case status when 'active' then 0 else 1 end, last_ratio desc nulls last, created_at`) as unknown as Row[];
   for (const row of rows) {
     try {
       await tend(row);
+      // Recovered: drop the failure note (only that note: tend may have just written a real one).
+      if (failures.delete(row.address)) {
+        await db()`update base_vaults set status_note = null where address = ${row.address} and status_note like ${FAILURE_NOTE_PREFIX + "%"}`.catch(() => null);
+      }
     } catch (e) {
-      log("vault", row.address, "failed:", (e as Error).message);
+      await failed(row, e);
     }
   }
   await revokeClosed();
@@ -341,7 +476,11 @@ async function loop() {
   const gas = await client.getBalance({ address: account.address });
   gasLow = gas < MIN_GAS_ETH;
   if (gasLow) log(`keeper ${account.address} is low on ETH: ${formatEther(gas)}`);
+  failing = [...failures.values()].filter((n) => n >= UNHEALTHY_AFTER).length;
   lastLoopOk = Date.now();
+  // The app's /api/health reads this to know the keeper is alive.
+  await db()`insert into monitor_heartbeat (id, at, result) values (2, now(), ${db().json({ source: "base-keeper", vaults: rows.length, failing, gasLow } as never)})
+             on conflict (id) do update set at = excluded.at, result = excluded.result`.catch((e) => log("heartbeat failed:", reason(e)));
 }
 
 async function main() {
@@ -351,12 +490,15 @@ async function main() {
   http
     .createServer((req, res) => {
       if (req.url !== "/healthz") return res.writeHead(404).end();
-      const ok = healthy && !gasLow && Date.now() - lastLoopOk < 4 * LOOP_MS;
-      res.writeHead(ok ? 200 : 503, { "content-type": "application/json" }).end(JSON.stringify({ ok, keeper: account.address, gasLow, lastLoopOk }));
+      const ok = healthy && !gasLow && failing === 0 && Date.now() - lastLoopOk < 4 * LOOP_MS;
+      res.writeHead(ok ? 200 : 503, { "content-type": "application/json" }).end(JSON.stringify({ ok, keeper: account.address, gasLow, failing, lastLoopOk }));
     })
     .listen(port, () => log(`health on :${port}/healthz, keeper ${account.address}`));
 
-  // One active keeper: wait for the lock (a deploy overlapping the old one waits here).
+  // One active keeper: wait for the lock (a deploy overlapping the old one waits here). A session
+  // lock needs a session, which the transaction pooler (port 6543) can't hold: refuse to run there
+  // rather than run unguarded beside another keeper.
+  if (/:6543\b/.test(config.databaseUrl)) throw new Error("DATABASE_URL is a transaction pooler (port 6543); use the session pooler (5432) or a direct connection");
   const reserved = await sql.reserve();
   for (;;) {
     const [{ ok }] = await reserved`select pg_try_advisory_lock(${LOCK}) as ok`;
@@ -364,7 +506,14 @@ async function main() {
     log("another keeper holds the lock; standing by");
     await new Promise((r) => setTimeout(r, LOOP_MS));
   }
-  await ensureSchema().catch((e) => log("schema registration failed; attestations wait for it:", (e as Error).message));
+  // If the lock's connection drops, the lock is gone and another keeper may start: stop at once.
+  setInterval(() => {
+    reserved`select 1`.catch(() => {
+      log("lost the keeper lock's connection; exiting so only one keeper runs");
+      process.exit(1);
+    });
+  }, LOOP_MS).unref();
+  await ensureSchema().catch((e) => log("schema registration failed; attestations wait for it:", reason(e)));
   healthy = true;
   log("running");
   for (;;) {

@@ -525,6 +525,11 @@ async function watchdog() {
       process.exit(1);
     }
   }
+  // The app's /api/health reads this to know risk monitoring is running (the sweep writes the same row).
+  if (lockHeld && dbOk) {
+    await db()`insert into monitor_heartbeat (id, at, result) values (1, now(), ${db().json({ source: "worker" } as never)})
+               on conflict (id) do update set at = excluded.at, result = excluded.result`.catch(() => null);
+  }
   const h = health();
   unhealthySince = h.ok ? null : (unhealthySince ?? now);
   if (unhealthySince && now - unhealthySince > EXIT_AFTER_UNHEALTHY_MS) {
@@ -599,9 +604,8 @@ let lockHeld = false;
  */
 async function acquireWorkerLock() {
   if (/:6543\b/.test(config.databaseUrl)) {
-    log("[lock] DATABASE_URL is a transaction pooler; can't hold the worker lock. Use the session pooler or a direct connection.");
-    lockHeld = true;
-    return;
+    // Without the lock, the scheduled sweep can't see this worker and both would act on every plan.
+    throw new Error("DATABASE_URL is a transaction pooler (port 6543), which can't hold the worker lock. Use the session pooler (5432) or a direct connection.");
   }
   lockConn = await db().reserve();
   for (;;) {

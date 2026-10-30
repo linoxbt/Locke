@@ -260,6 +260,11 @@ create table if not exists base_income (
   collected_usd  numeric not null default 0,
   last_block     bigint not null,               -- income is counted from the block after this
   last_collected_at timestamptz,
+  -- A collection sent but not yet booked (receipt timed out, or the keeper restarted): booked from
+  -- its receipt on the next round, so the same income is never collected twice.
+  inflight_tx    text,
+  inflight_usd   numeric,
+  inflight_at    timestamptz,
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
