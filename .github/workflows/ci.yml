@@ -55,7 +55,12 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: contracts/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            contracts/package-lock.json
+      # The fork tests import the app's EAS helpers (src/lib/base), which need its dependencies.
+      - run: npm ci
+        working-directory: .
       - run: npm ci
       # Unit, fuzz and invariant tests on the mocks; the fork tests need FORK=1 and a Base RPC.
       - run: npx hardhat test
