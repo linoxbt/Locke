@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, locke-preview]
   pull_request:
 
 permissions:
@@ -43,3 +43,20 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci
+      # Unit, fuzz and invariant tests on the mocks; the fork tests need FORK=1 and a Base RPC.
+      - run: npx hardhat test
+
