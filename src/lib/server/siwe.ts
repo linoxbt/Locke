@@ -36,15 +36,34 @@ export interface SignInFields {
   nonce: string;
 }
 
+const HEADER = /^(?:[a-zA-Z][a-zA-Z0-9+\-.]*:\/\/)?(?<domain>[a-zA-Z0-9+\-.]*(?::[0-9]{1,5})?) wants you to sign in with your Ethereum account:\n(?<address>0x[a-fA-F0-9]{40})\n/;
+
+/**
+ * viem's parser, plus the header read on its own: viem's only allows a one-line statement, and a
+ * wallet may write a longer one (Base Account writes its own). Line endings are normalised first.
+ * Reading is lenient only here; the signature is still checked over the exact message signed.
+ */
+export function readSiweMessage(message: string): ReturnType<typeof parseSiweMessage> {
+  const text = message.replace(/\r\n?/g, "\n");
+  const m = parseSiweMessage(text);
+  if (m.domain && m.address) return m;
+  const head = text.match(HEADER)?.groups;
+  return head ? { ...m, domain: head.domain, address: head.address as Address } : m;
+}
+
 /**
  * Everything about a Sign-In with Ethereum message except the signature and the nonce's
  * freshness: it is for this site (domain and URI), for Base, and inside its time window.
  */
 export function checkSiweMessage(message: string, expected: { host: string; now?: number }): SignInFields {
   if (typeof message !== "string" || message.length > 4096) throw new HttpError(400, "Invalid sign-in message");
-  const m = parseSiweMessage(message);
+  const m = readSiweMessage(message);
   const now = expected.now ?? Date.now();
-  if (!m.address || !m.nonce || !m.domain || !m.uri || m.version !== "1") throw new HttpError(400, "Invalid sign-in message");
+  if (!m.address || !m.nonce || !m.domain || !m.uri || m.version !== "1") {
+    // Logged so a wallet whose message we can't read can be diagnosed; it holds no secret.
+    console.warn("[siwe] unreadable sign-in message", JSON.stringify(message));
+    throw new HttpError(400, "Invalid sign-in message");
+  }
   if (m.domain !== expected.host) throw new HttpError(400, "This sign-in was made for another site");
   let uriHost: string;
   try {

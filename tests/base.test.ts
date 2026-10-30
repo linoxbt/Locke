@@ -147,6 +147,14 @@ describe("Sign in with Base", () => {
     expect(checkSiweMessage(msg(), { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718" });
   });
 
+  it("reads a wallet's message with a multi-line statement or Windows line endings", () => {
+    const multi = msg().replace("Sign in to Locke on Base.", "Sign in to Locke.\nThis request will not trigger a transaction.");
+    expect(checkSiweMessage(multi, { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718" });
+    expect(checkSiweMessage(msg().replace(/\n/g, "\r\n"), { host: "trylocke.online", now }).nonce).toBe("a1b2c3d4e5f60718");
+    const evil = multi.replace("trylocke.online wants", "evil.example wants");
+    expect(() => checkSiweMessage(evil, { host: "trylocke.online", now })).toThrow(/another site/);
+  });
+
   it("refuses another site, another chain, or an old message", () => {
     const bad = (m: string) => {
       try {
