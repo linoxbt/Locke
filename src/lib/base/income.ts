@@ -70,22 +70,28 @@ export function checkPermission(raw: unknown, expected: { owner: string; vault: 
     if (typeof v !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(v)) throw new IncomeError(`Invalid ${what}`);
     return getAddress(v);
   };
-  const int = (v: unknown, what: string) => {
-    const s = typeof v === "number" ? String(v) : v;
-    if (typeof s !== "string" || !/^\d{1,78}$/.test(s)) throw new IncomeError(`Invalid ${what}`);
-    return s;
+  // A uint as a decimal string. Wallets send some fields as numbers and some (the salt) as 0x hex;
+  // both name the same value, which is what was signed. Out-of-range values would fail on chain.
+  const int = (v: unknown, what: string, bits: number) => {
+    const s = typeof v === "number" && Number.isSafeInteger(v) ? String(v) : v;
+    if (typeof s !== "string" || !/^(\d{1,78}|0x[0-9a-fA-F]{1,64})$/.test(s)) throw new IncomeError(`Invalid ${what}`);
+    const n = BigInt(s);
+    if (n >= 1n << BigInt(bits)) throw new IncomeError(`Invalid ${what}`);
+    return n.toString();
   };
   const p: SpendPermission = {
     account: addr(r.account, "account"),
     spender: addr(r.spender, "spender"),
     token: addr(r.token, "token"),
-    allowance: int(r.allowance, "allowance"),
-    period: Number(int(r.period, "period")),
-    start: Number(int(r.start, "start")),
-    end: Number(int(r.end, "end")),
-    salt: int(r.salt, "salt"),
-    extraData: typeof r.extraData === "string" && /^0x([0-9a-fA-F]{2})*$/.test(r.extraData) ? (r.extraData as Hex) : "0x",
+    allowance: int(r.allowance, "allowance", 160),
+    period: Number(int(r.period, "period", 48)),
+    start: Number(int(r.start, "start", 48)),
+    end: Number(int(r.end, "end", 48)),
+    salt: int(r.salt, "salt", 256),
+    extraData: r.extraData == null ? "0x" : (r.extraData as Hex),
   };
+  // Signed as given: replacing a malformed value would only make the signature fail later.
+  if (typeof p.extraData !== "string" || !/^0x([0-9a-fA-F]{2}){0,1024}$/.test(p.extraData)) throw new IncomeError("Invalid extraData");
   if (p.account.toLowerCase() !== expected.owner.toLowerCase()) throw new IncomeError("The permission must come from the vault's owner");
   if (p.spender.toLowerCase() !== expected.vault.toLowerCase()) throw new IncomeError("The permission must name this vault as spender");
   if (p.token.toLowerCase() !== USDC.toLowerCase()) throw new IncomeError("The permission must be for USDC on Base");

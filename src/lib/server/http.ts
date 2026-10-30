@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { BasePlanError } from "../domain/basePlans";
 import { PlanInputError } from "../domain/plans";
 import { StrikeError } from "../strike/client";
+import { VerantaError } from "../veranta/client";
 import { ConfigError } from "./config";
 import { HttpError } from "./errors";
 
@@ -24,6 +26,12 @@ export function route<A extends unknown[]>(fn: (...args: A) => Promise<Response>
         return NextResponse.json({ error: "Locke is temporarily unavailable. Try again shortly.", code: "unavailable" }, { status: 503 });
       }
       if (e instanceof PlanInputError) return NextResponse.json({ error: e.message }, { status: 400 });
+      if (e instanceof BasePlanError) return NextResponse.json({ error: e.message }, { status: 400 });
+      if (e instanceof VerantaError) {
+        // Avantis down or answering oddly: say so, and let the page retry.
+        console.error("[avantis]", e.status, e.message);
+        return NextResponse.json({ error: "Avantis isn't answering right now. Try again shortly.", code: "avantis_unavailable" }, { status: e.status === 404 ? 404 : 503 });
+      }
       if (e instanceof StrikeError) {
         console.error("[strike]", e.status, e.message);
         if (e.status === 401 || e.status === 403) {

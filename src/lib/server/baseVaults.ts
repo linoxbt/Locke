@@ -87,14 +87,19 @@ export async function recordVault(user: { uid: string; addr: string }, txHash: s
     throw new HttpError(400, "The vault's limits on Base don't match this plan");
   }
 
-  const sizing: BaseSizing = sizeBasePlan(inputs, marketTerms(await getMarket(inputs.pairIndex)));
+  // The vault exists on Base whatever Avantis's terms are now, so a changed minimum size or
+  // leverage cap must not stop it being recorded: size it with those limits relaxed (the keeper's
+  // open is still checked by Avantis). Avantis being unreachable is a 503 the page retries.
+  const terms = marketTerms(await getMarket(inputs.pairIndex));
+  const sizing: BaseSizing = sizeBasePlan(inputs, { ...terms, minPositionUsd: 0, maxLeverage: Math.max(terms.maxLeverage, inputs.leverage) });
   const vault = created.vault.toLowerCase();
-  await db()`
+  const inserted = await db()`
     insert into base_vaults (address, user_id, pair_index, type, name, inputs, sizing, created_tx)
     values (${vault}, ${user.uid}, ${inputs.pairIndex}, ${inputs.type}, ${planName(inputs)}, ${db().json(inputs as never)}, ${db().json(sizing as never)}, ${txHash.toLowerCase()})
-    on conflict (address) do nothing`;
-  await addVaultEvent(vault, "info", "Vault created on Base", { tx: txHash });
-  return { address: vault };
+    on conflict (address) do nothing returning address`;
+  // Recording again (a retry, or the same hash sent twice) adds nothing.
+  if (inserted.length) await addVaultEvent(vault, "info", "Vault created on Base", { tx: txHash });
+  return { address: vault, created: inserted.length > 0 };
 }
 
 export async function addVaultEvent(vault: string, level: string, message: string, detail?: Record<string, unknown>, txHash?: string) {

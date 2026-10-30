@@ -51,6 +51,7 @@ export const factoryAbi = parseAbi([
 ]);
 
 export const vaultAbi = parseAbi([
+  "function tradingStorage() view returns (address)",
   "function owner() view returns (address)",
   "function keeper() view returns (address)",
   "function paused() view returns (bool)",
@@ -78,3 +79,10 @@ export const erc20Abi = parseAbi([
   "function allowance(address owner, address spender) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
+
+/** What the keeper reads from Avantis's TradingStorage to know whether a vault's hedge exists. */
+export const tradingStorageAbi = parseAbi([
+  "function openTradesCount(address trader, uint256 pairIndex) view returns (uint256)",
+  "function pendingMarketOpenCount(address trader, uint256 pairIndex) view returns (uint256)",
+]);
+

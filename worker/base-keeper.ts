@@ -21,7 +21,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { EAS_ADDRESS, easAbi, PROTECTION_SCHEMA, PROTECTION_SCHEMA_UID, protectionRequest, SCHEMA_REGISTRY_ADDRESS, schemaRegistryAbi } from "../src/lib/base/attest";
 import { builderSuffix } from "../src/lib/base/builderCode";
-import { baseMarket, erc20Abi, fromUsdcUnits, LAZER_FEE_WEI, P10, PRICE_SOURCING_LAZER, USDC, usdcUnits, vaultAbi } from "../src/lib/base/contracts";
+import { baseMarket, erc20Abi, fromUsdcUnits, tradingStorageAbi, LAZER_FEE_WEI, P10, PRICE_SOURCING_LAZER, USDC, usdcUnits, vaultAbi } from "../src/lib/base/contracts";
 import { collectIncomeAbi, incomeUsd, nextCollectionUsd, onChain, SPEND_PERMISSION_MANAGER, spendPermissionManagerAbi, type SpendPermission } from "../src/lib/base/income";
 import { decide, type VaultState, type VaultStatus } from "../src/lib/base/keeper";
 import type { BaseSizing } from "../src/lib/domain/basePlans";
@@ -54,6 +54,9 @@ let healthy = false;
 let lastLoopOk = 0;
 let gasLow = false;
 let schemaReady = false;
+/** Each vault's Avantis TradingStorage (fixed at creation) and how many looks in a row it showed no trade. */
+const storageOf = new Map<string, Address>();
+const goneRounds = new Map<string, number>();
 
 interface Row {
   address: string;
@@ -71,7 +74,14 @@ async function snapshot(row: Row): Promise<VaultState> {
   const pair = BigInt(row.pair_index);
   const read = <T>(functionName: string, args: unknown[] = []) =>
     client.readContract({ address: vault, abi: vaultAbi, functionName: functionName as never, args: args as never }) as Promise<T>;
-  const [idle, plan, paused, keeper, lastOpen, block, positions, price, market] = await Promise.all([
+  let storage = storageOf.get(row.address);
+  if (!storage) {
+    storage = await read<Address>("tradingStorage");
+    storageOf.set(row.address, storage);
+  }
+  const onBase = (functionName: "openTradesCount" | "pendingMarketOpenCount") =>
+    client.readContract({ address: storage!, abi: tradingStorageAbi, functionName, args: [vault, pair] });
+  const [idle, plan, paused, keeper, lastOpen, block, positions, price, market, openTrades, pendingOpens] = await Promise.all([
     client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [vault] }),
     read<readonly [boolean, boolean, bigint, bigint]>("plans", [pair]),
     read<boolean>("paused"),
@@ -81,7 +91,12 @@ async function snapshot(row: Row): Promise<VaultState> {
     getPositions(row.address),
     getSignedPrice(row.pair_index),
     getMarket(row.pair_index),
+    onBase("openTradesCount"),
+    onBase("pendingMarketOpenCount"),
   ]);
+  const chainTrades = Number(openTrades) + Number(pendingOpens);
+  const gone = chainTrades === 0 ? (goneRounds.get(row.address) ?? 0) + 1 : 0;
+  goneRounds.set(row.address, gone);
   const cooldownEnds = Number(lastOpen) + 3600;
   return {
     status: row.status,
@@ -96,6 +111,8 @@ async function snapshot(row: Row): Promise<VaultState> {
     keeperIsUs: keeper.toLowerCase() === account.address.toLowerCase(),
     cooldownLeftS: Math.max(0, cooldownEnds - Number(block.timestamp)),
     openSentAgoS: row.open_sent_at ? (Date.now() - row.open_sent_at.getTime()) / 1000 : null,
+    chainTrades,
+    goneRounds: gone,
   };
 }
 

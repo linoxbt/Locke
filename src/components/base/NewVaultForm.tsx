@@ -7,7 +7,7 @@ import { createPublicClient, custom, decodeEventLog, encodeFunctionData, type Ad
 import { base } from "viem/chains";
 import { BASE_MARKETS, erc20Abi, factoryAbi, USDC, usdcUnits, type BasePlanType } from "@/lib/base/contracts";
 import { providerFor, rememberedKind, sendBaseCalls, walletErrorMessage, walletFor } from "@/lib/base/wallet";
-import { BasePlanError, sizeBasePlan, type BasePlanInputs, type BaseSizing, type MarketTerms } from "@/lib/domain/basePlans";
+import { BasePlanError, parseBaseInputs, sizeBasePlan, type BasePlanInputs, type BaseSizing, type MarketTerms } from "@/lib/domain/basePlans";
 import { usd } from "@/lib/ui/format";
 import { Field, Segmented, Slider } from "../form";
 import { Button, Card, ErrorNote, inputCls, Notice, Stat } from "../ui";
@@ -27,6 +27,30 @@ interface MarketInfo {
 }
 
 type Step = "idle" | "wallet" | "confirming" | "recording";
+
+/** A vault created on Base but not yet saved to Locke: kept for this tab so saving can be retried. */
+interface Created {
+  txHash: string;
+  vault: string | null;
+  inputs: BasePlanInputs;
+}
+const createdKey = (address: string) => `locke.base.created.${address.toLowerCase()}`;
+function loadCreated(address: string): Created | null {
+  try {
+    const raw = sessionStorage.getItem(createdKey(address));
+    return raw ? (JSON.parse(raw) as Created) : null;
+  } catch {
+    return null;
+  }
+}
+function storeCreated(address: string, c: Created | null) {
+  try {
+    if (c) sessionStorage.setItem(createdKey(address), JSON.stringify(c));
+    else sessionStorage.removeItem(createdKey(address));
+  } catch {
+    /* private mode: the retry lasts until the page closes */
+  }
+}
 
 /**
  * New Locke vault: pick what to protect, see the size and the deposit, then one wallet batch
@@ -48,6 +72,9 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
   const [agreed, setAgreed] = useState(false);
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
+  // Once the vault exists on Base the form never offers to create another: it only retries saving.
+  const [created, setCreated] = useState<Created | null>(null);
+  useEffect(() => setCreated(loadCreated(address)), [address]);
 
   useEffect(() => {
     fetch("/api/base/markets", { cache: "no-store" })
@@ -78,11 +105,35 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
     setPairIndex(BASE_MARKETS.find((m) => m.type === t)!.pairIndex);
   }
 
+  /** Save a created vault to Locke; on failure the vault stays on Base and saving can be retried. */
+  async function record(c: Created) {
+    setError(null);
+    setStep("recording");
+    try {
+      const res = await fetch("/api/base/vaults", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ txHash: c.txHash, inputs: c.inputs }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "Couldn't save the vault to Locke");
+      storeCreated(address, null);
+      router.push(`/base/vaults/${String(body.address ?? c.vault).toLowerCase()}`);
+    } catch (e) {
+      setError(walletErrorMessage(e));
+      setStep("idle");
+    }
+  }
+
   async function create() {
     const sizing = sized.sizing;
-    if (!sizing) return;
+    if (!sizing || created) return;
     setError(null);
+    // The server records only inputs it accepts; check them before anything is sent on chain.
+    try {
+      parseBaseInputs(inputs);
+    } catch (e) {
+      setError(e instanceof BasePlanError ? e.message : String(e));
+      return;
+    }
     setStep("wallet");
+    let saved: Created | null = null;
     try {
       const wallet = await walletFor(address, dataSuffix);
       const reader = createPublicClient({ chain: base, transport: custom(await providerFor(rememberedKind())) });
@@ -103,6 +154,13 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
       setStep("confirming");
       let vault: string | null = null;
       let txHash: string | null = null;
+      // The batch is mined: from here on, retry saving, never create again.
+      const createTx = receipts[receipts.length - 1]?.transactionHash ?? null;
+      if (createTx) {
+        saved = { txHash: createTx, vault: null, inputs };
+        storeCreated(address, saved);
+        setCreated(saved);
+      }
       for (const r of receipts) {
         for (const log of r.logs) {
           if (log.address.toLowerCase() !== factory.toLowerCase()) continue;
@@ -115,18 +173,24 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
           }
         }
       }
-      if (!vault || !txHash) throw new Error("The vault was created but Locke couldn't read it back. Refresh in a moment.");
-      setStep("recording");
-      const res = await fetch("/api/base/vaults", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ txHash, inputs }) });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? "Couldn't record the vault");
-      router.push(`/base/vaults/${vault.toLowerCase()}`);
+      if (vault && txHash) {
+        saved = { txHash, vault, inputs };
+        storeCreated(address, saved);
+        setCreated(saved);
+      }
     } catch (e) {
       setError(walletErrorMessage(e));
+      setStep("idle");
+      return;
+    }
+    if (saved) await record(saved);
+    else {
+      setError("The transaction went through, but Locke couldn't find a new vault in it. Check your wallet's activity before trying again.");
       setStep("idle");
     }
   }
 
-  if (loadError) return <Notice tone="danger">Avantis&apos;s market data didn&apos;t load ({loadError}). Try again shortly.</Notice>;
+  if (loadError && !created) return <Notice tone="danger">Avantis&apos;s market data didn&apos;t load ({loadError}). Try again shortly.</Notice>;
 
   const busy = step !== "idle";
   const sizing = sized.sizing;
@@ -227,11 +291,36 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
                 .
               </span>
             </label>
-            <Button size="lg" variant="paper" onClick={create} busy={busy} disabled={!agreed || !market?.available}>
-              Create vault and deposit {usd(sizing.depositUsd)}
-            </Button>
+            {!created && (
+              <Button size="lg" variant="paper" onClick={create} busy={busy} disabled={!agreed || !market?.available}>
+                Create vault and deposit {usd(sizing.depositUsd)}
+              </Button>
+            )}
             {hint && <p className="text-[12px] text-paper/70">{hint}</p>}
           </>
+        )}
+        {created && (
+          <div className="flex flex-col gap-3 rounded-2xl bg-paper/10 p-4">
+            <p className="text-[14px] text-paper">
+              Your vault is created on Base
+              {created.vault && (
+                <>
+                  {" "}
+                  (
+                  <a href={`https://basescan.org/address/${created.vault}`} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                    view it
+                  </a>
+                  )
+                </>
+              )}
+              . {step !== "idle" ? "Saving it to Locke…" : "Saving it to Locke didn't finish; your USDC is safe in it."}
+            </p>
+            {step === "idle" && (
+              <Button variant="paper" onClick={() => record(created)} busy={busy}>
+                Retry saving
+              </Button>
+            )}
+          </div>
         )}
         {error && (
           <div className="rounded-2xl bg-paper p-1">

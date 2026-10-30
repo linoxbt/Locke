@@ -73,8 +73,11 @@ export async function getMarket(symbolOrIndex: string | number): Promise<Veranta
 export async function getPositions(trader: string): Promise<VerantaPosition[]> {
   if (!/^0x[0-9a-fA-F]{40}$/.test(trader)) throw new VerantaError("Not an address", 400, null);
   const body = await getJson(`${config.verantaApiUrl}/core/user-data?trader=${trader}`, "Avantis positions");
-  const raw = (body?.positions ?? body?.data?.positions ?? []) as RawPosition[];
-  return raw.map(parsePosition);
+  // An answer without a positions list is an error, never "no positions": reading it as empty
+  // would let a glitch look like a closed hedge.
+  const raw = body?.positions ?? body?.data?.positions;
+  if (!Array.isArray(raw)) throw new VerantaError("Avantis positions: unexpected response", 502, body);
+  return (raw as RawPosition[]).map(parsePosition);
 }
 
 export interface SignedPrice {

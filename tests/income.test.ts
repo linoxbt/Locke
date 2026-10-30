@@ -28,6 +28,20 @@ describe("Protect as you get paid: the signed permission", () => {
     expect(check({ account: OWNER.toUpperCase().replace("0X", "0x") }).account.toLowerCase()).toBe(OWNER);
   });
 
+  it("takes the permission exactly as Base Account's requestSpendPermission builds it (hex salt, number fields)", () => {
+    // createSpendPermissionTypedData: salt is 32 random bytes as 0x hex, allowance a decimal string.
+    const salt = "0x" + "9f".repeat(32);
+    const p = check({ salt, allowance: "500000000", period: 604800, start: NOW - 5, end: 281474976710655 });
+    expect(p.salt).toBe(BigInt(salt).toString());
+    expect(p.end).toBe(281474976710655);
+  });
+
+  it("refuses values that don't fit the on-chain struct", () => {
+    expect(() => check({ end: 2 ** 48 })).toThrowError(/Invalid end/);
+    expect(() => check({ salt: "0x" + "1".repeat(65) })).toThrowError(/Invalid salt/);
+    expect(() => check({ extraData: "0x123" })).toThrowError(/Invalid extraData/);
+  });
+
   it("refuses anything else, with a reason the owner can act on", () => {
     const cases: [Record<string, unknown>, RegExp][] = [
       [{ account: "0x00000000000000000000000000000000000000c3" }, /owner/],

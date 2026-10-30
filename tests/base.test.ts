@@ -59,6 +59,8 @@ describe("Base keeper decisions", () => {
     keeperIsUs: true,
     cooldownLeftS: 0,
     openSentAgoS: null,
+    chainTrades: 0,
+    goneRounds: 1,
   };
   // A $500 ETH short at 2x opened at 2,300.
   const short: VerantaPosition = {
@@ -82,7 +84,7 @@ describe("Base keeper decisions", () => {
   });
 
   it("marks a filled hedge active and leaves a healthy one alone", () => {
-    const d = decide({ ...base, status: "opening", position: short, idleUsd: 125 });
+    const d = decide({ ...base, status: "opening", position: short, idleUsd: 125, chainTrades: 1, goneRounds: 0 });
     expect(d.status).toBe("active");
     expect(d.level).toBe("ok");
     expect(d.action).toEqual({ kind: "wait", note: null });
@@ -91,7 +93,7 @@ describe("Base keeper decisions", () => {
   it("adds margin from the buffer when margin use reaches the action level, back to the target", () => {
     const mark = 3200; // ETH up 39%: the short loses about $196 of its $250
     expect(verantaMarginRatio(short, mark)).toBeGreaterThan(0.6);
-    const d = decide({ ...base, status: "active", position: short, idleUsd: 125, mark });
+    const d = decide({ ...base, status: "active", position: short, idleUsd: 125, mark, chainTrades: 1, goneRounds: 0 });
     expect(d.action.kind).toBe("topUp");
     const amount = (d.action as { amountUsd: number }).amountUsd;
     expect(verantaMarginRatio({ ...short, collateralUsd: 250 + amount }, mark)).toBeLessThanOrEqual(0.351);
@@ -99,13 +101,29 @@ describe("Base keeper decisions", () => {
 
   it("asks the owner for funds when the buffer is spent, and respects the plan's cap", () => {
     const mark = 3200;
-    expect(decide({ ...base, status: "active", position: short, idleUsd: 0, mark }).action.kind).toBe("needFunds");
-    const capped = decide({ ...base, status: "active", position: short, idleUsd: 125, mark, maxNotionalUsd: 250 });
+    expect(decide({ ...base, status: "active", position: short, idleUsd: 0, mark, chainTrades: 1, goneRounds: 0 }).action.kind).toBe("needFunds");
+    const capped = decide({ ...base, status: "active", position: short, idleUsd: 125, mark, maxNotionalUsd: 250, chainTrades: 1, goneRounds: 0 });
     expect(capped.action).toMatchObject({ kind: "wait", note: expect.stringContaining("limit is reached") });
   });
 
-  it("marks the vault closed when its hedge is gone", () => {
-    expect(decide({ ...base, status: "active" })).toMatchObject({ status: "closed", action: { kind: "closed" } });
+  it("marks the vault closed only when Base shows no trade on two looks in a row", () => {
+    expect(decide({ ...base, status: "active", goneRounds: 1 })).toMatchObject({ status: "active", action: { kind: "wait" } });
+    expect(decide({ ...base, status: "active", goneRounds: 2 })).toMatchObject({ status: "closed", action: { kind: "closed" } });
+  });
+
+  it("never closes a vault whose hedge is still on Base, whatever the API says", () => {
+    // The API answered without the position (lag, outage, changed shape): still open on Base.
+    const d = decide({ ...base, status: "active", position: null, chainTrades: 1, goneRounds: 0 });
+    expect(d).toMatchObject({ status: "active", action: { kind: "wait", note: expect.stringContaining("still open on Base") } });
+    // A pending open order counts too: no second open while one is in flight.
+    expect(decide({ ...base, status: "funding", chainTrades: 1, goneRounds: 0 })).toMatchObject({ status: "opening", action: { kind: "wait" } });
+    // The API still shows a position Base no longer has: no top-up into a closed trade.
+    expect(decide({ ...base, status: "active", position: short, mark: 3200, idleUsd: 125, chainTrades: 0, goneRounds: 1 }).action.kind).toBe("wait");
+  });
+
+  it("caps margin use when equity is gone, so it can be stored and shown", () => {
+    const d = decide({ ...base, status: "active", position: { ...short, collateralUsd: 1 }, mark: 4600, idleUsd: 0, chainTrades: 1, goneRounds: 0 });
+    expect(Number.isFinite(d.ratio)).toBe(true);
   });
 });
 
