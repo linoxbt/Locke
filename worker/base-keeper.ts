@@ -386,7 +386,9 @@ async function tendIncome(r: IncomeRow, latest: bigint) {
   if (from <= head) {
     const to = head < from + SCAN_BLOCKS - 1n ? head : from + SCAN_BLOCKS - 1n;
     const logs = await client.getLogs({ address: USDC, event: USDC_TRANSFER, args: { to: p.account }, fromBlock: from, toBlock: to });
-    const income = incomeUsd(logs.map((l) => ({ from: l.args.from!, valueUsd: Number(l.args.value!) / 1e6 })), p.account, vault);
+    // Withdrawals from any of this owner's Locke vaults aren't income.
+    const own = await sql`select address from base_vaults where user_id = (select user_id from base_vaults where address = ${r.vault})`;
+    const income = incomeUsd(logs.map((l) => ({ from: l.args.from!, valueUsd: Number(l.args.value!) / 1e6 })), p.account, [vault, ...own.map((v) => v.address as string)]);
     const add = (income * r.share_pct) / 100;
     // Only if nothing changed since this round read the row (the owner turning it off and on resets it).
     const [moved] = await sql`update base_income set last_block = ${to.toString()}, pending_usd = pending_usd + ${add}, updated_at = now()

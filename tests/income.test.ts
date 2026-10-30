@@ -76,6 +76,8 @@ describe("Protect as you get paid: what moves", () => {
       { from: "0x00000000000000000000000000000000000000d4", valueUsd: 80 },
     ];
     expect(incomeUsd(inflows, OWNER, VAULT)).toBe(1280);
+    // Withdrawals from another of the owner's vaults aren't income either.
+    expect(incomeUsd(inflows, OWNER, [VAULT, "0x00000000000000000000000000000000000000d4"])).toBe(1200);
   });
 
   it("moves what's owed within the week's allowance, and nothing under $5", () => {
