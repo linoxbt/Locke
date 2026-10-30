@@ -54,8 +54,13 @@ export async function planForPage(id: string, page: string, allowed: PlanStatus[
   return plan;
 }
 
-/** True while an opening deposit is on its way to Strike. */
+/**
+ * True while an opening deposit is on its way to Strike: confirmed to Strike, or sent on Cardano
+ * (it has a transaction hash) while Strike's confirmation failed. Either way the ADA has left the
+ * wallet, so the user must not be asked to deposit again.
+ */
 export async function hasDepositInFlight(planId: string): Promise<boolean> {
-  const [row] = await db()`select 1 from deposits where plan_id = ${planId} and purpose = 'open' and status = 'submitted' limit 1`;
+  const [row] = await db()`select 1 from deposits where plan_id = ${planId} and purpose = 'open'
+                           and (status = 'submitted' or (status = 'built' and tx_hash is not null)) limit 1`;
   return !!row;
 }

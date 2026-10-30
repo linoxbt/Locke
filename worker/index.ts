@@ -334,6 +334,9 @@ async function evaluate(plan: PlanRow) {
   const u = users.get(plan.user_id);
   const mark = marks.get(plan.symbol);
   if (!u || mark == null) return;
+  // Nor from a stale mark: a stalled price stream would grade the plan against an old price
+  // (the watchdog restarts the stream; until then, skip rather than misjudge).
+  if (Date.now() - (markAt.get(plan.symbol) ?? 0) > MARKS_STALE_MS) return;
   // Never compute a level from stale positions: a revoked key or a Strike outage would freeze it.
   if (Date.now() - u.okAt > POSITIONS_STALE_MS) {
     const since = degraded.get(plan.id);

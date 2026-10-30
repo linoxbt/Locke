@@ -42,7 +42,8 @@ export const PLAN_LABEL: Record<PlanType, string> = {
 
 export class PlanInputError extends Error {}
 
-function roundDownToStep(value: number, step: number): number {
+/** Round down to a multiple of the market step, ignoring float noise (0.3 / 0.1 is 2.9999999999999996). */
+export function roundDownToStep(value: number, step: number): number {
   const decimals = Math.max(0, -Math.floor(Math.log10(step)));
   const n = Math.floor(value / step + 1e-9) * step;
   return Number(n.toFixed(decimals));

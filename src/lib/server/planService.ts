@@ -20,6 +20,7 @@ import {
   PLAN_LABEL,
   PLAN_MARKET,
   PlanInputError,
+  roundDownToStep,
   sizePlan,
 } from "../domain/plans";
 import {
@@ -297,14 +298,15 @@ const isoOf = (p: StrikePosition | null) => (p ? parseFloat(p.iso_balance) || 0 
 /** Finish a margin add that has shown up in the position: mark what it paid for as done. */
 async function marginLanded(plan: PlanRow, m: MarginPending) {
   if (m.kind === "buffer") {
-    await db()`update plans set buffer_added = true, margin_pending = null, updated_at = now() where id = ${plan.id}`;
+    await db()`update plans set buffer_added = true, margin_pending = null, updated_at = now()
+               where id = ${plan.id} and margin_pending->>'at' = ${m.at}`;
     plan.buffer_added = true;
     if (plan.status_note) await db()`update plans set status_note = null where id = ${plan.id}`;
     await safeEvent(plan.id, "info", `Added $${m.amount.toFixed(2)} buffer margin to this plan`);
   } else {
     await db()`update deposits set status = 'applied', applied_usd = ${m.amount}, updated_at = now()
                where id = ${m.depositId!} and status = 'credited'`;
-    await db()`update plans set margin_pending = null, updated_at = now() where id = ${plan.id}`;
+    await db()`update plans set margin_pending = null, updated_at = now() where id = ${plan.id} and margin_pending->>'at' = ${m.at}`;
     if (plan.status_note?.startsWith(TOPUP_WAITING)) {
       await db()`update plans set status_note = null where id = ${plan.id} and status_note = ${plan.status_note}`;
       plan.status_note = null;
@@ -327,7 +329,7 @@ async function checkMarginPending(plan: PlanRow, pos: StrikePosition | null): Pr
     return false;
   }
   if (age(plan, m.at) < MARGIN_VERIFY_MS) return true;
-  await db()`update plans set margin_pending = null where id = ${plan.id}`;
+  await db()`update plans set margin_pending = null where id = ${plan.id} and margin_pending->>'at' = ${m.at}`;
   plan.margin_pending = null;
   await safeEvent(plan.id, "watch", `Strike didn't apply the $${m.amount.toFixed(2)} ${m.kind === "buffer" ? "buffer" : "top-up"} margin. Locke will try again.`);
   return false;
@@ -344,7 +346,12 @@ async function addMargin(keys: ApiKeys, plan: PlanRow, kind: MarginPending["kind
   const m: MarginPending = { kind, amount, depositId, baseIso: isoOf(before), at: "" };
   const [row] = await db()`
     update plans set margin_pending = jsonb_set(${db().json(m as never)}::jsonb, '{at}', to_jsonb(now())), updated_at = now()
-    where id = ${plan.id} and margin_pending is null returning margin_pending, now() as db_now`;
+    where id = ${plan.id} and margin_pending is null
+      -- Claim only what still needs adding: a caller that read the plan before another finished
+      -- this same add must not add it again.
+      and (${kind} <> 'buffer' or buffer_added = false)
+      and (${kind} <> 'topup' or exists (select 1 from deposits where id = ${depositId ?? null} and status = 'credited'))
+    returning margin_pending, now() as db_now`;
   if (!row) return; // another caller is adding margin to this plan
   plan.margin_pending = row.margin_pending as MarginPending;
   plan.db_now = row.db_now;
@@ -353,7 +360,7 @@ async function addMargin(keys: ApiKeys, plan: PlanRow, kind: MarginPending["kind
   } catch (e) {
     if (e instanceof StrikeError && e.status >= 400 && e.status < 500) {
       // Refused outright: nothing was sequenced.
-      await db()`update plans set margin_pending = null where id = ${plan.id}`;
+      await db()`update plans set margin_pending = null where id = ${plan.id} and margin_pending->>'at' = ${plan.margin_pending!.at}`;
       plan.margin_pending = null;
       console.error("[margin] refused", plan.id, e.message);
       return;
@@ -370,7 +377,11 @@ async function addMargin(keys: ApiKeys, plan: PlanRow, kind: MarginPending["kind
 // ── Tracked orders ──
 
 /** Reserve the plan's single order slot. Returns the client id, or null if an order is already in flight. */
-async function claimOrder(planId: string, action: OrderAction, meta: PlanRow["pending_meta"] = null): Promise<string | null> {
+/**
+ * `expectSeq`: claim only if no order has been placed since the caller read the plan, so an order
+ * sized from that read can't be sent on top of one that changed the position meanwhile.
+ */
+async function claimOrder(planId: string, action: OrderAction, meta: PlanRow["pending_meta"] = null, expectSeq?: number): Promise<string | null> {
   const [row] = await db()`
     update plans set
       order_seq = order_seq + 1,
@@ -379,7 +390,7 @@ async function claimOrder(planId: string, action: OrderAction, meta: PlanRow["pe
       pending_meta = ${meta ? db().json(meta as never) : null},
       pending_since = now(),
       updated_at = now()
-    where id = ${planId} and pending_order is null
+    where id = ${planId} and pending_order is null and (${expectSeq ?? null}::int is null or order_seq = ${expectSeq ?? null}::int)
     returning pending_order`;
   return (row?.pending_order as string) ?? null;
 }
@@ -589,7 +600,8 @@ export async function prepareDeposit(
     if (plan.status !== "draft" && plan.status !== "funding") throw new HttpError(409, "This plan is already open");
     if (!plan.risk_ack_at) throw new HttpError(409, RISK_ACK_REQUIRED);
     const [inFlight] = await db()`
-      select id from deposits where plan_id = ${plan.id} and purpose = 'open' and status = 'submitted'`;
+      select id from deposits where plan_id = ${plan.id} and purpose = 'open'
+        and (status = 'submitted' or (status = 'built' and tx_hash is not null))`;
     if (inFlight) throw new HttpError(409, "Your deposit is still confirming on Cardano. Locke opens the plan when it lands.");
     const [clash] = await db()`
       select id from plans where user_id = ${userId} and symbol = ${plan.symbol}
@@ -817,7 +829,8 @@ export async function openPlan(userId: string, planId: string): Promise<PlanRow>
   const keys = await strikeKeysFor(userId);
 
   const [waiting] = await db()`
-    select id from deposits where plan_id = ${plan.id} and purpose = 'open' and status = 'submitted'`;
+    select id from deposits where plan_id = ${plan.id} and purpose = 'open'
+        and (status = 'submitted' or (status = 'built' and tx_hash is not null))`;
   if (waiting) throw new HttpError(409, "Waiting for your deposit to be credited on Strike");
 
   const sizing = plan.sizing;
@@ -932,6 +945,10 @@ export async function syncPlan(userId: string, planId: string): Promise<PlanRow>
 
   if (plan.status === "active" && pos) {
     if (await checkMarginPending(plan, pos)) return plan; // a margin add is still settling
+    // An opening deposit credited after the plan opened (a second tab's, a slow one) was never used
+    // to open it: treat it as a top-up, so it reaches this plan's margin instead of staying reserved.
+    await sql`update deposits set purpose = 'topup', updated_at = now()
+              where plan_id = ${plan.id} and purpose = 'open' and status = 'credited'`;
     await applyBuffer(keys, plan, pos);
     if (!plan.margin_pending) await applyTopUps(keys, plan);
   }
@@ -970,8 +987,12 @@ export async function syncPlan(userId: string, planId: string): Promise<PlanRow>
 /** Add the buffer margin once, from balance this plan may spend; it counts when the position shows it. */
 async function applyBuffer(keys: ApiKeys, plan: PlanRow, pos: StrikePosition) {
   if (plan.buffer_added || plan.margin_pending) return;
-  const spendable = await spendableUsd(keys, plan.user_id, plan.id).catch(() => 0);
-  const amount = Math.min(plan.sizing.bufferMarginUsd, Math.max(0, spendable - 0.05));
+  // This plan's credited top-ups are spoken for too: the buffer can't take them.
+  const [spendable, [own]] = await Promise.all([
+    spendableUsd(keys, plan.user_id, plan.id).catch(() => 0),
+    db()`select coalesce(sum(usd_value), 0)::float8 as usd from deposits where plan_id = ${plan.id} and purpose = 'topup' and status = 'credited'`,
+  ]);
+  const amount = Math.min(plan.sizing.bufferMarginUsd, Math.max(0, spendable - (Number(own.usd) || 0) - 0.05));
   if (amount < Math.min(plan.sizing.bufferMarginUsd, 1)) {
     await noteOnce(plan, "Waiting for free balance on Strike to add this plan's buffer margin.");
     return;
@@ -1058,7 +1079,7 @@ export async function resizePlan(userId: string, planId: string, raw: Record<str
   if (plan.type === "holdings") {
     inputs = parseInputs("holdings", { ...plan.inputs, ...pick(raw, ["sharePct", "amountHeld"]) });
     const h = inputs as HoldingsInputs;
-    target = Math.floor(((h.amountHeld * h.sharePct) / 100) / rules.stepSize) * rules.stepSize;
+    target = roundDownToStep((h.amountHeld * h.sharePct) / 100, rules.stepSize);
   } else {
     if (raw.action !== "month") throw new HttpError(400, "Unknown resize action");
     const c = plan.inputs as CostsInputs;
@@ -1068,7 +1089,7 @@ export async function resizePlan(userId: string, planId: string, raw: Record<str
       throw new HttpError(409, `This month's share was already closed. The next one is due on ${due.toISOString().slice(0, 10)}.`);
     }
     const perMonth = current / c.months;
-    target = current - perMonth;
+    target = roundDownToStep(current - perMonth, rules.stepSize);
     inputs = { ...c, months: c.months - 1 };
   }
   const decimals = Math.max(0, -Math.floor(Math.log10(rules.stepSize)));
@@ -1090,7 +1111,8 @@ export async function resizePlan(userId: string, planId: string, raw: Record<str
     }
     await assertFillable(plan.symbol, plan.side, delta);
   }
-  const clientId = await claimOrder(plan.id, "resize", { inputs, target, name: planName(plan.type, inputs), from: current, month: plan.type === "costs" });
+  // Sized from the position read above: refuse if another order went out since (two tabs, a double click).
+  const clientId = await claimOrder(plan.id, "resize", { inputs, target, name: planName(plan.type, inputs), from: current, month: plan.type === "costs" }, plan.order_seq);
   if (!clientId) throw new HttpError(409, "Another change to this plan is still settling on Strike. Try again in a moment.");
   const reducing = delta < 0;
   await sendClaimedOrder(keys, plan, clientId, {

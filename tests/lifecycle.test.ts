@@ -268,9 +268,14 @@ describe.skipIf(!DB)("plan lifecycle (Postgres + mock Strike)", () => {
     // Top-up: deposit credited → added to this plan's isolated margin once.
     const top = await svc.prepareDeposit(userId, plan.id, "topup", { address: "addr1test", utxos: ["8282"], amountUsd: 20 });
     await svc.confirmDeposit(userId, top.depositId!, txId(top));
-    await Promise.all([svc.syncPlan(userId, plan.id), svc.syncPlan(userId, plan.id)]);
+    // The page, the worker and the sweep all sync: overlapping and late callers that read the
+    // plan before the top-up landed must not add it again.
+    await Promise.all(Array.from({ length: 6 }, () => svc.syncPlan(userId, plan.id)));
+    for (let i = 0; i < 3; i++) await svc.syncPlan(userId, plan.id);
     expect(state.isoAdds).toHaveLength(2);
     expect(state.isoAdds[1]).toBeGreaterThanOrEqual(19.9);
+    const [applied] = await sql`select status from deposits where id = ${top.depositId!}`;
+    expect(applied.status).toBe("applied");
 
     // Raising the server's fee later never charges more than the share this user approved.
     process.env.STRIKE_BUILDER_FEE_BPS = "15";

@@ -111,8 +111,12 @@ export async function sweep(budgetMs = 24_000): Promise<SweepResult> {
   const [{ held }] = await sql`select exists(select 1 from pg_locks where locktype = 'advisory' and objid = ${WORKER_LOCK} and granted) as held`;
   if (held) return { ...out, skipped: "the risk worker is active", ms: Date.now() - started };
 
-  const rows = (await sql`select * from plans where status in ('funding','opening','active','closing')
-                          order by updated_at limit 200`) as unknown as PlanRow[];
+  // Least recently assessed first (a healthy plan's updated_at doesn't move, so it can't be the
+  // order): every plan gets its turn even when one run can't reach them all.
+  const rows = (await sql`select p.* from plans p
+                          where p.status in ('funding','opening','active','closing')
+                          order by (select max(s.created_at) from snapshots s where s.plan_id = p.id) asc nulls first, p.updated_at
+                          limit 200`) as unknown as PlanRow[];
   out.plans = rows.length;
   const byUser = new Map<string, PlanRow[]>();
   for (const r of rows) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r]);

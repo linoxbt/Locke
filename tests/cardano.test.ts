@@ -77,6 +77,15 @@ describe("wallet addresses", () => {
     expect(addressToBech32(reward!, 1)).toBe(stake);
   });
 
+  it("marks the stake credential as a script only for header types 2 and 3 (CIP-19)", () => {
+    const body = walletAddressBytes(base).subarray(1);
+    const header = (type: number) => stakeFromBaseAddress(new Uint8Array([(type << 4) | 1, ...body]))![0];
+    expect(header(0)).toBe(0xe1); // key payment, key stake
+    expect(header(1)).toBe(0xe1); // script payment, key stake
+    expect(header(2)).toBe(0xf1); // key payment, script stake
+    expect(header(3)).toBe(0xf1); // script payment, script stake
+  });
+
   it("returns null for addresses without a stake credential", () => {
     // Enterprise address (header type 6): payment credential only.
     const enterprise = new Uint8Array([0x61, ...walletAddressBytes(base).subarray(1, 29)]);

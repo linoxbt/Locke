@@ -103,7 +103,8 @@ export function walletAddressBytes(s: string): Uint8Array {
 /**
  * The reward (stake) address inside a base address, for wallets without getRewardAddresses.
  * Base addresses (header types 0–3) carry header + 28-byte payment + 28-byte stake credential;
- * the reward header is 0xE0 for a key stake credential (types 0, 2) and 0xF0 for a script (1, 3).
+ * the reward header is 0xE0 for a key stake credential (types 0, 1) and 0xF0 for a script (2, 3)
+ * (CIP-19: types 2 and 3 carry a script stake credential).
  * Other address types carry no stake credential: null.
  */
 export function stakeFromBaseAddress(bytes: Uint8Array): Uint8Array | null {
@@ -111,7 +112,7 @@ export function stakeFromBaseAddress(bytes: Uint8Array): Uint8Array | null {
   if (type > 3 || bytes.length !== 57) return null;
   const network = bytes[0] & 0x0f;
   const out = new Uint8Array(29);
-  out[0] = (type === 1 || type === 3 ? 0xf0 : 0xe0) | network;
+  out[0] = (type === 2 || type === 3 ? 0xf0 : 0xe0) | network;
   out.set(bytes.subarray(29, 57), 1);
   return out;
 }

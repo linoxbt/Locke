@@ -29,7 +29,8 @@ export function FundStep({ adaPrice }: { adaPrice: number | null }) {
   const router = useRouter();
   const p = detail.plan;
   const openDeposit = detail.deposits.find((x) => x.purpose === "open" && x.tx_hash);
-  const inFlight = detail.deposits.some((x) => x.purpose === "open" && x.status === "submitted");
+  // Sent on Cardano counts as in flight even if Strike's confirmation failed: the ADA has left the wallet.
+  const inFlight = detail.deposits.some((x) => x.purpose === "open" && (x.status === "submitted" || (x.status === "built" && !!x.tx_hash)));
   const [step, setStep] = useState<DepositStep | null>(null);
   const [tx, setTx] = useState<string | undefined>(openDeposit?.tx_hash ?? undefined);
   const [skipDeposit, setSkipDeposit] = useState(false);
