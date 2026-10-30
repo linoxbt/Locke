@@ -21,6 +21,14 @@ export function clearBaseSessionCookie(res: NextResponse) {
   res.cookies.set(cookieName(), "", { ...flags(), maxAge: 0 });
 }
 
+/**
+ * The Base session's address for display (the header), from the cookie's signature and expiry
+ * alone: no database read on every page. Anything that acts uses currentBaseSession.
+ */
+export async function baseSessionHint(): Promise<string | null> {
+  return decodeSession((await cookies()).get(cookieName())?.value)?.addr ?? null;
+}
+
 /** The signed-in Base user, or null. Signing out bumps the version and ends every older cookie. */
 export async function currentBaseSession(): Promise<Session | null> {
   const s = decodeSession((await cookies()).get(cookieName())?.value);

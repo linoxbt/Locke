@@ -3,7 +3,8 @@
 import { type Address, type Hex } from "viem";
 import { decodeProtection, EAS_ADDRESS, easAbi, PROTECTION_SCHEMA_UID, UID, type Protection } from "../base/attest";
 import { basePublicClient } from "./baseChain";
-import { factoryKeeper } from "./basePages";
+import { factoryAbi } from "../base/contracts";
+import { config } from "./config";
 
 export type ProofStatus =
   /** Issued by Locke's keeper and not revoked: the hedge is open. */
@@ -48,8 +49,12 @@ async function issuers(): Promise<string[]> {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter((s) => /^0x[0-9a-f]{40}$/.test(s));
-  const current = await factoryKeeper();
-  return current ? [current, ...past] : past;
+  const factory = config.baseFactoryAddress;
+  if (!factory) return past;
+  // Read here rather than with a fallback: if Base can't answer, the page says so instead of
+  // calling a genuine proof "not issued by Locke".
+  const current = (await basePublicClient().readContract({ address: factory, abi: factoryAbi, functionName: "keeper" })) as string;
+  return [current.toLowerCase(), ...past];
 }
 
 /** The proof, or null when the id is malformed or EAS has no such attestation. */

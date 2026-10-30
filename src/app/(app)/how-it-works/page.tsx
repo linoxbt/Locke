@@ -19,12 +19,28 @@ const LADDER = [
   { tone: "ink" as const, k: "Liquidation", v: "Margin health 100%", d: "Strike closes the position. Locke records it on the plan." },
 ];
 
+const BASE_POINTS = [
+  ["Your own contract", "Sign in with Base and create a vault: one wallet request approves the USDC and creates it, owned by you."],
+  ["Limits on Base", "The vault itself caps leverage, hedge size and slippage. Locke's keeper can trade within them and can never withdraw."],
+  ["Margin kept topped up", "When margin use reaches 60%, the keeper adds margin from the vault's buffer, back to a safe level."],
+  ["Exit any time", "Withdraw, close the hedge or remove Locke's keeper from your own wallet, even if Locke is offline."],
+  ["Public proof", "While the hedge is open, a Protected by Locke attestation on Base shows it, so others can check it."],
+  ["Protect as you get paid", "Optionally, sign once to move a share of incoming USDC into the vault, never more than your weekly cap."],
+];
+
 export default function HowItWorksPage() {
   return (
     <div className="animate-rise space-y-3">
       <section className="pb-10 pt-6 sm:pt-12">
         <Eyebrow className="mb-6 text-ink-2">How it works</Eyebrow>
         <Display size="xl" lead="Describe. Preview. Fund. Watch." rest="Every plan, the same four steps." className="max-w-[14ch]" />
+        <p className="mt-6 max-w-[60ch] text-[15px] leading-relaxed text-ink-2">
+          Locke runs on two networks: on Cardano with Strike Finance (below), and on Base with Avantis, from a vault you own (
+          <Link href="#base" className="underline underline-offset-4 hover:text-ink">
+            further down
+          </Link>
+          ).
+        </p>
       </section>
 
       <Card tone="ink" as="section" className="px-6 py-10 sm:px-10">
@@ -80,10 +96,23 @@ export default function HowItWorksPage() {
         </DropIn>
       </section>
 
+      <Card tone="ink" as="section" id="base" className="!mt-12 scroll-mt-24 px-6 py-10 sm:px-10">
+        <Eyebrow className="text-lime">On Base · with Avantis</Eyebrow>
+        <Display as="h2" size="lg" lead="A vault you own." rest="Locke hedges from it within limits you set." restClass="text-paper/55" className="mt-6 max-w-[22ch]" />
+        <ul className="mt-8 grid grid-cols-1 gap-px overflow-hidden rounded-[18px] bg-paper/10 sm:grid-cols-2 lg:grid-cols-3">
+          {BASE_POINTS.map(([t, d]) => (
+            <li key={t} className="bg-ink p-5 sm:p-6">
+              <h3 className="display text-[17px]">{t}</h3>
+              <p className="mt-3 text-[14px] leading-relaxed text-paper/60">{d}</p>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
       <Card as="section" className="!mt-12 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <Display as="h2" size="md" lead="Ready when you are." rest="It takes a few minutes." />
         <Link href="/connect" className="inline-flex h-12 shrink-0 items-center gap-3 self-start rounded-full bg-cobalt px-7 text-paper hover:bg-cobalt-deep sm:self-auto">
-          Connect a wallet <Arrow />
+          Get started <Arrow />
         </Link>
       </Card>
     </div>

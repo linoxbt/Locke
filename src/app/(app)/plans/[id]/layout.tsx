@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PlanHeader } from "@/components/plan/PlanHeader";
 import { PlanProvider } from "@/components/plan/PlanProvider";
@@ -8,6 +9,8 @@ import { getPlanDetailFor } from "@/lib/server/queries";
 import { ViewerBanner } from "@/components/plan/ViewerBanner";
 
 export const dynamic = "force-dynamic";
+// A shared plan link is readable without signing in; keep it out of search engines.
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default async function PlanLayout({ children, params }: { children: React.ReactNode; params: Promise<{ id: string }> }) {
   const { id } = await params;

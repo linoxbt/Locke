@@ -182,11 +182,11 @@ export async function vaultDetail(uid: string, address: string): Promise<VaultVi
       read<bigint>("netDeposits"),
       read<readonly [boolean, boolean, bigint, bigint]>("plans", [BigInt(market.pairIndex)]),
     ]).catch(() => {
-      partial.push("base");
+      partial.push("Base");
       return null;
     }),
     getPositions(vault).catch(() => {
-      partial.push("veranta");
+      partial.push("Avantis");
       return null;
     }),
     getSignedPrice(market.pairIndex).catch(() => null),

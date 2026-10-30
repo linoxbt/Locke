@@ -56,7 +56,7 @@ function storeCreated(address: string, c: Created | null) {
  * New Locke vault: pick what to protect, see the size and the deposit, then one wallet batch
  * approves the USDC and creates the vault (owned by this account) with its limits and deposit.
  */
-export function NewVaultForm({ address, factory, dataSuffix }: { address: string; factory: Address; dataSuffix?: Hex }) {
+export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address: string; factory: Address; dataSuffix?: Hex; feeBps: number }) {
   const router = useRouter();
   const [markets, setMarkets] = useState<MarketInfo[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -100,6 +100,11 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [market, type, pairIndex, valueUsd, sharePct, monthlySpendUsd, months, crudeSharePct, leverage, bufferPct]);
 
+  /** Locke's fee on this hedge, charged once it opens (at most once a month per market). */
+  const lockeFee = (z: BaseSizing) => Math.ceil(((z.notionalUsd * feeBps) / 10_000) * 100) / 100;
+  /** What the vault needs: the plan's deposit plus Locke's fee, so the fee never eats the buffer. */
+  const totalDeposit = (z: BaseSizing) => Math.round((z.depositUsd + lockeFee(z)) * 100) / 100;
+
   function pickType(t: BasePlanType) {
     setType(t);
     setPairIndex(BASE_MARKETS.find((m) => m.type === t)!.pairIndex);
@@ -124,6 +129,7 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
   async function create() {
     const sizing = sized.sizing;
     if (!sizing || created) return;
+    const depositUsd = totalDeposit(sizing);
     setError(null);
     // The server records only inputs it accepts; check them before anything is sent on chain.
     try {
@@ -137,9 +143,9 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
     try {
       const wallet = await walletFor(address, dataSuffix);
       const reader = createPublicClient({ chain: base, transport: custom(await providerFor(rememberedKind())) });
-      const deposit = usdcUnits(sizing.depositUsd);
+      const deposit = usdcUnits(depositUsd);
       const balance = await reader.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [wallet.account.address] });
-      if (balance < deposit) throw new Error(`This account holds ${usd(Number(balance) / 1e6)} of USDC on Base; the plan needs ${usd(sizing.depositUsd)}.`);
+      if (balance < deposit) throw new Error(`This account holds ${usd(Number(balance) / 1e6)} of USDC on Base; the plan needs ${usd(depositUsd)}.`);
 
       const plan = {
         enabled: true,
@@ -265,13 +271,19 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
           <>
             <div>
               <div className="text-[13px] text-paper/55">Deposit</div>
-              <div className="num display mt-1 text-[36px]">{usd(sizing.depositUsd)}</div>
+              <div className="num display mt-1 text-[36px]">{usd(totalDeposit(sizing))}</div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <Stat subtle="text-paper/55" label="Hedge" value={`${sizing.buy ? "Long" : "Short"} ${usd(sizing.notionalUsd)}`} />
               <Stat subtle="text-paper/55" label="Margin" value={usd(sizing.collateralUsd)} />
               <Stat subtle="text-paper/55" label="Buffer" value={usd(sizing.bufferUsd)} />
               <Stat subtle="text-paper/55" label="Trading fees" value={usd(sizing.feesUsd)} />
+              <Stat
+                subtle="text-paper/55"
+                label="Locke fee"
+                value={feeBps ? usd(lockeFee(sizing)) : "None"}
+                sub={feeBps ? `${(feeBps / 100).toFixed(2)}% of the hedge, once it opens; at most once a month per market` : undefined}
+              />
             </div>
             <p className="text-[12px] leading-relaxed text-paper/55">
               On-chain limits: Locke&apos;s keeper can never go above {sizing.limits.maxLeverage}x or {usd(sizing.limits.maxNotionalUsd)} of hedge, and can never withdraw. You can withdraw or close at any time.
@@ -293,7 +305,7 @@ export function NewVaultForm({ address, factory, dataSuffix }: { address: string
             </label>
             {!created && (
               <Button size="lg" variant="paper" onClick={create} busy={busy} disabled={!agreed || !market?.available}>
-                Create vault and deposit {usd(sizing.depositUsd)}
+                Create vault and deposit {usd(totalDeposit(sizing))}
               </Button>
             )}
             {hint && <p className="text-[12px] text-paper/70">{hint}</p>}

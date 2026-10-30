@@ -121,7 +121,7 @@ export default async function HomePage() {
             href={start.href}
             className="inline-flex h-11 shrink-0 items-center rounded-full bg-cobalt px-5 text-[15px] text-paper transition-colors hover:bg-cobalt-deep"
           >
-            Get started
+            {start.label === "Try Locke" ? "Get started" : start.label}
           </Link>
           <h2 className="display text-[26px] sm:text-[34px]">Protect what your business runs on</h2>
         </div>

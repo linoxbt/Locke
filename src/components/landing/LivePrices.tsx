@@ -161,7 +161,7 @@ export function LivePrices(initial: Prices) {
 /** Pulsing "live" marker for the prices tile heading. */
 export function LiveDot() {
   return (
-    <span className="relative ml-2 inline-flex h-2 w-2 align-middle" aria-label="live">
+    <span className="relative ml-2 inline-flex h-2 w-2 align-middle" role="img" aria-label="live">
       <span className="absolute inset-0 animate-ping rounded-full bg-lime opacity-75" />
       <span className="relative h-2 w-2 rounded-full bg-lime" />
     </span>

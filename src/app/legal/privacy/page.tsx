@@ -47,6 +47,17 @@ export default function Privacy() {
             <td>To record that you were told</td>
           </tr>
           <tr>
+            <td>
+              If you turn on &quot;Protect as you get paid&quot;: the spend permission your Base Account signed (its cap, period and signature),
+              and the USDC transfers into that account on Base, which Locke reads to work out your chosen share
+            </td>
+            <td>To move that share into your vault, never more than your cap. Stops when you turn it off or revoke it</td>
+          </tr>
+          <tr>
+            <td>If you or your agent pay for Locke&apos;s agent API: the paying address and the payment authorization (amount and nonce)</td>
+            <td>To take each payment once and settle it on Base</td>
+          </tr>
+          <tr>
             <td>Your network (the first three parts of an IPv4 address, or an IPv6 /64), kept for about 10 minutes</td>
             <td>To limit sign-in attempts and stop abuse</td>
           </tr>

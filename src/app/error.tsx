@@ -20,7 +20,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
       <Card tone="danger" className="mt-6 px-6 py-16 sm:py-24">
         <Display lead="Something broke." rest="It's on our side, not yours." restClass="text-paper/85" className="max-w-[18ch]" />
         <p className="mt-6 max-w-[56ch] text-[15px] text-paper">
-          Try again. If it keeps happening, the Strike API or the database may be unavailable.
+          Try again. If it keeps happening, Strike, Avantis, Base or Locke&apos;s database may be unavailable for a moment.
           {error.digest && <span className="num mt-2 block text-[12px] text-paper">Reference {error.digest}</span>}
         </p>
         <div className="mt-10 flex flex-wrap gap-2">

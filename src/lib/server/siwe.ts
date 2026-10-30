@@ -11,7 +11,8 @@ const MAX_AGE_MS = 10 * 60_000;
 /** Allowed clock skew for a wallet's issuedAt in the future. */
 const SKEW_MS = 60_000;
 const PER_NETWORK = 30;
-const GLOBAL_PER_MINUTE = 300;
+/** A ceiling on all sign-ins, high enough that one attacker's handful of networks can't lock everyone out. */
+const GLOBAL_PER_MINUTE = 3000;
 
 /** A single-use nonce for one sign-in, counted against the caller's network. */
 export async function issueNonce(network: string | null): Promise<string> {

@@ -26,7 +26,7 @@ const num = (v: unknown) => Number(v ?? 0) || 0;
 
 export async function readMetrics(): Promise<Metrics> {
   const sql = db();
-  const [[strike], [base], [txs], proofs] = await Promise.all([
+  const [[strike], [base], [txs], proofs, [live]] = await Promise.all([
     sql`
       select count(*) filter (where status = 'active') as active,
              coalesce(sum((sizing->>'notional')::numeric) filter (where status = 'active'), 0) as usd,
@@ -47,7 +47,11 @@ export async function readMetrics(): Promise<Metrics> {
       from base_vault_events e join base_vaults v on v.address = e.vault
       where e.detail ? 'attestation'
         and not exists (select 1 from base_vault_events r where r.vault = e.vault and r.detail->>'revoked' = e.detail->>'attestation')
-      order by e.id desc`,
+      order by e.id desc limit 6`,
+    sql`
+      select count(*)::int as n from base_vault_events e
+      where e.detail ? 'attestation'
+        and not exists (select 1 from base_vault_events r where r.vault = e.vault and r.detail->>'revoked' = e.detail->>'attestation')`,
   ]);
   const strikeUsd = num(strike.usd);
   const baseUsd = num(base.usd);
@@ -58,10 +62,10 @@ export async function readMetrics(): Promise<Metrics> {
       activeVaults: num(base.active),
       protectedUsd: baseUsd,
       vaultsCreated: num(base.created),
-      liveProofs: proofs.length,
+      liveProofs: num(live.n),
       builderCodeTxs: num(txs.n),
     },
-    proofs: proofs.slice(0, 6).map((p) => ({
+    proofs: proofs.map((p) => ({
       uid: String(p.uid),
       market: baseMarket(Number(p.pair_index))?.symbol ?? "—",
       protectedUsd: num((p.sizing as { notionalUsd?: number }).notionalUsd),
@@ -70,3 +74,17 @@ export async function readMetrics(): Promise<Metrics> {
     at: new Date().toISOString(),
   };
 }
+
+/** The public page's figures, computed at most once a minute per server. */
+const TTL_MS = 60_000;
+let cached: { at: number; value: Promise<Metrics> } | null = null;
+
+export function cachedMetrics(): Promise<Metrics> {
+  if (!cached || Date.now() - cached.at > TTL_MS) {
+    const value = readMetrics();
+    cached = { at: Date.now(), value };
+    value.catch(() => (cached = null));
+  }
+  return cached.value;
+}
+

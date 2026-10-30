@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { BaseMark } from "@/components/base/BaseMark";
-import { Card, Display, Eyebrow } from "@/components/ui";
+import { Card, Display, Eyebrow, Notice } from "@/components/ui";
 import { AGENT_ENDPOINTS } from "@/lib/agent/catalog";
+import { config } from "@/lib/server/config";
 
 export const metadata: Metadata = {
   title: "Locke for agents",
   description: "A pay-per-call API so AI agents and on-chain treasuries can quote and open Locke protection on Base, paid with x402 in USDC.",
 };
 
-const EXAMPLE = `import { x402Client } from "@x402/core/client";
+const example = (origin: string) => `import { x402Client } from "@x402/core/client";
 import { x402HTTPClient } from "@x402/core/http";
 import { registerExactEvmScheme } from "@x402/evm/exact/client";
 import { toClientEvmSigner } from "@x402/evm";
@@ -17,16 +19,27 @@ const core = new x402Client();
 registerExactEvmScheme(core, { signer: toClientEvmSigner(account, publicClient), networks: ["eip155:8453"] });
 const client = new x402HTTPClient(core);
 
-const url = "https://locke.example/api/agent/quote?market=ETH&valueUsd=10000&sharePct=50";
+const url = "${origin}/api/agent/quote?market=ETH&valueUsd=10000&sharePct=50";
 const first = await fetch(url);                       // 402: price and where to pay
 const required = client.getPaymentRequiredResponse((h) => first.headers.get(h), await first.json());
 const payment = await client.createPaymentPayload(required);   // signs a USDC transfer authorization
 const quote = await fetch(url, { headers: client.encodePaymentSignatureHeader(payment) });
 console.log(await quote.json());                      // settles on Base only because this succeeded`;
 
-export default function AgentsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function AgentsPage() {
+  const h = await headers();
+  const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? "localhost"}`;
+  let live = false;
+  try {
+    live = !!config.x402PayTo && !!(config.x402FacilitatorUrl || config.x402SettlerKey);
+  } catch {
+    live = false;
+  }
   return (
     <div className="flex flex-col gap-6">
+      {!live && <Notice tone="info">The agent API isn&apos;t taking payments on this site yet: paid calls answer 503 until it is.</Notice>}
       <Eyebrow className="flex items-center gap-2 text-ink-2">
         <BaseMark size={12} /> x402 · USDC on Base
       </Eyebrow>
@@ -65,7 +78,7 @@ export default function AgentsPage() {
 
       <Card tone="ink" className="flex flex-col gap-3">
         <Eyebrow className="text-lime">Paying with x402</Eyebrow>
-        <pre className="num overflow-x-auto whitespace-pre text-[12px] leading-relaxed text-paper/85">{EXAMPLE}</pre>
+        <pre className="num overflow-x-auto whitespace-pre text-[12px] leading-relaxed text-paper/85">{example(origin)}</pre>
       </Card>
 
       <p className="text-[13px] leading-relaxed text-ink-3">

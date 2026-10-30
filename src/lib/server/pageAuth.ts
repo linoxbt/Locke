@@ -1,16 +1,20 @@
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { ConfigError } from "./config";
 import { currentSession, hasSessionCookie, type Session } from "./session";
 
-/** Session for a server-rendered page, or null when signed out (or sessions aren't configured yet). */
-export async function optionalSession(): Promise<Session | null> {
+/**
+ * Session for a server-rendered page, or null when signed out (or sessions aren't configured yet).
+ * Read once per request however many components ask (the layout and the page both do).
+ */
+export const optionalSession = cache(async (): Promise<Session | null> => {
   try {
     return await currentSession();
   } catch (e) {
     if (e instanceof ConfigError) return null;
     throw e;
   }
-}
+});
 
 /**
  * Gate a page: signed-out visitors go to /connect and come back to `returnTo` afterwards. A

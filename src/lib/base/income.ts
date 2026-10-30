@@ -116,10 +116,11 @@ export interface Inflow {
 
 /**
  * What counts as income: USDC arriving in the owner's account from someone else. Money coming back
- * from the vault (a withdrawal) or from the owner's own address isn't income.
+ * from the owner's own Locke vaults (withdrawals, from this vault or any other) or from the owner's
+ * own address isn't income.
  */
-export function incomeUsd(inflows: Inflow[], owner: string, vault: string): number {
-  const skip = new Set([owner.toLowerCase(), vault.toLowerCase()]);
+export function incomeUsd(inflows: Inflow[], owner: string, ownVaults: string | string[]): number {
+  const skip = new Set([owner, ...(Array.isArray(ownVaults) ? ownVaults : [ownVaults])].map((a) => a.toLowerCase()));
   return inflows.filter((i) => i.valueUsd > 0 && !skip.has(i.from.toLowerCase())).reduce((s, i) => s + i.valueUsd, 0);
 }
 

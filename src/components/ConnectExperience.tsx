@@ -144,7 +144,8 @@ export function ConnectExperience({
           <BaseMark size={12} /> On Base
         </h3>
         <div className={`mt-3 max-w-[460px] rounded-[14px] bg-paper p-4 transition ${active ? "pointer-events-none opacity-40" : ""}`}>
-          <SignInWithBase next="/base" />
+          {/* Back to the Base page that sent the visitor here, else the vaults. */}
+          <SignInWithBase next={next.startsWith("/base") ? next : "/base"} />
         </div>
 
         <h3 className="eyebrow mt-8 text-ink-2">On Cardano · with Strike</h3>
@@ -218,7 +219,7 @@ export function ConnectExperience({
         )}
 
         <p className="mt-auto pt-10 text-[12px] leading-relaxed text-ink-3">
-          Cardano mainnet · signing is free · By signing in you accept Locke&apos;s{" "}
+          {process.env.NEXT_PUBLIC_CARDANO_NETWORK_ID === "0" ? "Cardano testnet" : "Cardano mainnet"} · signing is free · By signing in you accept Locke&apos;s{" "}
           <Link href="/legal/terms" target="_blank" className="underline underline-offset-2 hover:text-ink">
             Terms
           </Link>{" "}

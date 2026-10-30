@@ -3,10 +3,10 @@ import Link from "next/link";
 import { BaseMark } from "@/components/base/BaseMark";
 import { Card, Display, Eyebrow, Notice, Stat } from "@/components/ui";
 import { proofPath } from "@/lib/base/attest";
-import { readMetrics, type Metrics } from "@/lib/server/metrics";
+import { cachedMetrics, type Metrics } from "@/lib/server/metrics";
 import { usd } from "@/lib/ui/format";
 
-// Read per request (a few aggregate queries), so a build never needs the database.
+// Rendered per request (so a build never needs the database), from figures cached for a minute.
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Metrics — Locke",
@@ -19,7 +19,7 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "n
 export default async function MetricsPage() {
   let m: Metrics;
   try {
-    m = await readMetrics();
+    m = await cachedMetrics();
   } catch {
     return <Notice tone="danger">Locke&apos;s metrics are unavailable right now. Try again shortly.</Notice>;
   }
@@ -78,8 +78,8 @@ export default async function MetricsPage() {
       </Card>
 
       <p className="text-[13px] leading-relaxed text-ink-3">
-        &quot;Protected now&quot; is the size of the hedges open at this moment, in US dollars. Strike plans count once their hedge has opened; Base vaults once created. Every
-        Base proof can be checked independently on the Ethereum Attestation Service. Read {day(m.at)}.
+        &quot;Protected now&quot; is the size of the hedges open at this moment, in US dollars. Open plans and vaults have a live hedge; plans hedged so far count every Strike plan that opened a hedge, and vaults created count every Base vault recorded. Every
+        Base proof can be checked independently on the Ethereum Attestation Service. Figures refresh every minute.
       </p>
     </div>
   );

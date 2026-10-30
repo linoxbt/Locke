@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { BaseMark } from "./base/BaseMark";
 import { LockeMark } from "./Logo";
 import { useWallet } from "./WalletProvider";
 import { shortAddr } from "@/lib/ui/format";
@@ -14,7 +15,7 @@ const quiet = "bg-[#e6e5e1]/95 text-ink shadow-[0_1px_0_rgb(0_0_0/0.04)] hover:b
  * Floating header: round mark on the left, separate pills in the middle, a coloured action
  * pill on the right. Below md the middle pills fold into a round menu button.
  */
-export function Header() {
+export function Header({ baseAddress = null }: { baseAddress?: string | null }) {
   const { me } = useWallet();
   const path = usePathname();
   const [open, setOpen] = useState(false);
@@ -71,7 +72,13 @@ export function Header() {
       ];
   const isOn = (href: string) =>
     path === href || (href !== "/base" && path.startsWith(href + "/")) || (href === "/portfolio" && path.startsWith("/plans/")) || (href === "/base" && path.startsWith("/base/vaults/"));
-  const cta = me ? { href: "/account", label: shortAddr(me.address) } : { href: "/connect", label: "Get started" };
+  // Signed in with Base (and not with Cardano): the action is the vaults, not "Get started".
+  const onBaseOnly = !me && !!baseAddress;
+  const cta = me
+    ? { href: "/account", label: shortAddr(me.address) }
+    : baseAddress
+      ? { href: "/base", label: shortAddr(baseAddress) }
+      : { href: "/connect", label: "Get started" };
 
   return (
     <>
@@ -94,11 +101,12 @@ export function Header() {
 
           <div className="pointer-events-auto ml-auto flex items-center gap-1 md:ml-0">
             {/* On the sign-in page itself, "Get started" would only link back to it. */}
-            {!onBase && (me || path !== "/connect") && (
+            {!onBase && (me || onBaseOnly || path !== "/connect") && (
               <Link
                 href={cta.href}
-                className={`${pill} ${me ? `num ${path === "/account" ? "bg-ink text-paper" : quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}
+                className={`${pill} ${me ? `num ${path === "/account" ? "bg-ink text-paper" : quiet}` : onBaseOnly ? `num gap-2 ${quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}
               >
+                {onBaseOnly && <BaseMark size={10} />}
                 {cta.label}
               </Link>
             )}
@@ -143,9 +151,9 @@ export function Header() {
                 </Link>
               ))}
             </nav>
-            {!onBase && (me || path !== "/connect") && (
-              <Link href={me ? "/protect" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
-                {me ? "New protection plan" : "Get started"}
+            {!onBase && (me || onBaseOnly || path !== "/connect") && (
+              <Link href={me ? "/protect" : onBaseOnly ? "/base" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
+                {me ? "New protection plan" : onBaseOnly ? "Your vaults" : "Get started"}
               </Link>
             )}
           </div>

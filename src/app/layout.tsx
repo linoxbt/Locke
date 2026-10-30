@@ -4,6 +4,7 @@ import { CookieConsent } from "@/components/CookieConsent";
 import { Header } from "@/components/Header";
 import { WalletProvider } from "@/components/WalletProvider";
 import { optionalSession } from "@/lib/server/pageAuth";
+import { baseSessionHint } from "@/lib/server/baseSession";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: "Locke — Protection plans on Strike and Base",
   description: "Protect what your business holds. Manage what it buys. Hedges on Strike (Cardano) and Base, sized and watched for you.",
-  openGraph: { title: "Locke", description: "Protect what your business holds. Manage what it needs to buy." },
+  openGraph: { title: "Locke", description: "Protect what your business holds. Manage what it buys, with hedges and from a vault you own." },
 };
 
 export const viewport: Viewport = { themeColor: "#f2f1ee", width: "device-width", initialScale: 1 };
@@ -27,7 +28,8 @@ export const viewport: Viewport = { themeColor: "#f2f1ee", width: "device-width"
 const STRIP_INJECTED_HEAD_NODES = `(function(){var h=document.head,n=h.firstChild,x;while(n){x=n.nextSibling;if(n.nodeType===8||(n.nodeType===3&&!/\\S/.test(n.nodeValue)))h.removeChild(n);n=x}})();`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const session = await optionalSession();
+  // The header must render even when the database is down: treat any failure as signed out.
+  const [session, baseAddress] = await Promise.all([optionalSession().catch(() => null), baseSessionHint().catch(() => null)]);
   return (
     <html lang="en" className={`${inter.variable} ${interTight.variable} ${jetbrains.variable}`}>
       <head>
@@ -39,7 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body className="min-h-dvh">
         <WalletProvider initialAddress={session?.addr ?? null}>
-          <Header />
+          <Header baseAddress={baseAddress} />
           <main>{children}</main>
           <CookieConsent />
         </WalletProvider>

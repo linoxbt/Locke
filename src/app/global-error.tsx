@@ -8,7 +8,8 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
         <main style={{ maxWidth: 560, margin: "0 auto", padding: "120px 24px" }}>
           <h1 style={{ fontSize: 28, margin: 0 }}>Locke couldn&apos;t load.</h1>
           <p style={{ fontSize: 15, lineHeight: 1.5, color: "#5d5d62" }}>
-            Something broke on our side. Your plans keep running on Strike and the risk worker keeps watching them.
+            Something broke on our side. Your hedges stay open on Strike and Avantis, and your Base vault stays yours: you can
+            withdraw or close from your own wallet even while Locke is down.
           </p>
           {error.digest && <p style={{ fontSize: 12, color: "#656569" }}>Reference {error.digest}</p>}
           <button

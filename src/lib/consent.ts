@@ -42,7 +42,6 @@ export function allowPreferences(): boolean {
 /** Keys of the optional preference storage; cleared when the visitor declines it. */
 export const PREFERENCE_KEYS = ["locke.wallet", "locke.base.wallet"];
 
-export const CONSENT_CHANGED = "locke:consent-changed";
 export const OPEN_COOKIE_SETTINGS = "locke:open-cookie-settings";
 
 export function saveConsent(preferences: boolean) {
@@ -58,10 +57,4 @@ export function saveConsent(preferences: boolean) {
       }
     }
   }
-  window.dispatchEvent(new CustomEvent(CONSENT_CHANGED, { detail: c }));
-}
-
-/** Reopen the cookie settings from anywhere (the footer's "Cookie settings" link). */
-export function openCookieSettings() {
-  window.dispatchEvent(new Event(OPEN_COOKIE_SETTINGS));
 }

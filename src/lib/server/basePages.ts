@@ -27,6 +27,17 @@ export function baseClientSettings() {
   return { factory: config.baseFactoryAddress, dataSuffix: builderSuffix(config.baseBuilderCode) };
 }
 
+/** Locke's fee (basis points of the hedge) for vaults created now, read from the factory. Null if it can't be read. */
+export async function factoryFeeBps(): Promise<number | null> {
+  const factory = config.baseFactoryAddress;
+  if (!factory) return null;
+  try {
+    return Number(await basePublicClient().readContract({ address: factory, abi: factoryAbi, functionName: "feeBps" }));
+  } catch {
+    return null;
+  }
+}
+
 /** The keeper new vaults get, so an owner who removed it can add it back. */
 export async function factoryKeeper(): Promise<string | null> {
   const factory = config.baseFactoryAddress;

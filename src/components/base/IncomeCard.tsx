@@ -6,7 +6,8 @@ import { USDC, usdcUnits } from "@/lib/base/contracts";
 import { onChain, SHARE_RANGE, SPEND_PERMISSION_MANAGER, spendPermissionManagerAbi, WEEKLY_CAP_RANGE } from "@/lib/base/income";
 import { providerFor, rememberedKind, sendBaseCalls, walletErrorMessage, walletFor } from "@/lib/base/wallet";
 import type { IncomeView } from "@/lib/server/baseIncome";
-import { ago, usd } from "@/lib/ui/format";
+import { usd } from "@/lib/ui/format";
+import { Ago } from "../Time";
 import { Field, Slider } from "../form";
 import { Button, Card, ErrorNote, inputCls, Notice, Stat } from "../ui";
 
@@ -113,7 +114,7 @@ export function IncomeCard({
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
             <Stat label="Share of income" value={`${income.sharePct}%`} />
             <Stat label="Weekly cap" value={usd(income.weeklyCapUsd, 0)} />
-            <Stat label="Moved so far" value={usd(income.collectedUsd)} sub={income.lastCollectedAt ? `Last ${ago(income.lastCollectedAt)}` : "Nothing yet"} />
+            <Stat label="Moved so far" value={usd(income.collectedUsd)} sub={income.lastCollectedAt ? <>Last <Ago iso={income.lastCollectedAt} /></> : "Nothing yet"} />
             <Stat label="Waiting" value={usd(income.pendingUsd)} sub="Moves once it reaches $5, within the cap" />
           </div>
           <Button variant="ghost" onClick={turnOff} busy={busy} disabled={busy}>

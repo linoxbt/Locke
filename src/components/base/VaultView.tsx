@@ -8,7 +8,8 @@ import { erc20Abi, USDC, usdcUnits, vaultAbi } from "@/lib/base/contracts";
 import { sendBaseCalls, walletErrorMessage, walletFor } from "@/lib/base/wallet";
 import { LOCKE_THRESHOLDS } from "@/lib/domain/risk";
 import type { VaultView as Detail } from "@/lib/server/baseVaults";
-import { ago, pct, price, shortAddr, signedUsd, usd } from "@/lib/ui/format";
+import { pct, price, shortAddr, signedUsd, usd } from "@/lib/ui/format";
+import { Ago } from "../Time";
 import { Button, Card, Display, ErrorNote, inputCls, Notice, Stat, StateChip } from "../ui";
 import { BaseMark } from "./BaseMark";
 import { IncomeCard } from "./IncomeCard";
@@ -24,11 +25,19 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
+  // Live updates that stopped: say so rather than show old figures as current.
+  const [stale, setStale] = useState(false);
 
   const refresh = useCallback(async () => {
-    const r = await fetch(`/api/base/vaults/${d.address}`, { cache: "no-store" });
-    if (r.status === 401) return window.location.assign(`/base?next=${encodeURIComponent(window.location.pathname)}`);
-    if (r.ok) setD(await r.json());
+    try {
+      const r = await fetch(`/api/base/vaults/${d.address}`, { cache: "no-store" });
+      if (r.status === 401) return window.location.assign(`/base?next=${encodeURIComponent(window.location.pathname)}`);
+      if (!r.ok) throw new Error(String(r.status));
+      setD(await r.json());
+      setStale(false);
+    } catch {
+      setStale(true);
+    }
   }, [d.address]);
 
   useEffect(() => {
@@ -125,6 +134,7 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
         </div>
       </div>
 
+      {stale && <Notice>Live updates paused: Locke couldn&apos;t refresh this vault. The figures below may be out of date; it keeps trying.</Notice>}
       {d.partial.length > 0 && <Notice>Some live data didn&apos;t load ({d.partial.join(", ")}). Showing what&apos;s available; it retries every few seconds.</Notice>}
       {d.chain?.paused && <Notice>Locke has paused new deposits and new hedges. Withdrawals and closes still work.</Notice>}
       {d.statusNote && <Notice tone="info">{d.statusNote}</Notice>}
@@ -170,7 +180,9 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
                       </a>
                     )}
                   </span>
-                  <span className="num shrink-0 text-ink-3">{ago(e.at)}</span>
+                  <span className="num shrink-0 text-ink-3">
+                    <Ago iso={e.at} />
+                  </span>
                 </li>
               ))}
             </ul>
@@ -182,6 +194,13 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
           <div className="grid grid-cols-2 gap-4">
             <Stat label="Idle in the vault" value={usd(d.chain?.idleUsd)} />
             <Stat label="In the hedge" value={usd(p?.collateralUsd ?? 0)} />
+            {d.chain && (
+              <Stat
+                label="Locke fee"
+                value={d.chain.feeBps ? `${(d.chain.feeBps / 100).toFixed(2)}%` : "None"}
+                sub={d.chain.feeBps ? "Of the hedge, once it opens; at most monthly per market" : undefined}
+              />
+            )}
           </div>
           <label className="block">
             <span className="mb-2 block text-sm text-ink-2">Amount (USDC)</span>
@@ -199,8 +218,8 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
 
           <div className="flex flex-col gap-2 border-t border-line pt-5">
             {p && (
-              <Button variant="danger" onClick={close} busy={busy === "close"} disabled={busy !== null}>
-                Close the hedge now
+              <Button variant="danger" onClick={close} busy={busy === "close"} disabled={busy !== null || d.mark == null}>
+                {d.mark == null ? "Waiting for a price to close" : "Close the hedge now"}
               </Button>
             )}
             <Button variant="ghost" onClick={toggleKeeper} busy={busy === "keeper"} disabled={busy !== null || (!keeperOn && !factoryKeeper)}>

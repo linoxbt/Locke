@@ -242,6 +242,9 @@ create table if not exists base_vault_events (
   created_at timestamptz not null default now()
 );
 create index if not exists base_vault_events_vault_idx on base_vault_events(vault, id desc);
+-- Proof lookups (live attestations, revocations) without scanning every event.
+create index if not exists base_vault_events_attestation_idx on base_vault_events(vault) where detail ? 'attestation';
+create index if not exists base_vault_events_revoked_idx on base_vault_events((detail->>'revoked')) where detail ? 'revoked';
 
 alter table base_users        enable row level security;
 alter table base_auth_nonces  enable row level security;
@@ -269,3 +272,14 @@ create table if not exists base_income (
   updated_at     timestamptz not null default now()
 );
 alter table base_income enable row level security;
+
+-- Agent API payments (x402) already used: one EIP-3009 authorization pays for one call, even when
+-- the same signed payment is sent several times at once.
+create table if not exists x402_payments (
+  payer      text not null,
+  nonce      text not null,
+  resource   text not null,
+  created_at timestamptz not null default now(),
+  primary key (payer, nonce)
+);
+alter table x402_payments enable row level security;

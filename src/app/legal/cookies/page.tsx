@@ -11,6 +11,7 @@ const NECESSARY: [string, string, string, string][] = [
   ["locke_consent", "Cookie", "Remembers your cookie choice", "12 months"],
   ["locke.pendingDeposits", "Local storage", "Holds a deposit you sent until Locke has confirmed it, so it isn't lost if you close the tab", "Until the deposit is confirmed"],
   ["locke.base.wallet", "Session storage", "Which wallet you signed in to Locke on Base with, so your transactions go to it", "Until you close the tab"],
+  ["locke.base.created.<address>", "Session storage", "A vault you created on Base but Locke hasn't saved yet, so saving can be retried instead of creating another", "Until it is saved, or you close the tab"],
 ];
 
 const PREFERENCES: [string, string, string, string][] = [

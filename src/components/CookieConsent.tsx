@@ -17,12 +17,17 @@ export function CookieConsent() {
   const [preferences, setPreferences] = useState(false);
   const titleId = useId();
   const card = useRef<HTMLDivElement>(null);
+  // Reopened from "Cookie settings" (a choice already exists): Escape closes it, and focus goes back.
+  const opener = useRef<HTMLElement | null>(null);
+  const [reopened, setReopened] = useState(false);
 
   useEffect(() => {
     if (!currentConsent()) setOpen(true);
     const reopen = () => {
+      opener.current = document.activeElement as HTMLElement | null;
       setPreferences(currentConsent()?.preferences ?? false);
       setCustomize(true);
+      setReopened(true);
       setOpen(true);
     };
     window.addEventListener(OPEN_COOKIE_SETTINGS, reopen);
@@ -33,10 +38,12 @@ export function CookieConsent() {
 
   useEffect(() => {
     if (!open) return;
-    card.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+    // Focus the notice itself, so neither choice looks preselected.
+    card.current?.focus({ preventScroll: true });
     if (docked) return;
     // Modal: Tab stays inside the notice until a choice is made.
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && reopened) return close();
       if (e.key === "Escape" && customize) return setCustomize(false);
       if (e.key !== "Tab" || !card.current) return;
       const items = [...card.current.querySelectorAll<HTMLElement>("button, a[href], input")];
@@ -52,14 +59,22 @@ export function CookieConsent() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, docked, customize]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, docked, customize, reopened]);
 
   if (!open) return null;
 
-  const choose = (prefs: boolean) => {
-    saveConsent(prefs);
+  function close() {
     setOpen(false);
     setCustomize(false);
+    setReopened(false);
+    opener.current?.focus();
+    opener.current = null;
+  }
+
+  const choose = (prefs: boolean) => {
+    saveConsent(prefs);
+    close();
   };
 
   const button = "h-11 flex-1 rounded-full bg-cobalt px-5 text-[14px] font-medium text-paper transition hover:bg-cobalt-deep active:scale-[0.98] sm:flex-none sm:min-w-[120px]";
@@ -76,9 +91,10 @@ export function CookieConsent() {
       <div
         ref={card}
         role="dialog"
+        tabIndex={-1}
         aria-modal={docked ? undefined : true}
         aria-labelledby={titleId}
-        className={`pointer-events-auto w-full animate-rise rounded-[24px] bg-white p-5 text-ink shadow-[0_24px_60px_-20px_rgb(0_0_0/0.45)] sm:p-6 ${customize ? "max-w-[560px]" : "max-w-[920px]"}`}
+        className={`pointer-events-auto w-full animate-rise rounded-[24px] bg-white p-5 text-ink outline-none shadow-[0_24px_60px_-20px_rgb(0_0_0/0.45)] sm:p-6 ${customize ? "max-w-[560px]" : "max-w-[920px]"}`}
       >
         {!customize ? (
           <>
@@ -87,7 +103,7 @@ export function CookieConsent() {
             </h2>
             {/* Stacked on phones; one row (text, then the choices) from sm up. */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
-              <p className="text-[13px] leading-relaxed sm:flex-1 sm:text-[14px]">
+              <p className="text-[13px] leading-relaxed sm:flex-1">
                 Locke uses cookies to keep you signed in. With your OK, it also remembers your wallet for next time. No analytics, no ads.
                 See the {policy}.
               </p>

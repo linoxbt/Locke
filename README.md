@@ -1,8 +1,8 @@
 # Locke
 
-**Protect what your business holds. Manage what it needs to buy.**
+**Protect what your business holds. Manage what it buys, with hedges and from a vault you own.**
 
-Locke helps businesses manage price risk using [Strike Finance](https://strikefinance.org) perpetuals. A business tells Locke what it wants to protect — ADA it holds, or the fuel it buys every month — and Locke opens, sizes and monitors a hedge on Strike, presented as a **protection plan**.
+Locke helps businesses manage price risk with perpetual futures, on two networks: on Cardano with [Strike Finance](https://strikefinance.org), and on Base with [Avantis](https://www.avantisfi.com) (now operating as Veranta), from a vault contract the business owns (see [Locke on Base](#locke-on-base)). A business tells Locke what it wants to protect — crypto it holds, or the fuel it buys every month — and Locke opens, sizes and monitors a hedge, presented as a **protection plan** (Strike) or a **vault** (Base).
 
 It's built for a business that holds part of its treasury in ADA and spends money on diesel: for example, a Cardano stake pool operator running generators through grid outages. Falling ADA shrinks its budget and rising fuel prices raise its costs. Locke manages both exposures from one portfolio, with each plan's margin kept separate.
 
@@ -61,9 +61,10 @@ codes. A middleware gate sends signed-out visitors to `/connect?next=<page>` and
 
 | Route | What it is |
 |---|---|
-| `/` | Home, with live ADA-USD and WTI-USD marks from Strike |
-| `/how-it-works` | The four steps, both plan types, the alert ladder |
-| `/connect` | Connect a CIP-30 wallet and sign in through Strike's builder connect |
+| `/` | Home: both networks, live prices from Strike (ADA, WTI) and Avantis on Base (ETH, WTI) |
+| `/how-it-works` | The four steps, both plan types, the alert ladder, and how a Base vault works |
+| `/connect` | Sign in: Sign in with Base, or a CIP-30 Cardano wallet through Strike's builder connect |
+| `/legal/terms`, `/legal/privacy`, `/legal/cookies`, `/legal/risk` | Terms, Privacy Policy, Cookie Policy, Risk Disclosure |
 | `/portfolio` | Total value protected and one card per plan |
 | `/protect` | Choose what to protect |
 | `/protect/holdings`, `/protect/costs` | Describe the exposure; submitting creates a draft |
@@ -200,13 +201,15 @@ TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration
 | `X402_PAY_TO` | app | Optional. Address that receives agent API payments (USDC on Base). Unset: `/api/agent/*` paid calls answer 503 |
 | `X402_SETTLER_PRIVATE_KEY` | app | Optional. Gas wallet that settles agent payments when Locke is its own facilitator. Holds a little ETH on Base, never USDC |
 | `X402_FACILITATOR_URL` | app | Optional. A hosted x402 facilitator instead of settling locally |
+| `LOCKE_SCHEDULED_SWEEP` | app (Netlify) | `off` stops the every-minute risk sweep on that site. Set it on any site that shares the live database but mustn't act on users' plans (a preview); leave it unset on the live site |
 | `VERANTA_API_URL`, `VERANTA_FEED_URL` | app, base keeper | Veranta's API and signed-price feed (defaults to production) |
 
 ### Deploy
 
 - **App:** Netlify (`netlify.toml`, Next.js runtime). Set the variables above in the Netlify UI with the Functions scope and mark the secrets as secret.
 - **Worker:** create a Railway service from the same repo with the same `DATABASE_URL` (the **session** pooler, port 5432, or a direct connection: the worker holds an advisory lock so only one instance is active), `LOCKE_KEY_ENC` (must equal the app's) and `STRIKE_BUILDER_FEE_BPS`. `railway.json` runs the schema migration before each deploy, starts `tsx worker/index.ts`, and gates deploys on `/healthz`. The worker exits after two minutes unhealthy so Railway restarts it.
-- **Base keeper (Locke on Base):** a second Railway service from the same repo, start command `npx tsx worker/base-keeper.ts` (override it in the service settings; `railway.json` names the Strike worker), with `DATABASE_URL`, `BASE_FACTORY_ADDRESS`, `BASE_KEEPER_PRIVATE_KEY`, `BASE_BUILDER_CODE` and optionally `BASE_RPC_URL`. It answers `/healthz` (503 when it can't read Base or the database, or is low on ETH) and holds its own advisory lock.
+- **Base keeper (Locke on Base):** a second Railway service from the same repo using `railway.base-keeper.json` (set it as the service's config file; it starts `tsx worker/base-keeper.ts` and doesn't run the migration, which the Strike worker's service owns), with `DATABASE_URL` (session pooler or direct: it refuses the transaction pooler), `BASE_FACTORY_ADDRESS`, `BASE_KEEPER_PRIVATE_KEY`, `BASE_BUILDER_CODE` and a paid `BASE_RPC_URL`. It answers `/healthz` (503 when it can't read Base or the database, is low on ETH, or a vault has failed for two minutes), holds its own advisory lock (exiting if its connection drops), and writes a heartbeat the app's `/api/health` checks.
+- **Health:** `/api/health` fails when risk monitoring (the Strike worker, or the scheduled sweep when no worker runs) has written no heartbeat for 5 minutes, and, once `BASE_FACTORY_ADDRESS` is set, when the Base keeper hasn't. Point an uptime monitor at it.
 - **Database:** create a Supabase project, put its connection string in `DATABASE_URL`, and run `npm run db:migrate` (safe to re-run after every schema change).
 
 ## Locke on Base

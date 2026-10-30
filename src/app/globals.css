@@ -273,6 +273,10 @@ input[type="number"]::-webkit-outer-spin-button {
   .animate-dash-march {
     animation: none !important;
   }
+  /* Spinners still say "working", slowly, instead of flickering. */
+  .animate-spin {
+    animation-duration: 1.5s !important;
+  }
 }
 
 /* Long-form legal text (src/components/legal/LegalPage.tsx). */
@@ -323,6 +327,12 @@ input[type="number"]::-webkit-outer-spin-button {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+  /* Long names (cookie keys) scroll inside the table on small phones instead of widening the page. */
+  display: block;
+  overflow-x: auto;
+}
+.legal code {
+  overflow-wrap: anywhere;
 }
 .legal th,
 .legal td {

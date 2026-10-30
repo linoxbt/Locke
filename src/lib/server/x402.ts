@@ -16,6 +16,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { AGENT_ENDPOINTS, BASE_NETWORK } from "../agent/catalog";
 import { config } from "./config";
+import { db } from "./db";
 
 type Handler = (req: Request, ctx: never) => Promise<Response>;
 
@@ -42,8 +43,11 @@ async function build(): Promise<x402HTTPResourceServer | null> {
     const account = privateKeyToAccount(key);
     const wallet = createWalletClient({ account, chain: base, transport: http(config.baseRpcUrl) }).extend(publicActions);
     const local = registerExactEvmScheme(new x402Facilitator(), {
-      signer: toFacilitatorEvmSigner({ ...wallet, address: account.address } as never, { confirmationTimeoutMs: 20_000 }),
+      // Netlify functions stop at about 10 s: confirm within that. Simulate before submitting, so a
+      // payment that would revert (a replay that lost the race) never spends the settler's gas.
+      signer: toFacilitatorEvmSigner({ ...wallet, address: account.address } as never, { confirmationTimeoutMs: 7_000 }),
       networks: BASE_NETWORK,
+      simulateInSettle: true,
     });
     facilitator = { verify: local.verify.bind(local), settle: local.settle.bind(local), getSupported: async () => local.getSupported() };
   }
@@ -104,19 +108,41 @@ export function paid<H extends Handler>(handler: H): H {
     if (result.type === "payment-error") return toResponse(result.response);
     if (result.type === "no-payment-required") return handler(req, ctx);
 
+    // One signed payment pays for one call: claim its (payer, nonce) before doing any work, so the
+    // same payment sent several times at once runs the handler once and settles once.
+    const auth = (result.paymentPayload.payload as { authorization?: { from?: string; nonce?: string } }).authorization;
+    const payer = auth?.from?.toLowerCase();
+    const nonce = auth?.nonce?.toLowerCase();
+    if (!payer || !nonce) {
+      await result.cancellationDispatcher.cancel({ reason: "handler_failed", responseStatus: 400 }).catch(() => {});
+      return NextResponse.json({ error: "Unsupported payment" }, { status: 400 });
+    }
+    const [claimed] = await db()`insert into x402_payments (payer, nonce, resource) values (${payer}, ${nonce}, ${url.pathname})
+                                  on conflict do nothing returning payer`;
+    if (!claimed) {
+      await result.cancellationDispatcher.cancel({ reason: "handler_failed", responseStatus: 409 }).catch(() => {});
+      return NextResponse.json({ error: "This payment was already used. Sign a new one." }, { status: 409 });
+    }
+    const release = () => db()`delete from x402_payments where payer = ${payer} and nonce = ${nonce}`.catch(() => {});
+
     let res: Response;
     try {
       res = await handler(req, ctx);
     } catch (e) {
+      await release(); // not charged: the same payment may be used again
       await result.cancellationDispatcher.cancel({ reason: "handler_threw", error: e }).catch(() => {});
       throw e;
     }
     if (res.status >= 400) {
+      await release();
       await result.cancellationDispatcher.cancel({ reason: "handler_failed", responseStatus: res.status }).catch(() => {});
       return res;
     }
     const settled = await srv.processSettlement(result.paymentPayload, result.paymentRequirements, result.declaredExtensions, { request: context }, undefined, result.beforeHandlerSettlement);
-    if (!settled.success) return toResponse(settled.response);
+    if (!settled.success) {
+      await release();
+      return toResponse(settled.response);
+    }
     const headers = new Headers(res.headers);
     for (const [k, v] of Object.entries(settled.headers)) headers.set(k, v);
     return new Response(res.body, { status: res.status, headers });

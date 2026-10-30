@@ -93,8 +93,10 @@ export default function Terms() {
           The rate is shown when you connect, and orders never carry more than you agreed to.
         </li>
         <li>
-          <strong>On Base</strong>, a vault can carry a Locke fee of at most 0.20% of the value of each hedge the keeper opens. The rate is
-          fixed when you create the vault and shown before you do.
+          <strong>On Base</strong>, a vault can carry a Locke fee of at most 0.20% of the value of a hedge the keeper opens. It is owed
+          when the keeper places the hedge and paid only once Avantis has opened it (an order that never fills is never charged), and
+          it is charged at most once per market every 30 days, however often the hedge is reopened. The rate is fixed when you create
+          the vault, shown before you do, and included in the deposit Locke asks for.
         </li>
         <li>
           Venues and networks charge their own fees: trading fees, funding and borrow costs, spreads and network fees. Locke shows its best

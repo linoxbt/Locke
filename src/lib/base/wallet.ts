@@ -57,8 +57,13 @@ export async function providerFor(kind: WalletKind): Promise<EIP1193Provider> {
  * necessary to send the signed-in account's transactions), and across visits only with the
  * visitor's consent to preference storage.
  */
-function rememberKind(kind: WalletKind) {
+function rememberKind(kind: WalletKind | null) {
   try {
+    if (!kind) {
+      sessionStorage.removeItem(KIND_KEY);
+      localStorage.removeItem(KIND_KEY);
+      return;
+    }
     sessionStorage.setItem(KIND_KEY, kind);
     if (allowPreferences()) localStorage.setItem(KIND_KEY, kind);
     else localStorage.removeItem(KIND_KEY);
@@ -67,13 +72,39 @@ function rememberKind(kind: WalletKind) {
   }
 }
 
-export function rememberedKind(): WalletKind {
+function storedKind(): WalletKind | null {
   try {
     const kind = sessionStorage.getItem(KIND_KEY) ?? localStorage.getItem(KIND_KEY);
-    return kind === "injected" ? "injected" : "base";
+    return kind === "injected" || kind === "base" ? kind : null;
   } catch {
-    return "base";
+    return null;
   }
+}
+
+export function rememberedKind(): WalletKind {
+  return storedKind() ?? "base";
+}
+
+/**
+ * The wallet that signed in, also in a new tab where nothing was remembered: a browser wallet that
+ * already exposes the session's account (no prompt) is it; otherwise Base Account.
+ */
+async function resolveKind(sessionAddress: string): Promise<WalletKind> {
+  const stored = storedKind();
+  if (stored) return stored;
+  if (hasInjectedWallet()) {
+    try {
+      const provider = await providerFor("injected");
+      const accounts = (await provider.request({ method: "eth_accounts" })) as string[];
+      if (accounts.some((a) => a.toLowerCase() === sessionAddress.toLowerCase())) {
+        rememberKind("injected");
+        return "injected";
+      }
+    } catch {
+      /* fall back to Base Account */
+    }
+  }
+  return "base";
 }
 
 /** A readable message for what wallets throw (rejections, unsupported methods, wrong network). */
@@ -167,6 +198,8 @@ export async function signInWithBase(kind: WalletKind): Promise<string> {
 
 export async function signOutOfBase() {
   await postJson("/api/base/auth/logout", {});
+  // Signing out forgets which wallet was used, as the Cookie Policy says.
+  rememberKind(null);
 }
 
 /**
@@ -174,7 +207,7 @@ export async function signOutOfBase() {
  * transaction. Refuses when the wallet is on a different account than the session.
  */
 export async function walletFor(sessionAddress: string, dataSuffix?: Hex): Promise<WalletClient & { account: { address: Address } }> {
-  const provider = await providerFor(rememberedKind());
+  const provider = await providerFor(await resolveKind(sessionAddress));
   const accounts = (await provider.request({ method: "eth_requestAccounts" })) as Address[];
   const account = accounts.find((a) => a.toLowerCase() === sessionAddress.toLowerCase());
   if (!account) throw new Error(`Your wallet is on another account. Switch to ${sessionAddress.slice(0, 6)}…${sessionAddress.slice(-4)} and try again.`);
