@@ -1,34 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { calibratedCrudeShare, PUMP_PRICES } from "@/lib/domain/fuel";
-import { costsExposureUsd, costsOutcome } from "@/lib/domain/plans";
-import type { CostsInputs } from "@/lib/domain/types";
-import { local, usd } from "@/lib/ui/format";
+import { usd } from "@/lib/ui/format";
 
-/** What each demo treasury holds, fully hedged with a short of the same size. */
-const HOLD = { ada: 50_000, eth: 20 };
-// Lagos diesel at the dated reference pump price, with the crude share Locke would calibrate for it
-// (filled in from the live WTI mark), sized exactly as a real plan is.
-const COST: CostsInputs = {
-  fuelType: "diesel",
-  country: "NG",
-  litresPerMonth: 2000,
-  pumpPrice: PUMP_PRICES.NG.diesel!.price,
-  fxRate: 1530,
-  currency: "NGN",
-  months: 3,
-  crudeSharePct: 46,
-  leverage: 1,
-  bufferPct: 25,
-};
+/** The demo treasury: 20 ETH, fully hedged with a short of the same size. */
+const ETH_HELD = 20;
+/** The demo fuel bill: $40,000 a month, half of it moving with crude, fully hedged with a long. */
+const FUEL = { monthlyUsd: 40_000, crudeShare: 0.5 };
 
-type PlanKind = "ada" | "eth" | "costs";
-type Prices = { ada: number | null; eth: number | null; wti: number };
+type PlanKind = "eth" | "costs";
+type Prices = { eth: number | null };
 
 // Autoplay: the price glides between these moves (%), easing in and out, pausing at each one.
 const WAYPOINTS: Record<PlanKind, number[]> = {
-  ada: [-30, -50, -15, 25, 0],
   eth: [-30, -50, -15, 25, 0],
   costs: [25, 45, 10, -20, 0],
 };
@@ -37,31 +21,32 @@ const HOLD_MS = 700;
 const RESUME_MS = 4_000;
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
-function outcome(type: PlanKind, move: number, { ada, eth, wti }: Prices) {
+function outcome(type: PlanKind, move: number, { eth }: Prices) {
   const m = move / 100;
-  if (type !== "costs") {
-    const entry = (type === "ada" ? ada : eth) ?? 0;
-    const without = HOLD[type] * entry * (1 + m);
-    return { without, with: without + HOLD[type] * (entry - entry * (1 + m)) };
+  if (type === "eth") {
+    const entry = eth ?? 0;
+    const without = ETH_HELD * entry * (1 + m);
+    // The short gains what the holding loses (and gives back what it gains).
+    return { without, with: without - ETH_HELD * entry * m };
   }
-  const c = { ...COST, crudeSharePct: calibratedCrudeShare("diesel", wti, COST.fxRate, COST.pumpPrice) ?? COST.crudeSharePct };
-  return costsOutcome(c, costsExposureUsd(c) / wti, wti, wti * (1 + m));
+  // The crude-linked part of the bill moves with crude; the long pays the difference.
+  const without = FUEL.monthlyUsd * (1 + m * FUEL.crudeShare);
+  return { without, with: without - FUEL.monthlyUsd * FUEL.crudeShare * m };
 }
 
 /**
- * Drag a price move and watch a plan hold. Uses Locke's own outcome functions. While on screen it
+ * Drag a price move and watch a plan hold. While on screen it
  * plays itself: the price glides through a few moves and the figures follow. Dragging takes over
  * (autoplay resumes after a few idle seconds); the pause button stops it for good.
  */
 export function PlanDemo(prices: Prices) {
-  // ADA is hedged on Strike, ETH on Base; a treasury whose price didn't load is left out.
+  // The ETH treasury needs its price; the fuel bill works in moves alone.
   const kinds = (
     [
-      ["ada", "50,000 ADA"],
       ["eth", "20 ETH"],
-      ["costs", "2,000 L diesel"],
+      ["costs", "$40,000/month of fuel"],
     ] as const
-  ).filter(([k]) => k === "costs" || prices[k] != null);
+  ).filter(([k]) => k === "costs" || prices.eth != null);
   const [type, setType] = useState<PlanKind>(kinds[0][0]);
   const [move, setMove] = useState(-30);
   const target = outcome(type, move, prices);
@@ -138,7 +123,7 @@ export function PlanDemo(prices: Prices) {
     };
   }, [autoplay, idleUntil, type]);
 
-  const fmt = type !== "costs" ? (n: number) => usd(n, 0) : (n: number) => local(n, "NGN", 0);
+  const fmt = (n: number) => usd(n, 0);
   const max = Math.max(target.without, target.with) * 1.05;
   const shownMove = Math.round(move);
 
@@ -160,7 +145,7 @@ export function PlanDemo(prices: Prices) {
         </div>
         <div className="flex items-center gap-3">
           <span className="num text-[13px] text-ink-3">
-            {type === "ada" ? "ADA" : type === "eth" ? "ETH" : "Crude"} moves{" "}
+            {type === "eth" ? "ETH" : "Crude"} moves{" "}
             <span className={`inline-block w-[4ch] text-right ${shownMove < 0 ? "text-danger" : shownMove > 0 ? "text-ok" : ""}`}>
               {shownMove > 0 ? "+" : shownMove < 0 ? "−" : ""}
               {Math.abs(shownMove)}%
@@ -220,7 +205,7 @@ export function PlanDemo(prices: Prices) {
         <span>+50%</span>
       </div>
       <p className="mt-4 text-[13px] text-ink-3">
-        Illustration at today&apos;s prices on Strike and Base, fully hedged, before funding and fees. Your own plan shows these numbers for your amounts.
+        Illustration at today&apos;s ETH price on Avantis, fully hedged, before funding and fees. Your own vault shows these numbers for your amounts.
       </p>
     </div>
   );

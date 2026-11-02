@@ -5,8 +5,8 @@ import { HttpError } from "./errors";
 import { assertSameOrigin, decodeSession, encodeSession, type Session } from "./session";
 
 /**
- * Locke on Base signs in with an EVM wallet and keeps its own session, separate from the Strike
- * one: same signed format and lifetime, its own cookie and its own users table.
+ * Locke signs in with an EVM wallet (Sign in with Base): a signed cookie that lasts a day, checked
+ * against the user's session version so signing out ends it everywhere.
  */
 const secureCookie = () => process.env.NODE_ENV !== "development";
 const cookieName = () => (secureCookie() ? "__Host-locke_base" : "locke_base");

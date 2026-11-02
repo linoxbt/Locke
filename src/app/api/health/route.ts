@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { config } from "@/lib/server/config";
 import { db } from "@/lib/server/db";
-import { getMarkPrice } from "@/lib/strike/client";
+import { getMarkets } from "@/lib/veranta/client";
 
 export const dynamic = "force-dynamic";
 
-/** Unauthenticated, so the answer is reused for a few seconds: hammering it can't fan out to the database and Strike. */
+/** Unauthenticated, so the answer is reused for a few seconds: hammering it can't fan out to the database and Avantis. */
 const TTL_MS = 15_000;
 let last: { at: number; ok: Promise<boolean> } | null = null;
 
-/** A heartbeat (1: Strike worker or sweep, 2: Base keeper) older than this means it stopped. */
+/** A heartbeat (2: the Base keeper) older than this means it stopped. */
 const HEARTBEAT_STALE_S = 300;
 
 async function fresh(id: number) {
@@ -27,17 +27,12 @@ async function compute(): Promise<boolean> {
     }
   };
   const checks = {
-    builderCode: await check(() => config.builderCode),
-    builderFee: await check(() => config.builderFeeBps),
     sessionSecret: await check(() => config.sessionSecret),
-    keyEncryption: await check(() => config.keyEnc),
     database: await check(() =>
       Promise.race([db()`select 1`, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000))])
     ),
-    strike: await check(() => getMarkPrice("ADA-USD")),
-    // Risk monitoring runs: the worker or the scheduled sweep wrote its heartbeat recently.
-    monitoring: await check(() => fresh(1)),
-    // Once Locke on Base is live, its keeper must be running too.
+    avantis: await check(() => getMarkets()),
+    // Once Locke on Base is live, its keeper must be running.
     baseKeeper: config.baseFactoryAddress ? await check(() => fresh(2)) : true,
   };
   const ok = Object.values(checks).every(Boolean);

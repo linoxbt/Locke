@@ -2,8 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import { CookieConsent } from "@/components/CookieConsent";
 import { Header } from "@/components/Header";
-import { WalletProvider } from "@/components/WalletProvider";
-import { optionalSession } from "@/lib/server/pageAuth";
 import { baseSessionHint } from "@/lib/server/baseSession";
 import "./globals.css";
 
@@ -14,8 +12,8 @@ const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrai
 export const metadata: Metadata = {
   // Netlify sets URL at build time; social images need an absolute base.
   metadataBase: new URL(process.env.URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: "Locke — Protection plans on Strike and Base",
-  description: "Protect what your business holds. Manage what it buys. Hedges on Strike (Cardano) and Base, sized and watched for you.",
+  title: "Locke — Protection plans on Base",
+  description: "Protect what your business holds. Manage what it buys. Hedges on Base from a vault you own, sized and watched for you.",
   openGraph: { title: "Locke", description: "Protect what your business holds. Manage what it buys, with hedges and from a vault you own." },
 };
 
@@ -29,22 +27,20 @@ const STRIP_INJECTED_HEAD_NODES = `(function(){var h=document.head,n=h.firstChil
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // The header must render even when the database is down: treat any failure as signed out.
-  const [session, baseAddress] = await Promise.all([optionalSession().catch(() => null), baseSessionHint().catch(() => null)]);
+  const baseAddress = await baseSessionHint().catch(() => null);
   return (
     <html lang="en" className={`${inter.variable} ${interTight.variable} ${jetbrains.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: STRIP_INJECTED_HEAD_NODES }} />
         <noscript>
           {/* Without JavaScript nothing waits to animate in. */}
-          <style>{`[data-drop] > *, [data-fall] .fall { opacity: 1 !important; } .replay-clip { transform: none !important; }`}</style>
+          <style>{`[data-drop] > *, [data-fall] .fall { opacity: 1 !important; }`}</style>
         </noscript>
       </head>
       <body className="min-h-dvh">
-        <WalletProvider initialAddress={session?.addr ?? null}>
-          <Header baseAddress={baseAddress} />
-          <main>{children}</main>
-          <CookieConsent />
-        </WalletProvider>
+        <Header baseAddress={baseAddress} />
+        <main>{children}</main>
+        <CookieConsent />
       </body>
     </html>
   );

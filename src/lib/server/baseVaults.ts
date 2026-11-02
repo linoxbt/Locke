@@ -16,7 +16,7 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 export function requireFactory(): Address {
   const f = config.baseFactoryAddress;
-  if (!f) throw new HttpError(503, "Locke on Base isn't live yet.");
+  if (!f) throw new HttpError(503, "Locke isn't live yet.");
   return f;
 }
 

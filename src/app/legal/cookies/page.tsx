@@ -6,17 +6,14 @@ import { LegalPage } from "@/components/legal/LegalPage";
 export const metadata: Metadata = { title: "Cookie Policy · Locke", description: "The cookies and browser storage Locke uses." };
 
 const NECESSARY: [string, string, string, string][] = [
-  ["__Host-locke_session", "Cookie", "Keeps you signed in to Locke on Strike", "24 hours"],
-  ["__Host-locke_base", "Cookie", "Keeps you signed in to Locke on Base", "24 hours"],
+  ["__Host-locke_base", "Cookie", "Keeps you signed in to Locke", "24 hours"],
   ["locke_consent", "Cookie", "Remembers your cookie choice", "12 months"],
-  ["locke.pendingDeposits", "Local storage", "Holds a deposit you sent until Locke has confirmed it, so it isn't lost if you close the tab", "Until the deposit is confirmed"],
-  ["locke.base.wallet", "Session storage", "Which wallet you signed in to Locke on Base with, so your transactions go to it", "Until you close the tab"],
+  ["locke.base.wallet", "Session storage", "Which wallet you signed in with, so your transactions go to it", "Until you close the tab"],
   ["locke.base.created.<address>", "Session storage", "A vault you created on Base but Locke hasn't saved yet, so saving can be retried instead of creating another", "Until it is saved, or you close the tab"],
 ];
 
 const PREFERENCES: [string, string, string, string][] = [
-  ["locke.wallet", "Local storage", "Which Cardano wallet you used, so it reconnects on your next visit", "Until you sign out or clear it"],
-  ["locke.base.wallet", "Local storage", "Which wallet you used on Locke on Base, across visits", "Until you sign out or clear it"],
+  ["locke.base.wallet", "Local storage", "Which wallet you signed in with, across visits", "Until you sign out or clear it"],
 ];
 
 function Table({ rows }: { rows: [string, string, string, string][] }) {

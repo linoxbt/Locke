@@ -177,61 +177,6 @@ export function StateChip({ status, level }: { status: string; level?: RiskLevel
   );
 }
 
-/** Margin health 0–100%, ticks at Locke's levels and Strike's 70% / 90%. */
-export function MarginBar({
-  ratio,
-  watch,
-  action,
-  onDark = false,
-}: {
-  ratio: number | null;
-  watch: number;
-  action: number;
-  onDark?: boolean;
-}) {
-  const r = ratio == null ? 0 : Math.min(1, Math.max(0, ratio));
-  const fill = (ratio ?? 0) >= action || r >= 0.7 ? "bg-danger" : (ratio ?? 0) >= watch ? "bg-watch" : onDark ? "bg-paper" : "bg-ink";
-  const ticks = [
-    { at: Math.min(watch, 1), label: "Locke watch" },
-    { at: Math.min(action, 1), label: "Locke action" },
-    { at: 0.7, label: "Strike margin call" },
-    { at: 0.9, label: "Strike reduce-only" },
-  ];
-  const level =
-    ratio == null ? "Unknown" : r >= 0.9 ? "Reduce only" : r >= 0.7 ? "Margin call" : ratio >= action ? "Action needed" : ratio >= watch ? "Watch" : "Healthy";
-  // Small labels: on cobalt or danger only full paper stays legible.
-  const muted = onDark ? "text-paper" : "text-ink-3";
-  return (
-    <div>
-      <div
-        className={`relative h-3 w-full overflow-hidden rounded-full ${onDark ? "bg-paper/15" : "bg-mist"}`}
-        role="meter"
-        aria-label="Margin health"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(r * 100)}
-        aria-valuetext={ratio == null ? "Unknown" : `${level}, ${Math.round(r * 100)}%`}
-      >
-        <div className={`h-full rounded-full ${fill} transition-[width] duration-700`} style={{ width: `${Math.max(2, r * 100)}%` }} />
-        {ticks.map((t) => (
-          <span key={t.label} title={t.label} className={`absolute top-0 h-full w-0.5 ${onDark ? "bg-paper/30" : "bg-paper"}`} style={{ left: `${t.at * 100}%` }} />
-        ))}
-      </div>
-      <div className={`num relative mt-1 h-3.5 text-[10px] ${muted}`} aria-hidden>
-        {[...new Set(ticks.map((t) => Math.round(t.at * 100)))].map((at) => (
-          <span key={at} className="absolute -translate-x-1/2" style={{ left: `${at}%` }}>
-            {at}
-          </span>
-        ))}
-      </div>
-      <div className={`num mt-1 flex justify-between text-[11px] ${muted}`}>
-        <span>Healthy</span>
-        <span>Margin call 70% · Liquidation 100%</span>
-      </div>
-    </div>
-  );
-}
-
 /** Clips long text to one line, then shows all of it while hovered. */
 export const REVEAL = "truncate hover:overflow-visible hover:whitespace-normal hover:[overflow-wrap:anywhere]";
 

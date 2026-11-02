@@ -1,4 +1,4 @@
-// Locke on Base keeper. Long-lived: run it on Railway as its own service, next to the Strike worker.
+// Locke's keeper. Long-lived: run it on Railway as its own service.
 //
 // Every 15 seconds, for each vault not closed:
 // - reads the vault on Base (idle USDC, plan limits, pause, keeper, cooldown) and its hedge on

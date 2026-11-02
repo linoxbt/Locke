@@ -1,13 +1,12 @@
-// Public metrics: what Locke protects right now on Strike (Cardano) and Base, from Locke's own
+// Public metrics: what Locke protects right now on Base, from Locke's own
 // records. Aggregates only; nothing here names a business or a wallet.
 
 import { baseMarket } from "../base/contracts";
 import { db } from "./db";
 
 export interface Metrics {
-  /** USD of hedges open right now, both networks. */
+  /** USD of hedges open right now. */
   protectedUsd: number;
-  strike: { activePlans: number; protectedUsd: number; /** Plans that got as far as opening a hedge. */ plansCreated: number };
   base: {
     activeVaults: number;
     protectedUsd: number;
@@ -26,12 +25,7 @@ const num = (v: unknown) => Number(v ?? 0) || 0;
 
 export async function readMetrics(): Promise<Metrics> {
   const sql = db();
-  const [[strike], [base], [txs], proofs, [live]] = await Promise.all([
-    sql`
-      select count(*) filter (where status = 'active') as active,
-             coalesce(sum((sizing->>'notional')::numeric) filter (where status = 'active'), 0) as usd,
-             count(*) filter (where status in ('opening', 'active', 'closing', 'closed')) as created
-      from plans`,
+  const [[base], [txs], proofs, [live]] = await Promise.all([
     sql`
       select count(*) filter (where status = 'active') as active,
              coalesce(sum((sizing->>'notionalUsd')::numeric) filter (where status = 'active'), 0) as usd,
@@ -53,11 +47,9 @@ export async function readMetrics(): Promise<Metrics> {
       where e.detail ? 'attestation'
         and not exists (select 1 from base_vault_events r where r.vault = e.vault and r.detail->>'revoked' = e.detail->>'attestation')`,
   ]);
-  const strikeUsd = num(strike.usd);
   const baseUsd = num(base.usd);
   return {
-    protectedUsd: strikeUsd + baseUsd,
-    strike: { activePlans: num(strike.active), protectedUsd: strikeUsd, plansCreated: num(strike.created) },
+    protectedUsd: baseUsd,
     base: {
       activeVaults: num(base.active),
       protectedUsd: baseUsd,

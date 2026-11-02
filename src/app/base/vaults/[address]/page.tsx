@@ -6,7 +6,7 @@ import { vaultDetail } from "@/lib/server/baseVaults";
 import { HttpError } from "@/lib/server/errors";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Vault · Locke on Base" };
+export const metadata: Metadata = { title: "Vault · Locke" };
 
 export default async function VaultPage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = await params;

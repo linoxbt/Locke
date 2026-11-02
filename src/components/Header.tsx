@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { BaseMark } from "./base/BaseMark";
 import { LockeMark } from "./Logo";
-import { useWallet } from "./WalletProvider";
 import { shortAddr } from "@/lib/ui/format";
 
 const pill = "inline-flex h-9 shrink-0 items-center rounded-full px-3.5 text-[14px] backdrop-blur-md transition-colors";
@@ -16,7 +15,6 @@ const quiet = "bg-[#e6e5e1]/95 text-ink shadow-[0_1px_0_rgb(0_0_0/0.04)] hover:b
  * pill on the right. Below md the middle pills fold into a round menu button.
  */
 export function Header({ baseAddress = null }: { baseAddress?: string | null }) {
-  const { me } = useWallet();
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -51,34 +49,21 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
     };
   }, [open]);
 
-  // Locke on Base is its own area with its own sign-in: its pages get its own links.
-  const onBase = path === "/base" || path.startsWith("/base/");
-  const links = onBase
+  const links = baseAddress
     ? [
         { href: "/base", label: "Vaults" },
         { href: "/base/new", label: "New vault" },
-      ]
-    : me
-    ? [
-        { href: "/portfolio", label: "Portfolio" },
-        { href: "/protect", label: "New plan" },
         { href: "/how-it-works", label: "How it works" },
       ]
     : [
         { href: "/how-it-works", label: "How it works" },
-        { href: "/protect/holdings", label: "Holdings" },
-        { href: "/protect/costs", label: "Operating costs" },
-        { href: "/base", label: "Vaults on Base" },
+        { href: "/metrics", label: "Metrics" },
+        { href: "/agents", label: "For agents" },
       ];
-  const isOn = (href: string) =>
-    path === href || (href !== "/base" && path.startsWith(href + "/")) || (href === "/portfolio" && path.startsWith("/plans/")) || (href === "/base" && path.startsWith("/base/vaults/"));
-  // Signed in with Base (and not with Cardano): the action is the vaults, not "Get started".
-  const onBaseOnly = !me && !!baseAddress;
-  const cta = me
-    ? { href: "/account", label: shortAddr(me.address) }
-    : baseAddress
-      ? { href: "/base", label: shortAddr(baseAddress) }
-      : { href: "/connect", label: "Get started" };
+  const isOn = (href: string) => path === href || (href !== "/base" && path.startsWith(href + "/")) || (href === "/base" && path.startsWith("/base/vaults/"));
+  // Signed in: the action is the vaults, shown with the account's address.
+  const cta = baseAddress ? { href: "/base", label: shortAddr(baseAddress) } : { href: "/connect", label: "Get started" };
+  const showCta = !!baseAddress || path !== "/connect";
 
   return (
     <>
@@ -101,12 +86,9 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
 
           <div className="pointer-events-auto ml-auto flex items-center gap-1 md:ml-0">
             {/* On the sign-in page itself, "Get started" would only link back to it. */}
-            {!onBase && (me || onBaseOnly || path !== "/connect") && (
-              <Link
-                href={cta.href}
-                className={`${pill} ${me ? `num ${path === "/account" ? "bg-ink text-paper" : quiet}` : onBaseOnly ? `num gap-2 ${quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}
-              >
-                {onBaseOnly && <BaseMark size={10} />}
+            {showCta && (
+              <Link href={cta.href} className={`${pill} ${baseAddress ? `num gap-2 ${quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}>
+                {baseAddress && <BaseMark size={10} />}
                 {cta.label}
               </Link>
             )}
@@ -145,15 +127,15 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
               </button>
             </div>
             <nav aria-label="Menu" className="mt-6 flex flex-col px-3 pb-4">
-              {[...links, ...(onBase ? [] : me ? [{ href: "/account", label: "Account" }, { href: "/withdraw", label: "Withdraw" }] : [])].map((l) => (
+              {links.map((l) => (
                 <Link key={l.href} href={l.href} className={`display border-b border-line py-3 text-[26px] ${isOn(l.href) ? "text-ink" : "text-ink-2"}`}>
                   {l.label}
                 </Link>
               ))}
             </nav>
-            {!onBase && (me || onBaseOnly || path !== "/connect") && (
-              <Link href={me ? "/protect" : onBaseOnly ? "/base" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
-                {me ? "New protection plan" : onBaseOnly ? "Your vaults" : "Get started"}
+            {showCta && (
+              <Link href={baseAddress ? "/base" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
+                {baseAddress ? "Your vaults" : "Get started"}
               </Link>
             )}
           </div>

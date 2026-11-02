@@ -14,13 +14,6 @@ function required(name: string): string {
 }
 
 export const config = {
-  get strikeApiUrl() {
-    return (process.env.STRIKE_API_URL ?? "https://api.strikefinance.org").replace(/\/+$/, "");
-  },
-  /** Streams default to the same host as STRIKE_API_URL, so pointing it at testnet moves them too. */
-  get strikeUserWsUrl() {
-    return process.env.STRIKE_WS_USER_URL ?? `${this.strikeApiUrl.replace(/^http/, "ws")}/ws/user-api`;
-  },
   /** Veranta (formerly Avantis) on Base: data and core APIs behind one gateway, and its signed price feed. */
   get verantaApiUrl() {
     return (process.env.VERANTA_API_URL ?? "https://prod-api.veranta.xyz").replace(/\/+$/, "");
@@ -28,40 +21,8 @@ export const config = {
   get verantaFeedUrl() {
     return (process.env.VERANTA_FEED_URL ?? "https://feed-v3.veranta.xyz").replace(/\/+$/, "");
   },
-  get strikePriceWsUrl() {
-    return process.env.STRIKE_WS_PRICE_URL ?? `${this.strikeApiUrl.replace(/^http/, "ws")}/ws/price`;
-  },
-  get builderCode() {
-    return required("STRIKE_BUILDER_CODE");
-  },
-  /** Per-order builder fee. A server constant, never taken from the browser. Required: a silent 0 would stick to every user who connects. */
-  get builderFeeBps() {
-    const raw = process.env.STRIKE_BUILDER_FEE_BPS;
-    if (raw == null || raw.trim() === "") throw new ConfigError("STRIKE_BUILDER_FEE_BPS");
-    const n = Number(raw);
-    const max = this.builderMaxBps;
-    if (!Number.isInteger(n) || n < 0 || n > max) throw new ConfigError("STRIKE_BUILDER_FEE_BPS", `must be a whole number from 0 to ${max} (the builder code's maximum)`);
-    return n;
-  },
-  /** The maximum fee registered for the builder code on Strike (LockeIn: 20 bps). */
-  get builderMaxBps() {
-    const n = Number(process.env.STRIKE_BUILDER_MAX_BPS ?? "20");
-    if (!Number.isInteger(n) || n < 0 || n > 100) throw new ConfigError("STRIKE_BUILDER_MAX_BPS", "must be 0..100");
-    return n;
-  },
-  get networkId() {
-    return Number(process.env.NEXT_PUBLIC_CARDANO_NETWORK_ID ?? "1");
-  },
-  get koiosUrl() {
-    return (process.env.KOIOS_URL ?? "https://api.koios.rest/api/v1").replace(/\/+$/, "");
-  },
   get databaseUrl() {
     return required("DATABASE_URL");
-  },
-  get keyEnc() {
-    const hex = required("LOCKE_KEY_ENC");
-    if (!/^[0-9a-f]{64}$/i.test(hex)) throw new ConfigError("LOCKE_KEY_ENC", "must be 32 bytes of hex");
-    return Buffer.from(hex, "hex");
   },
   get sessionSecret() {
     const s = required("SESSION_SECRET");
@@ -112,8 +73,5 @@ export const config = {
     if (!k) return null;
     if (!/^0x[0-9a-fA-F]{64}$/.test(k)) throw new ConfigError("X402_SETTLER_PRIVATE_KEY", "must be 32 bytes of hex with 0x");
     return k as `0x${string}`;
-  },
-  get demoAlerts() {
-    return process.env.LOCKE_DEMO_ALERTS === "true";
   },
 };

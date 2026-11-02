@@ -1,6 +1,6 @@
 // Cookie consent. Locke uses no analytics or advertising cookies; the one optional kind of
 // storage is "preferences" (remembering which wallet you used last). Strictly necessary storage
-// (sign-in sessions, a deposit waiting to be confirmed, this choice itself) needs no consent.
+// (the sign-in session, a vault waiting to be saved, this choice itself) needs no consent.
 //
 // The choice is kept in a first-party cookie for 12 months: locke_consent=v1.p1.<unix seconds>.
 
@@ -40,7 +40,7 @@ export function allowPreferences(): boolean {
 }
 
 /** Keys of the optional preference storage; cleared when the visitor declines it. */
-export const PREFERENCE_KEYS = ["locke.wallet", "locke.base.wallet"];
+export const PREFERENCE_KEYS = ["locke.base.wallet"];
 
 export const OPEN_COOKIE_SETTINGS = "locke:open-cookie-settings";
 

@@ -1,7 +1,7 @@
 # Next.js on Netlify runs on the Netlify Next.js runtime (SSR, route handlers, middleware).
-# Runtime secrets (DATABASE_URL, LOCKE_KEY_ENC, SESSION_SECRET, STRIKE_BUILDER_CODE) live in the
-# Netlify UI with the Functions scope, not in this file. The risk worker is a long-running
-# process and runs elsewhere (see railway.json).
+# Runtime secrets (DATABASE_URL, SESSION_SECRET and the BASE_*/X402_* settings) live in the
+# Netlify UI with the Functions scope, not in this file. The Base keeper is a long-running
+# process and runs elsewhere (see railway.base-keeper.json).
 [build]
   command = "npm run build"
   publish = ".next"

@@ -2,6 +2,7 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": { "builder": "RAILPACK", "buildCommand": "echo 'no build: the keeper runs from source with tsx'" },
   "deploy": {
+    "preDeployCommand": ["npx tsx scripts/migrate.ts"],
     "startCommand": "npx tsx worker/base-keeper.ts",
     "healthcheckPath": "/healthz",
     "healthcheckTimeout": 120,

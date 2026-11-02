@@ -6,7 +6,7 @@ import { Display, Notice } from "@/components/ui";
 import { baseClientSettings, factoryFeeBps, requireBasePage } from "@/lib/server/basePages";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "New vault · Locke on Base" };
+export const metadata: Metadata = { title: "New vault · Locke" };
 
 export default async function NewVault() {
   const s = await requireBasePage("/base/new");

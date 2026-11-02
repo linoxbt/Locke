@@ -1,120 +1,19 @@
 import { describe, expect, it } from "vitest";
-import {
-  fundingPerDay,
-  liquidationPrice,
-  maintenanceMargin,
-  marginRatio,
-  priceAtRatio,
-  riskLevel,
-  suggestedTopUpUsd,
-  LOCKE_THRESHOLDS,
-} from "@/lib/domain/risk";
-import type { MarginTier } from "@/lib/domain/types";
-
-// ADA-USD tiers as served by GET /v2/markets (first three).
-const tiers: MarginTier[] = [
-  { max_notional: "10000", max_leverage: 40, maintenance_margin_rate: "0.005", maintenance_amount: "0" },
-  { max_notional: "25000", max_leverage: 40, maintenance_margin_rate: "0.01", maintenance_amount: "50" },
-  { max_notional: "50000", max_leverage: 25, maintenance_margin_rate: "0.01", maintenance_amount: "50" },
-];
-
-const ratioAt = (signed: number, entry: number, iso: number, mark: number) =>
-  marginRatio(maintenanceMargin(tiers, signed, mark), iso, signed * (mark - entry));
-
-describe("margin math", () => {
-  it("short liquidation price puts the ratio at 100%", () => {
-    const s = -1000, entry = 0.2, iso = 0.2 * 1000 * 1.25;
-    const liq = liquidationPrice(tiers, s, entry, iso)!;
-    expect(liq).toBeGreaterThan(entry);
-    expect(ratioAt(s, entry, iso, liq)).toBeCloseTo(1, 6);
-  });
-
-  it("long liquidation price puts the ratio at 100%", () => {
-    const s = 10, entry = 100, iso = (1000 * 1.25) / 3;
-    const liq = liquidationPrice(tiers, s, entry, iso)!;
-    expect(liq).toBeLessThan(entry);
-    expect(ratioAt(s, entry, iso, liq)).toBeCloseTo(1, 6);
-  });
-
-  it("solves any target ratio and re-resolves tiers", () => {
-    const s = -60000, entry = 0.2, iso = 12000 / 3; // notional crosses into tier 2 as price rises
-    for (const t of [0.35, 0.5, 0.6, 0.7]) {
-      const x = priceAtRatio(tiers, s, entry, iso, t)!;
-      expect(ratioAt(s, entry, iso, x)).toBeCloseTo(t, 6);
-    }
-  });
-
-  it("1x short with a 25% buffer cannot be liquidated below +80%", () => {
-    const liq = liquidationPrice(tiers, -1000, 0.2, 250)!;
-    expect(liq / 0.2 - 1).toBeGreaterThan(0.8);
-  });
-
-  it("applies hysteresis when leaving Watch", () => {
-    expect(riskLevel(0.52, "ok")).toBe("watch");
-    expect(riskLevel(0.47, "watch")).toBe("watch");
-    expect(riskLevel(0.44, "watch")).toBe("ok");
-    expect(riskLevel(0.47, "ok")).toBe("ok");
-    expect(riskLevel(0.61, "ok")).toBe("action");
-    expect(riskLevel(0.75, "ok")).toBe("margin_call");
-    expect(riskLevel(0.95, "ok")).toBe("reduce_only");
-    expect(riskLevel(1.2, "ok")).toBe("liquidation");
-  });
-
-  it("top-up brings the ratio back to target", () => {
-    const mm = 30, iso = 40, upnl = -5;
-    const add = suggestedTopUpUsd(mm, iso, upnl, LOCKE_THRESHOLDS.target);
-    expect(marginRatio(mm, iso + add, upnl)).toBeCloseTo(LOCKE_THRESHOLDS.target, 9);
-    expect(suggestedTopUpUsd(1, 100, 0, 0.35)).toBe(0);
-  });
-
-  it("longs pay and shorts receive when funding is positive", () => {
-    expect(fundingPerDay(10, 100, 0.0001)).toBeCloseTo(-2.4);
-    expect(fundingPerDay(-10, 100, 0.0001)).toBeCloseTo(2.4);
-  });
-});
-
-import { combinedLevel, distanceToLiquidation, isoForLiquidationAt, priceAtDistance } from "@/lib/domain/risk";
-
-describe("distance-based alerts", () => {
-  it("alerts on a 1x plan well before the ratio would", () => {
-    const s = -1000, entry = 0.2, iso = 250;
-    const liq = liquidationPrice(tiers, s, entry, iso)!;
-    const mark = liq / 1.08; // 8% from liquidation
-    const ratio = ratioAt(s, entry, iso, mark);
-    expect(ratio).toBeLessThan(0.1); // ratio alone says "ok"
-    expect(combinedLevel(ratio, distanceToLiquidation(s, mark, liq), "ok")).toBe("action");
-    expect(combinedLevel(ratio, distanceToLiquidation(s, liq / 1.15, liq), "ok")).toBe("watch");
-    expect(combinedLevel(ratio, distanceToLiquidation(s, liq / 1.21, liq), "watch")).toBe("watch");
-    expect(combinedLevel(ratio, distanceToLiquidation(s, liq / 1.3, liq), "watch")).toBe("ok");
-  });
-
-  it("finds the isolated balance for a target liquidation price", () => {
-    for (const [s, entry] of [[-1000, 0.2], [10, 100]] as const) {
-      const target = s < 0 ? entry * 1.6 : entry * 0.6;
-      const iso = isoForLiquidationAt(tiers, s, entry, target);
-      expect(liquidationPrice(tiers, s, entry, iso)).toBeCloseTo(target, 6);
-      expect(priceAtDistance(s, target, 0.1)).toBeCloseTo(s < 0 ? target / 1.1 : target / 0.9, 9);
-    }
-  });
-});
+import { ACTION_EXIT_FACTOR, LOCKE_THRESHOLDS, riskLevel } from "@/lib/domain/risk";
 
 describe("action hysteresis", () => {
-  it("doesn't flap between watch and action around the action level", async () => {
-    const { riskLevel, combinedLevel, LOCKE_THRESHOLDS, ACTION_EXIT_FACTOR } = await import("@/lib/domain/risk");
+  it("doesn't flap between watch and action around the action level", () => {
     expect(riskLevel(0.61, "watch")).toBe("action");
     expect(riskLevel(0.59, "action")).toBe("action");
     expect(riskLevel(LOCKE_THRESHOLDS.action * ACTION_EXIT_FACTOR - 0.001, "action")).toBe("watch");
     expect(riskLevel(0.59, "watch")).toBe("watch");
-    // Distance: in at 10%, out only beyond 12%.
-    expect(combinedLevel(0.1, 0.099, "ok")).toBe("action");
-    expect(combinedLevel(0.1, 0.11, "action")).toBe("action");
-    expect(combinedLevel(0.1, 0.13, "action")).toBe("watch");
+    expect(riskLevel(0.46, "watch")).toBe("watch");
+    expect(riskLevel(0.44, "watch")).toBe("ok");
   });
 });
 
-describe("Strike-level hysteresis", () => {
-  it("holds a Strike level until the ratio is clearly below it, so alerts don't flap", async () => {
-    const { riskLevel } = await import("@/lib/domain/risk");
+describe("exchange-level hysteresis", () => {
+  it("holds a level until the ratio is clearly below it, so alerts don't flap", () => {
     expect(riskLevel(0.705, "action")).toBe("margin_call");
     expect(riskLevel(0.695, "margin_call")).toBe("margin_call");
     expect(riskLevel(0.66, "margin_call")).toBe("action");
@@ -123,20 +22,5 @@ describe("Strike-level hysteresis", () => {
     expect(riskLevel(0.97, "liquidation")).toBe("liquidation");
     expect(riskLevel(0.94, "liquidation")).toBe("reduce_only");
     expect(riskLevel(0.695, "action")).toBe("action");
-  });
-});
-
-describe("liquidation events on Strike's user stream", () => {
-  it("reads Strike's documented fields, and not a user's own close", async () => {
-    const { liquidationReason } = await import("@/lib/strike/stream");
-    expect(liquidationReason("ACCOUNT_UPDATE", { e: "LIQUIDATION", P: [{ s: "ADA-USD" }] })).toBe("LIQUIDATION");
-    expect(liquidationReason("ACCOUNT_UPDATE", { e: "ADL" })).toBe("ADL");
-    expect(liquidationReason("ACCOUNT_UPDATE", { e: "ORDER" })).toBeNull();
-    expect(liquidationReason("ACCOUNT_UPDATE", { e: "FUNDING" })).toBeNull();
-    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD", act: "LIQUIDATION" })).toBe("LIQUIDATION");
-    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD", act: "ADL" })).toBe("ADL");
-    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD", cr: "liquidation" })).toBe("LIQUIDATION");
-    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD", cr: "reduce_only", c: "locke-x-close-1" })).toBeNull();
-    expect(liquidationReason("ORDER_TRADE_UPDATE", { s: "ADA-USD" })).toBeNull();
   });
 });

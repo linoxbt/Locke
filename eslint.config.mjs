@@ -9,10 +9,8 @@ const config = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
     rules: {
-      // CIP-30 wallet objects and Strike payloads are loosely typed at the edges.
+      // Wallet and venue payloads are loosely typed at the edges.
       "@typescript-eslint/no-explicit-any": "off",
-      // Wallet icons are data: URIs supplied by the extension; next/image adds nothing.
-      "@next/next/no-img-element": "off",
     },
   },
 ];

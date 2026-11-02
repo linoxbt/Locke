@@ -168,8 +168,8 @@ export function verantaPnl(p: Pick<VerantaPosition, "signedSize" | "openPrice">,
 }
 
 /**
- * The same margin ratio Locke uses on Strike (maintenance ÷ equity), so its risk levels and alert
- * thresholds carry over: 100% exactly at Veranta's liquidation. Maintenance is the 15% of
+ * Margin ratio as maintenance ÷ equity, so Locke's risk levels and alert thresholds apply:
+ * 100% exactly at Veranta's liquidation. Maintenance is the 15% of
  * collateral Veranta lets a position keep; equity is collateral plus P&L less accrued fees.
  */
 export function verantaMarginRatio(p: VerantaPosition, mark: number): number {

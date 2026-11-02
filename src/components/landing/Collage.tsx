@@ -20,7 +20,7 @@ function Spark({ up = false, color = "currentColor" }: { up?: boolean; color?: s
   );
 }
 
-function tiles(ada: number | null, eth: number | null): Tile[][] {
+function tiles(wti: number | null, eth: number | null): Tile[][] {
   const t = (h: string, node: React.ReactNode): Tile => ({ h, node });
   return [
     [
@@ -38,8 +38,8 @@ function tiles(ada: number | null, eth: number | null): Tile[][] {
       )),
       t("h-44", (
         <div className="flex h-full flex-col bg-paper p-4">
-          <span className="num text-[12px] text-ink-3">ADA-USD · Strike</span>
-          <span className="num mt-1 text-[24px]">{ada ? price(ada) : "—"}</span>
+          <span className="num text-[12px] text-ink-3">WTI/USD · Base</span>
+          <span className="num mt-1 text-[24px]">{wti ? price(wti) : "—"}</span>
           <span className="mt-auto text-cobalt"><Spark /></span>
         </div>
       )),
@@ -48,19 +48,19 @@ function tiles(ada: number | null, eth: number | null): Tile[][] {
       t("h-80", (
         <div className="relative h-full overflow-hidden bg-danger">
           <span className={`${POSTER} bottom-2 left-3 text-[60px] leading-none text-paper group-hover:bottom-4 group-hover:left-4 group-hover:text-[44px]`}>−50%</span>
-          <span className="eyebrow absolute left-4 top-4 text-paper/80">ADA moves</span>
+          <span className="eyebrow absolute left-4 top-4 text-paper/80">ETH moves</span>
         </div>
       )),
       t("h-52", (
         <div className="flex h-full flex-col bg-lime p-4 text-ink">
-          <span className="eyebrow text-ink/60">Effective fuel price</span>
-          <span className="num mt-auto text-[26px] leading-none">NGN 1,250</span>
-          <span className="mt-2 text-[13px] text-ink/60">per litre, held flat</span>
+          <span className="eyebrow text-ink/60">Fuel bill</span>
+          <span className="num mt-auto text-[26px] leading-none">$40,000</span>
+          <span className="mt-2 text-[13px] text-ink/60">a month, held flat</span>
         </div>
       )),
       t("h-48", (
         <div className="flex h-full flex-col bg-paper p-4">
-          <span className="eyebrow text-ink-2">Replay · 90d</span>
+          <span className="eyebrow text-ink-2">Hedged · 90d</span>
           <svg viewBox="0 0 100 50" className="mt-auto h-24 w-full" preserveAspectRatio="none">
             <path d="M0 30 L10 26 L20 32 L30 18 L40 22 L50 10 L60 16 L70 6 L80 14 L90 9 L100 18" fill="none" stroke="var(--color-ink-3)" strokeWidth="1.5" strokeDasharray="3 3" />
             <path d="M0 30 L10 29 L20 30 L30 27 L40 28 L50 25 L60 27 L70 24 L80 26 L90 25 L100 27" fill="none" stroke="var(--color-cobalt)" strokeWidth="2.5" />
@@ -100,7 +100,7 @@ function tiles(ada: number | null, eth: number | null): Tile[][] {
       t("h-80", (
         <div className="relative h-full overflow-hidden bg-lime">
           <span className={`${POSTER} -left-3 bottom-0 text-[120px] leading-[0.78] text-ink group-hover:bottom-4 group-hover:left-4 group-hover:text-[64px]`}>WTI</span>
-          <span className="eyebrow absolute left-4 top-4 text-ink/60">Diesel · 2,000 L/month</span>
+          <span className="eyebrow absolute left-4 top-4 text-ink/60">Fuel priced off crude</span>
         </div>
       )),
       t("h-56", (
@@ -117,9 +117,9 @@ function tiles(ada: number | null, eth: number | null): Tile[][] {
     [
       t("h-64", (
         <div className="flex h-full flex-col bg-paper p-4">
-          <span className="eyebrow text-ink-2">Fund this plan</span>
-          <span className="num mt-auto text-[24px] leading-none">3,756 ADA</span>
-          <span className="mt-4 inline-flex h-10 items-center justify-center rounded-full bg-cobalt text-[14px] text-paper">Sign deposit →</span>
+          <span className="eyebrow text-ink-2">Fund this vault</span>
+          <span className="num mt-auto text-[24px] leading-none">3,756 USDC</span>
+          <span className="mt-4 inline-flex h-10 items-center justify-center rounded-full bg-cobalt text-[14px] text-paper">Deposit →</span>
         </div>
       )),
       t("h-48", (
@@ -141,8 +141,8 @@ function tiles(ada: number | null, eth: number | null): Tile[][] {
   ];
 }
 
-export function Collage({ ada, eth }: { ada: number | null; eth: number | null }) {
-  const cols = tiles(ada, eth);
+export function Collage({ wti, eth }: { wti: number | null; eth: number | null }) {
+  const cols = tiles(wti, eth);
   return (
     <FallIn aria-hidden className="absolute inset-0 grid grid-cols-2 gap-2 overflow-hidden p-2 sm:grid-cols-3 lg:grid-cols-5">
       {cols.map((col, i) => (

@@ -11,7 +11,7 @@ import { usd } from "@/lib/ui/format";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
-  title: "Locke on Base",
+  title: "Your vaults — Locke",
   description: "Protection vaults on Base: hedge a crypto treasury or a fuel budget, held in a vault you own.",
 };
 
@@ -26,7 +26,7 @@ export default async function BaseHome({ searchParams }: { searchParams: Promise
         <Card tone="ink" className="flex flex-col justify-between gap-10 p-6 sm:p-8">
           <div>
             <Eyebrow className="flex items-center gap-2 text-lime">
-              <BaseMark size={12} /> Locke on Base
+              <BaseMark size={12} /> Vaults on Base
             </Eyebrow>
             <Display
               size="xl"
@@ -44,7 +44,7 @@ export default async function BaseHome({ searchParams }: { searchParams: Promise
         </Card>
         <Card className="flex flex-col gap-5 p-6 sm:p-8">
           <Display size="md" lead="Sign in" rest="with your Base account." />
-          {!factory && <Notice tone="info">Locke on Base isn&apos;t live yet. You can sign in; creating vaults opens at launch.</Notice>}
+          {!factory && <Notice tone="info">Locke isn&apos;t live yet. You can sign in; creating vaults opens at launch.</Notice>}
           <SignInWithBase next={next} />
         </Card>
       </div>
@@ -65,7 +65,7 @@ export default async function BaseHome({ searchParams }: { searchParams: Promise
           )}
         </div>
       </div>
-      {!factory && <Notice tone="info">Locke on Base isn&apos;t live yet. Vaults open at launch.</Notice>}
+      {!factory && <Notice tone="info">Locke isn&apos;t live yet. Vaults open at launch.</Notice>}
       {vaults.length === 0 ? (
         <Card className="p-6 text-[14px] text-ink-2">No vaults yet. {factory && <Link href="/base/new" className="text-cobalt underline">Create your first one.</Link>}</Card>
       ) : (

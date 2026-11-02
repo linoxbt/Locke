@@ -1,42 +1,10 @@
-import { redirect } from "next/navigation";
-import { cache } from "react";
-import { ConfigError } from "./config";
-import { currentSession, hasSessionCookie, type Session } from "./session";
-
-/**
- * Session for a server-rendered page, or null when signed out (or sessions aren't configured yet).
- * Read once per request however many components ask (the layout and the page both do).
- */
-export const optionalSession = cache(async (): Promise<Session | null> => {
-  try {
-    return await currentSession();
-  } catch (e) {
-    if (e instanceof ConfigError) return null;
-    throw e;
-  }
-});
-
-/**
- * Gate a page: signed-out visitors go to /connect and come back to `returnTo` afterwards. A
- * cookie that no longer counts (expired, signed out elsewhere) adds reconnect=1 so the sign-in
- * page says the session ended.
- */
-export async function requirePageSession(returnTo: string): Promise<Session> {
-  const s = await optionalSession();
-  if (!s) {
-    const ended = await hasSessionCookie();
-    redirect(`/connect?${ended ? "reconnect=1&" : ""}next=${encodeURIComponent(returnTo)}`);
-  }
-  return s;
-}
-
 /**
  * Only same-site relative paths are allowed as post-login destinations (no open redirects).
  * Browsers strip tabs and newlines from URLs and treat "\" like "/", so "/\t/evil.com" would
  * leave the site: anything with control characters or backslashes is refused, and the result
  * must resolve to our own origin.
  */
-export function safeNext(next: string | string[] | undefined, fallback = "/portfolio"): string {
+export function safeNext(next: string | string[] | undefined, fallback = "/base"): string {
   const n = Array.isArray(next) ? next[0] : next;
   if (!n || n.length > 512 || !n.startsWith("/") || /[\u0000-\u001f\u007f\\]/.test(n)) return fallback;
   try {

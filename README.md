@@ -2,256 +2,157 @@
 
 **Protect what your business holds. Manage what it buys, with hedges and from a vault you own.**
 
-Locke helps businesses manage price risk with perpetual futures, on two networks: on Cardano with [Strike Finance](https://strikefinance.org), and on Base with [Avantis](https://www.avantisfi.com) (now operating as Veranta), from a vault contract the business owns (see [Locke on Base](#locke-on-base)). A business tells Locke what it wants to protect — crypto it holds, or the fuel it buys every month — and Locke opens, sizes and monitors a hedge, presented as a **protection plan** (Strike) or a **vault** (Base).
+Locke helps businesses on Base manage price risk with perpetual futures on [Avantis](https://www.avantisfi.com) (now operating as Veranta). A business tells Locke what it wants to protect — crypto it holds, or the fuel it buys every month — and Locke sizes the hedge, opens it from a vault contract the business owns, and keeps its margin topped up.
 
-It's built for a business that holds part of its treasury in ADA and spends money on diesel: for example, a Cardano stake pool operator running generators through grid outages. Falling ADA shrinks its budget and rising fuel prices raise its costs. Locke manages both exposures from one portfolio, with each plan's margin kept separate.
-
-| Plan | Protects against | Strike market | Side | Hedge quality |
+| Plan | Protects against | Avantis market | Side | Hedge quality |
 |---|---|---|---|---|
-| **Holdings** | A fall in the value of ADA held | `ADA-USD` | Sell (short) | Direct: the hedge tracks the same asset |
-| **Operating costs** | A rise in fuel costs | `WTI-USD` | Buy (long) | Partial: crude explains only part of local pump prices |
+| **Holdings** | A fall in the value of ETH or BTC held | `ETH/USD`, `BTC/USD` | Short | Direct: the hedge tracks the same asset |
+| **Operating costs** | A rise in fuel costs | `WTI/USD`, `BRENT/USD` | Long | Partial: crude explains only part of local fuel prices |
 
-Every plan follows the same path: **describe exposure → preview scenarios and costs → fund and open → monitor → adjust or close.**
+Every vault follows the same path: **describe exposure → preview the hedge and its costs → create and fund the vault → the keeper opens and watches the hedge → withdraw or close from your own wallet.**
 
 Locke is not a trading terminal. Every screen is about an exposure the business already has.
 
-**Live:** https://trylocke.online · builder code **LockeIn** (up to 20 bps registered; orders carry `STRIKE_BUILDER_FEE_BPS`).
-
 ## What it does
 
-- **One wizard, two plan types.** The holdings form reads the wallet's ADA balance through CIP-30. The costs form takes litres per month, pump price, FX rate, months covered and an explicit *crude share* assumption.
-- **Preview before funding.** Locke shows the hedge in plain words, the margin to deposit (USD and ADA), the opening cost (Strike taker fee plus builder fee), funding per day at the live rate ("cost of protection"), and the outcome at −50/−25/−10/+10/+25/+50%. It also shows the price where Locke would ask for a top-up and the estimated liquidation price.
-- **Real hedges on Strike mainnet.** One signed ADA deposit, then isolated margin and leverage are set on the market and a market order goes out carrying Locke's builder fee. The buffer margin is added after the fill.
-- **Separate margin per plan.** Each plan is an isolated position on its own market, so trouble in one never draws on the other's collateral.
-- **Monitoring, two ways.** A scheduled Netlify function (`netlify/functions/monitor.mts`) sweeps every minute: it advances waiting plans and checks every live plan's margin health over Strike's REST API. When the long-running worker below is deployed it takes over (the sweep stands down while the worker holds its lock).
-- **Risk worker.** A long-running process streams mark prices and each user's Strike stream. It recomputes every plan's margin ratio once a second and flags a plan *before* Strike's own levels (details below). Alerts are written to the plan and shown in Locke; nothing is sent outside the app yet.
-- **One-tap, wallet-signed top-up.** Locke suggests an amount, the wallet signs a Cardano deposit, and once Strike credits it Locke adds it to that plan's isolated margin only.
-- **Resize and close.** Holdings plans resize to a new share or ADA amount. Costs plans close one month's worth (S ÷ T) to match fuel used. Close is a reduce-only market order.
-- **Replay.** The plan runs against up to 180 days of Strike's daily mark prices, with and without Locke, animated over about 10 seconds with a scrubber.
-- **Delegation evidence.** Koios shows the ADA is still staked to its pool and still delegated to its DRep.
-- **Withdraw.** Free balance on Strike goes back to the connected wallet, signed by the wallet. Money credited for a plan that hasn't used it yet (an opening deposit or a pending top-up) is set aside and can't be withdrawn.
+- **Sign in with Base.** Base Account (Coinbase Wallet) or any EVM wallet in the browser signs a Sign-In with Ethereum message. No transaction, no gas.
+- **A vault per plan.** The business's wallet approves USDC and calls `createVault` in one batch. The `LockeVault` contract (see `contracts/`) holds the USDC and is the trader on Avantis, so every payout comes back to it. Only the owner can withdraw.
+- **Limits on chain.** The vault caps market, side, leverage, hedge size and slippage. Locke's keeper can trade only within them and can never withdraw.
+- **Margin kept topped up.** The keeper opens the hedge once the deposit is in and adds margin from the vault's buffer when margin use reaches 60%, back to about 35%.
+- **Exit any time.** Deposit, withdraw, close the hedge and remove the keeper all go straight from the owner's wallet to the vault, even if Locke is offline.
+- **Protected by Locke.** While a hedge is open, an [EAS](https://attest.org) attestation on Base says so; `/proof/[uid]` reads it straight from EAS.
+- **Protect as you get paid.** Optionally, the owner's Base Account signs one spend permission so a share of incoming USDC moves into the vault, never more per week than the cap.
+- **Agent API (x402).** AI agents and on-chain treasuries can quote and open vaults, paid per call in USDC on Base.
+- **Builder Codes.** Every transaction from the app and the keeper carries Locke's Base Builder Code (ERC-8021) when `BASE_BUILDER_CODE` is set.
 
 ### Risk levels
 
-| Level | Trigger | What Locke does |
+Margin use is maintenance ÷ equity: 100% is exactly Avantis's liquidation (losses and fees reaching 85% of the collateral).
+
+| Level | Margin use | What happens |
 |---|---|---|
-| Watch | margin ratio ≥ 50% **or** mark within 20% of liquidation | Card turns amber |
-| Action needed | margin ratio ≥ 60% **or** mark within 10% of liquidation | Alert with a one-tap top-up |
-| Margin call | ratio ≥ 70% (Strike) | Red banner, repeat alert |
-| Reduce only | ratio ≥ 90% (Strike) | Strike blocks risk-increasing orders |
-| Liquidation | ratio ≥ 100% (Strike) | Strike liquidates; Locke alerts at once |
-
-A plan leaves Watch only when the ratio falls below 45% and the distance rises above 22% (hysteresis).
-
-The distance check exists because margin ratio only rises steeply in the last few percent before liquidation. On a 1x plan, a 60% ratio alert would fire about 0.3% before liquidation, too late for a Cardano deposit to confirm. The suggested top-up is enough to bring the ratio back to 35% *and* push liquidation 25% away from the mark.
-
-### Fuel plans (operating costs)
-
-- **Fuels:** diesel, petrol, kerosene / jet fuel and cooking gas (LPG). LPG counts as two-thirds of a litre of crude per litre, by energy content.
-- **Reference prices:** Nigeria, Kenya, Ghana and the Philippines, from GlobalPetrolPrices.com (official and industry sources), snapshot of 19 Oct 2026 with 1-month, 3-month and 1-year history (`src/lib/domain/fuel.ts`). Kenya LPG, Ghana LPG and Ghana kerosene have no current reference; the form asks for the user's price.
-- **Calibrated crude share:** crude's cost in a litre (live WTI ÷ 158.987 L × the fuel's crude content × the live exchange rate) over the pump price, clamped to 5–95%. Users can override it and return to the calibrated value.
-- **Budget mode:** "keep my monthly bill under X even if crude rises r%". With crude share c, cover s keeps the bill at B × (1 + c·r·(1 − s)), so Locke hedges s = 1 − (X/B − 1)/(c·r) of the crude-linked cost. The server recomputes s from the budget; a budget below today's bill, or one that needs no hedge, is refused with the reason.
-- **Exchange-rate warning:** live and 90-day-old dollar rates (open fawazahmed0 currency API via jsDelivr, Cloudflare mirror) show how the currency moved, and what a further 10% fall adds to the bill. A WTI hedge can't cover that, and the form and preview say so.
+| Watch | 50% | The vault shows amber |
+| Action | 60% | The keeper adds margin from the buffer, back to about 35% |
+| Buffer used up | 60%+ | The vault page says how much USDC to add, or to close part of the hedge |
+| Liquidation | 100% | Avantis closes the position; what's left stays in the vault |
 
 ## Pages
 
-Every feature is its own server-rendered route. Pages load their data on the server, guard by
-plan status (a draft can't open the top-up page, for example) and redirect with real HTTP status
-codes. A middleware gate sends signed-out visitors to `/connect?next=<page>` and brings them back.
-
 | Route | What it is |
 |---|---|
-| `/` | Home: both networks, live prices from Strike (ADA, WTI) and Avantis on Base (ETH, WTI) |
-| `/how-it-works` | The four steps, both plan types, the alert ladder, and how a Base vault works |
-| `/connect` | Sign in: Sign in with Base, or a CIP-30 Cardano wallet through Strike's builder connect |
-| `/legal/terms`, `/legal/privacy`, `/legal/cookies`, `/legal/risk` | Terms, Privacy Policy, Cookie Policy, Risk Disclosure |
-| `/portfolio` | Total value protected and one card per plan |
-| `/protect` | Choose what to protect |
-| `/protect/holdings`, `/protect/costs` | Describe the exposure; submitting creates a draft |
-| `/plans/[id]/preview` | Hedge, costs, scenarios, safety prices, disclosures |
-| `/plans/[id]/fund` | Sign the ADA deposit and follow it until the hedge is open |
-| `/plans/[id]` | Overview: headline number, margin health, stats, latest events |
-| `/plans/[id]/top-up` | Wallet-signed top-up, added to this plan's margin only |
-| `/plans/[id]/resize` | Holdings: new share or amount. Costs: close one month (S ÷ T) |
-| `/plans/[id]/close` | Reduce-only close at market |
-| `/plans/[id]/replay` | The plan against Strike's real price history |
-| `/plans/[id]/activity` | Full event log and margin-ratio history |
-| `/plans/[id]/strike` | Raw position fields and deposits with transaction links |
-| `/withdraw` | Free balance back to the connected wallet, wallet-signed |
-| `/account` | Wallet, stake pool and DRep, Strike balance, sign out |
-| `/base`, `/base/new`, `/base/vaults/[address]` | Locke on Base: sign in, create a vault, follow it (see below) |
+| `/` | Home, with live prices from Avantis (ETH, BTC, WTI, Brent) |
+| `/how-it-works` | The four steps, both plan types, the margin ladder, and how a vault works |
+| `/connect` | Sign in with Base |
+| `/base` | Your vaults (signs you in when signed out) |
+| `/base/new` | Describe the exposure, preview, then create and fund the vault |
+| `/base/vaults/[address]` | The vault: hedge, margin, proof, income, and every exit |
 | `/proof/[uid]` | Public "Protected by Locke" proof, read from EAS on Base |
-| `/metrics` | Public metrics: value protected now on Strike and Base, plans, vaults, live proofs, Builder Code transactions |
+| `/metrics` | Value protected now, vaults, live proofs, Builder Code transactions |
 | `/agents` | The agent API: endpoints, x402 prices, an example client |
+| `/legal/terms`, `/legal/privacy`, `/legal/cookies`, `/legal/risk` | Terms, Privacy Policy, Cookie Policy, Risk Disclosure |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
   subgraph Browser
-    UI[Next.js app<br/>wizard · portfolio · plan detail]
-    W[CIP-30 wallet<br/>Eternl / Lace / …]
+    UI[Next.js app]
+    W[Base Account or<br/>browser wallet]
   end
   subgraph Netlify
-    API[Route handlers<br/>sizing · lifecycle · signing]
+    API[Route handlers<br/>sign-in · vault records · sizing · x402]
   end
   subgraph Railway
-    RW[Risk worker<br/>marks · user streams · alerts · snapshots]
+    K[Base keeper<br/>opens · tops up · attests · income]
   end
-  DB[(Postgres / Supabase<br/>users · strike_links · plans<br/>deposits · plan_events · snapshots)]
-  S[Strike API<br/>REST + WebSockets]
-  K[Koios]
+  DB[(Postgres / Supabase<br/>base_users · base_vaults<br/>base_vault_events · base_income)]
+  V[LockeVault contracts<br/>on Base]
+  A[Avantis<br/>contracts + API + price feed]
+  E[EAS on Base]
 
   UI <--> API
-  UI -- signData / signTx --> W
-  API -- Ed25519-signed REST --> S
-  RW -- session.logon + userstream<br/>markPrice@1s --> S
-  RW -- REST positions / orders --> S
+  UI -- sign in · create · deposit · withdraw · close --> W
+  W --> V
   API <--> DB
-  RW <--> DB
-  API --> K
+  K <--> DB
+  K -- open · top up · within limits --> V
+  V <--> A
+  K --> E
+  API --> A
 ```
-
-- **The browser** only ever signs money movements: the builder-connect challenge, each deposit transaction, and each withdrawal.
-- **The server** generates one Ed25519 API wallet per user during connect. It encrypts the key with AES-256-GCM and signs routine Strike calls (orders, leverage, margin mode, isolated margin, positions). The private key never reaches the browser.
-- **The risk worker** runs the same plan lifecycle code as the API (`src/lib/server/planService.ts`), so a plan finishes opening even if the user closes the tab.
 
 ### Code map
 
 | Path | What |
 |---|---|
-| `src/lib/domain/` | Pure math: sizing, scenarios, crude-share pump model, replay, margin ratio, liquidation and alert prices, risk levels |
-| `src/lib/strike/` | Strike REST client and Ed25519 request / `session.logon` signing |
-| `src/lib/cardano/` | CIP-30 wallet, bech32, and a byte-preserving CBOR witness merge for Strike's deposit transactions |
-| `src/lib/server/planService.ts` | Plan lifecycle state machine (compare-and-set transitions, so two callers never place the same order) |
-| `src/app/api/` | Route handlers |
+| `contracts/` | `LockeVault` and `LockeVaultFactory` (Hardhat), unit, fuzz, invariant and Base-fork tests, deploy script |
+| `src/lib/domain/` | Pure math: vault sizing (`basePlans.ts`), Avantis margin and P&L (`veranta.ts`), risk levels |
+| `src/lib/base/` | Contract interfaces, Builder Code, keeper decisions, EAS attestations, spend-permission rules, the browser wallet |
+| `src/lib/veranta/` | Avantis API and signed-price client |
+| `src/lib/server/` | Sign-in (SIWE), sessions, vault records, metrics, x402 |
 | `src/app/` | Pages (see the table above) and API route handlers |
-| `worker/index.ts` | Risk worker |
+| `worker/base-keeper.ts` | The keeper |
 | `db/schema.sql` | Schema (idempotent) |
-
-## How Locke uses Strike
-
-Every authenticated call goes through the user's builder-connected API wallet and is signed as `METHOD:PATH:TIMESTAMP:NONCE:SHA256(body)`. Every order carries `X-Builder-Fee-Bps`, a server constant at or below the fee share the user approved.
-
-| Step | Endpoint |
-|---|---|
-| Connect (login) | `POST /auth/builder/request-signature` (`chain: "cardano"`), then `POST /auth/builder/verify-signature` with the CIP-30 `signData` result |
-| Market rules | `GET /price/v2/exchangeInfo` (step size, minimum notional), `GET /v2/markets` (margin tiers), `GET /v2/fee-tiers` |
-| Live price and funding | `GET /price/v2/markPrice` (`p` mark, `r` hourly funding rate); WebSocket `/ws/price`, `markPrice@1s` |
-| Liquidity | `GET /price/v2/depth`: the preview walks the book for the hedge's size (average fill, slippage over the mark); open and resize-up re-read it fresh and refuse a market order the book can't fill within 1% of the mark |
-| History | `GET /price/v2/klines?interval=1d&priceType=mark` |
-| Deposit | `POST /v2/deposit/quote` (ADA, lovelace) → `POST /v2/deposit/build-tx` (CIP-30 UTxOs) → wallet signs and submits → `POST /v2/deposit` with the tx hash |
-| Deposit credited | `GET /v2/history/transaction?type=1` matched by tx hash |
-| Balance | `GET /v2/account` |
-| Isolated margin | `POST /v2/marginMode` (`isolated`), checked with `GET /v2/symbols` |
-| Leverage | `POST /v2/leverage` |
-| Open, resize, close | `POST /v2/order` with `X-Builder-Fee-Bps`, `client_order_id = locke-{planId}-{action}-{n}`, `reduce_only` for reductions |
-| Add margin | `POST /v2/isoMargin` (`modify_type: "add"`) for the buffer after the fill and for each top-up |
-| Positions | `GET /v2/positions?symbol=…` (`iso_balance`, `maintenance_margin`, `liquidation_price`, `accumulated_funding_fees`) |
-| User stream | WebSocket `/ws/user-api`: `session.logon`, `subscribe userstream`, `ACCOUNT_UPDATE` and `ORDER_TRADE_UPDATE` |
-| Withdraw | `POST /v2/withdraw/quote` → wallet signs `message_to_sign` (and `tx_cbor`) → `POST /v2/withdraw` |
-
-Verified against mainnet while building:
-
-- The user stream answers on `wss://api.strikefinance.org/ws/user-api`; the `api-v2` host in one doc page does not resolve.
-- `ADA-USD` mark history starts 2026-03-19 and `WTI-USD` starts 2026-04-23, so both support 180-day replays.
-- The reduce-only field is `reduce_only`, and the hourly funding rate is `r` on `markPrice`.
 
 ## Run it
 
-Requirements: Node 22, Postgres (local or Supabase), a builder code from Strike's Builder Dashboard, and a CIP-30 wallet on Cardano mainnet.
+Requirements: Node 22, Postgres (local or Supabase), and a wallet on Base.
 
 ```bash
-cp .env.example .env.local     # fill in the values below (the app, worker and scripts all read it)
+cp .env.example .env.local     # fill in the values below (the app, keeper and scripts all read it)
 npm install
 npm run db:migrate             # applies db/schema.sql (safe to re-run)
 npm run dev                    # app on http://localhost:3000
-npm run worker                 # risk worker (separate terminal)
-npm run strike:check           # readiness: config, Strike REST/WebSocket, history, liquidity, DB
-npm run strike:check -- --signed   # + signed GET /v2/account and user-stream logon (after a wallet connects)
+npm run worker:base            # the keeper (separate terminal; needs BASE_FACTORY_ADDRESS and a keeper key)
 npm test                       # unit tests
-TEST_DATABASE_URL=postgres://…/locke_test npm test   # + lifecycle integration test (throwaway DB)
+cd contracts && npx hardhat test   # contract tests (FORK=1 with a Base RPC for the fork tests)
 ```
 
 ### Environment variables
 
 | Name | Where | Purpose |
 |---|---|---|
-| `STRIKE_API_URL` | app, worker | `https://api.strikefinance.org` |
-| `STRIKE_WS_USER_URL` | worker | Defaults to `STRIKE_API_URL`'s host + `/ws/user-api` |
-| `STRIKE_WS_PRICE_URL` | worker | Defaults to `STRIKE_API_URL`'s host + `/ws/price` |
-| `STRIKE_BUILDER_CODE` | app | Locke's builder code |
-| `STRIKE_BUILDER_FEE_BPS` | app, worker | **Required.** Fee per order in whole bps, 0 to `STRIKE_BUILDER_MAX_BPS`; the app and worker refuse to start without it |
-| `STRIKE_BUILDER_MAX_BPS` | app, worker | The builder code's registered maximum (default `20`, LockeIn's) |
-| `NEXT_PUBLIC_CARDANO_NETWORK_ID` | app | `1` mainnet (`0` with the testnet API) |
-| `KOIOS_URL` | app | `https://api.koios.rest/api/v1` |
-| `DATABASE_URL` | app, worker | Postgres URL (the Supabase pooler works; use the session pooler, port 5432, for the worker) |
-| `DATABASE_POOL_MAX` | app, worker | Connections per process (default `3`; keep 1–2 on Netlify with the transaction pooler) |
-| `DATABASE_PREPARE` | app, worker | `false` to force prepared statements off (they're off automatically on port 6543) |
-| `NEXT_PUBLIC_SITE_URL` | app | Public URL, also accepted by the same-origin check |
-| `PORT` | worker | Port for `/healthz` (Railway sets it) |
-| `LOCKE_KEY_ENC` | app, worker | 32 bytes hex; encrypts API wallet keys (`openssl rand -hex 32`) |
+| `DATABASE_URL` | app, keeper | Postgres URL (the Supabase pooler works for the app; the keeper needs the session pooler, port 5432, or a direct connection) |
+| `DATABASE_POOL_MAX` | app, keeper | Connections per process (default `3`; keep 1–2 on Netlify with the transaction pooler) |
+| `DATABASE_PREPARE` | app, keeper | `false` to force prepared statements off (they're off automatically on port 6543) |
 | `SESSION_SECRET` | app | At least 32 characters; signs session cookies |
-| `LOCKE_DEMO_ALERTS` | app, worker | `true` lowers alert levels for a demo (labelled on screen) |
-| `BASE_FACTORY_ADDRESS` | app, base keeper | Locke on Base: the deployed `LockeVaultFactory`. Unset, `/base` shows "not live yet" |
-| `BASE_RPC_URL` | app, base keeper | Base RPC (default `https://mainnet.base.org`; Veranta's test network: `https://devnet-rpc.veranta.xyz`) |
-| `BASE_BUILDER_CODE` | app, base keeper | Locke's Base Builder Code (`bc_…`), appended to every Base transaction (ERC-8021) |
-| `BASE_KEEPER_PRIVATE_KEY` | base keeper | The keeper key (0x + 64 hex). Trades vaults within their on-chain limits; can never withdraw. Needs a little ETH on Base |
+| `NEXT_PUBLIC_SITE_URL` | app | Public URL, also accepted by the same-origin check |
+| `BASE_FACTORY_ADDRESS` | app, keeper | The deployed `LockeVaultFactory`. Unset, `/base` shows "not live yet" |
+| `BASE_RPC_URL` | app, keeper | Base RPC (default `https://mainnet.base.org`; Veranta's test network: `https://devnet-rpc.veranta.xyz`) |
+| `BASE_BUILDER_CODE` | app, keeper | Locke's Base Builder Code (`bc_…`), appended to every Base transaction (ERC-8021) |
+| `BASE_KEEPER_PRIVATE_KEY` | keeper | The keeper key (0x + 64 hex). Trades vaults within their on-chain limits; can never withdraw. Needs a little ETH on Base |
 | `BASE_PAST_KEEPERS` | app | Optional. Comma-separated earlier keeper addresses, so proofs they issued still show as Locke's after a keeper change |
+| `PORT` | keeper | Port for `/healthz` (Railway sets it) |
 | `X402_PAY_TO` | app | Optional. Address that receives agent API payments (USDC on Base). Unset: `/api/agent/*` paid calls answer 503 |
 | `X402_SETTLER_PRIVATE_KEY` | app | Optional. Gas wallet that settles agent payments when Locke is its own facilitator. Holds a little ETH on Base, never USDC |
 | `X402_FACILITATOR_URL` | app | Optional. A hosted x402 facilitator instead of settling locally |
-| `LOCKE_SCHEDULED_SWEEP` | app (Netlify) | `off` stops the every-minute risk sweep on that site. Set it on any site that shares the live database but mustn't act on users' plans (a preview); leave it unset on the live site |
-| `VERANTA_API_URL`, `VERANTA_FEED_URL` | app, base keeper | Veranta's API and signed-price feed (defaults to production) |
+| `VERANTA_API_URL`, `VERANTA_FEED_URL` | app, keeper | Avantis's API and signed-price feed (defaults to production) |
 
 ### Deploy
 
 - **App:** Netlify (`netlify.toml`, Next.js runtime). Set the variables above in the Netlify UI with the Functions scope and mark the secrets as secret.
-- **Worker:** create a Railway service from the same repo with the same `DATABASE_URL` (the **session** pooler, port 5432, or a direct connection: the worker holds an advisory lock so only one instance is active), `LOCKE_KEY_ENC` (must equal the app's) and `STRIKE_BUILDER_FEE_BPS`. `railway.json` runs the schema migration before each deploy, starts `tsx worker/index.ts`, and gates deploys on `/healthz`. The worker exits after two minutes unhealthy so Railway restarts it.
-- **Base keeper (Locke on Base):** a second Railway service from the same repo using `railway.base-keeper.json` (set it as the service's config file; it starts `tsx worker/base-keeper.ts` and doesn't run the migration, which the Strike worker's service owns), with `DATABASE_URL` (session pooler or direct: it refuses the transaction pooler), `BASE_FACTORY_ADDRESS`, `BASE_KEEPER_PRIVATE_KEY`, `BASE_BUILDER_CODE` and a paid `BASE_RPC_URL`. It answers `/healthz` (503 when it can't read Base or the database, is low on ETH, or a vault has failed for two minutes), holds its own advisory lock (exiting if its connection drops), and writes a heartbeat the app's `/api/health` checks.
-- **Health:** `/api/health` fails when risk monitoring (the Strike worker, or the scheduled sweep when no worker runs) has written no heartbeat for 5 minutes, and, once `BASE_FACTORY_ADDRESS` is set, when the Base keeper hasn't. Point an uptime monitor at it.
+- **Keeper:** a Railway service from the same repo using `railway.base-keeper.json` (set it as the service's config file). It runs the schema migration before each deploy and starts `tsx worker/base-keeper.ts`, with `DATABASE_URL` (session pooler or direct: it refuses the transaction pooler), `BASE_FACTORY_ADDRESS`, `BASE_KEEPER_PRIVATE_KEY`, `BASE_BUILDER_CODE` and a paid `BASE_RPC_URL`. It answers `/healthz` (503 when it can't read Base or the database, is low on ETH, or a vault has failed for two minutes), holds an advisory lock so only one instance acts (exiting if its connection drops), and writes a heartbeat.
+- **Contracts:** `contracts/scripts/deploy.mjs` deploys the factory; the admin and guardian must be multisigs. See `contracts/README.md`.
+- **Health:** `/api/health` checks the session secret, the database and Avantis, and, once `BASE_FACTORY_ADDRESS` is set, that the keeper wrote a heartbeat in the last 5 minutes. Point an uptime monitor at it.
 - **Database:** create a Supabase project, put its connection string in `DATABASE_URL`, and run `npm run db:migrate` (safe to re-run after every schema change).
-
-## Locke on Base
-
-A second version of Locke under `/base`, for businesses on Base. Each business signs in with **Sign in with Base** (Base Account, or any EVM wallet) and creates its own `LockeVault` contract (see `contracts/`): the vault holds its USDC and is the trader on [Veranta](https://www.veranta.xyz) (formerly Avantis), so every payout comes back to it. Holdings plans short ETH or BTC; costs plans go long WTI or Brent.
-
-- **Sign-in:** Sign-In with Ethereum. Base Account answers `wallet_connect` with the signed message; other wallets sign it with `personal_sign`. The server checks the domain, URI, chain (8453), age and a single-use nonce, then the signature: recovered locally for ordinary wallets, verified on Base for smart wallets (ERC-1271, or ERC-6492 before deployment). Its own session cookie and `base_users` table, separate from the Strike sign-in.
-- **Vaults:** the business's wallet approves USDC and calls `createVault` in one batch (`wallet_sendCalls`; one transaction per call in wallets without batching). The server records a vault only from its `VaultCreated` event in that transaction, checks the owner is the signed-in account and that the limits on Base match the plan. Deposit, withdraw, closing the hedge and removing the keeper all go straight from the owner's wallet to the vault.
-- **Keeper:** `worker/base-keeper.ts` opens the hedge once the deposit is in, adds margin from the vault's buffer when margin use reaches Locke's action level (60%), and marks the vault closed when the owner closes the hedge. Its decisions are in `src/lib/base/keeper.ts`.
-- **Builder Codes:** every transaction from the app and the keeper carries Locke's Base Builder Code (ERC-8021 data suffix) when `BASE_BUILDER_CODE` is set.
-- **Protected by Locke:** when a vault's hedge opens, the keeper issues an [EAS](https://attest.org) attestation on Base to the vault's owner (vault, market, long or short, USD protected, start date; schema in `src/lib/base/attest.ts`, registered by the keeper on first run) and revokes it when the vault closes. `/proof/[uid]` reads it straight from EAS and only calls it Locke's when Locke's keeper (the factory's keeper, or one listed in `BASE_PAST_KEEPERS`) issued it. `contracts/test/fork.eas.test.ts` checks the schema id, attest, read and revoke against the real EAS predeploys on a Base fork.
-- **Metrics:** `/metrics` aggregates Locke's own records for both networks; it names no business or wallet.
-- **Protect as you get paid:** on a vault page the owner's Base Account signs one spend permission (the vault as spender, a weekly USDC cap; `requestSpendPermission`). The server checks it is the owner's, to that vault, in USDC and weekly, and that Base Account's SpendPermissionManager accepts the signature (simulated on Base), then stores it in `base_income`. The keeper counts USDC arriving in the owner's account (not money back from the vault), and calls `LockeVault.collectIncome` to move the owner's share into the vault, never more per week than the cap; the money goes straight from the owner's account to the vault. Turning it off stops the keeper and asks the wallet to revoke. Rules in `src/lib/base/income.ts`; `contracts/test/fork.income.test.ts` runs it against a real Coinbase Smart Wallet and the real manager.
-- **Agent API (x402):** `/api/agent` lets AI agents and on-chain treasuries quote ($0.01) and get the wallet calls that open a vault ($0.05), paid per call in USDC on Base with [x402](https://x402.org); registering a vault and reading its status are free. A call settles only when it succeeds. Locke is its own facilitator by default (`X402_SETTLER_PRIVATE_KEY`, a gas wallet that submits the agent's signed USDC authorization), or uses a hosted one (`X402_FACILITATOR_URL`). Prices in `src/lib/agent/catalog.ts`; the payment layer in `src/lib/server/x402.ts`.
 
 ## Security
 
-- The Strike API wallet key is generated on the server, encrypted with AES-256-GCM under `LOCKE_KEY_ENC`, and never sent to the browser or logged. A leaked key could place trades, but it could not move money out: withdrawals need the user's own wallet signature and only go to the connected wallet.
-- Login is wallet-signed. Locke verifies the CIP-30 signature itself before asking Strike (the signed address is the one logging in, the key hashes to its payment credential, the payload is the exact challenge, and the Ed25519 signature holds), then Strike verifies it too. Locke issues an HMAC-signed, HTTP-only `__Host-` session cookie that lasts 24 hours. Signing out bumps a per-user session version, which ends every session on every device. Sign-in starts are rate-limited per network (/24, /64) and globally, under a lock so parallel requests can't slip past; the stake address is derived on the server and shown as derived.
-- Deposits are bound to the transaction Locke built (its id is stored at build time), signed-in routes that call Strike are rate-limited per user, and the database's public API roles have no table access.
-- API wallet keys are encrypted with AES-256-GCM bound (as associated data) to the key's own public key, so an encrypted key copied onto another user's row won't decrypt.
-- State-changing routes check `Origin` against the host, on top of `SameSite=Lax` cookies. Bodies are capped at 256 KB and every field is length-checked. Pages send CSP `frame-ancestors`/`object-src`/`base-uri`/`form-action` rules, HSTS and a Permissions-Policy. (A strict `script-src` is left out because CIP-30 wallet extensions inject scripts into the page.)
-- Funding and opening require a recorded acknowledgement of the risks. Deposits only build from the signed-in address. Withdrawals are recorded, must belong to the user, and are confirmed with the fully signed transaction after a fee review.
-- The server recomputes every order (size, side, symbol, reduce-only) from the stored plan and never trusts sizes from the browser.
-- Plan status changes are compare-and-set updates, and every order carries a deterministic client order id (`locke-{plan}-{action}-{n}`) with at most one pending per plan. A lost response is resolved by looking the order up on Strike, never by sending it again, so retries and races can't double-open, double-close or double-resize a plan. Margin adds are verified by re-reading the position.
-- Row-level security is enabled on every table. The app and worker use a server role.
+- **Sign-in** is Sign-In with Ethereum. Base Account answers `wallet_connect` with the signed message; other wallets sign it with `personal_sign`. The server checks the domain, URI, chain (8453), age (when the wallet includes one) and a single-use nonce that expires in 10 minutes, then the signature: recovered locally for ordinary wallets, verified on Base for smart wallets (ERC-1271, or ERC-6492 before deployment). Sessions are HMAC-signed, HTTP-only `__Host-` cookies that last 24 hours; signing out bumps a per-user version, which ends every session. Nonces are rate-limited per network (/24, /64) and globally.
+- **Vaults** are recorded only from their `VaultCreated` event in the creating transaction, after checking the owner is the signed-in account and that the limits on Base match the plan.
+- **The keeper** can't withdraw, and every trade stays inside the limits the vault enforces on chain. It simulates each transaction before sending it. The owner can remove it from their own wallet; Locke's guardian can cut it off from every vault at once.
+- **Agent payments** are claimed once per (payer, nonce) before any work, and settle only when the call succeeded.
+- State-changing routes check `Origin` against the host, on top of `SameSite=Lax` cookies. Bodies are capped at 256 KB and every field is length-checked. Pages send CSP `frame-ancestors`/`object-src`/`base-uri`/`form-action` rules, HSTS and a Permissions-Policy.
+- Row-level security is enabled on every table with no policies, and the database's public API roles have no table access. The app and keeper use a server role.
 
 ## Known limits
 
-- **Customer validation.** The SPO and Cardano-team customer is a hypothesis that still needs validating with real operators.
-- **Basis risk on fuel.** WTI explains only part of local pump prices. The plan is labelled "Partial hedge — crude share only", and the crude share is the user's own assumption.
-- **Replay funding.** Strike publishes no funding-rate history, so the replay lines show price effects only. Funding at today's rate is shown alongside as a labelled projection.
-- **Cardano only.** Deposits are ADA from a CIP-30 wallet; Solana and Ethereum deposits are out of scope.
-- **One plan per market per user.** This comes from isolated margin on the main account. Strike sub-accounts can't be created through the API.
-- **Top-ups need a signature.** Locke never moves funds on its own; it alerts early (and repeats every 15 minutes at margin call or worse) and makes the top-up one tap.
-- **Polling, not push, in the browser.** Plan pages poll every 5–10 s; the worker holds the WebSocket streams. Supabase Realtime isn't used.
-- **Minute-level monitoring without the worker.** Railway was unavailable on submission day, so the deployed monitoring is the one-minute scheduled sweep; the real-time worker (per-second marks, liquidation events from the user stream) runs when deployed.
-- **No alerts outside the app.** The worker flags plans and writes alerts (repeating at margin call or worse), and tells the user when it can't watch a plan, but there's no email, push or Telegram channel yet: a user sees alerts when they open Locke.
-- **Sub-accounts and funding history.** Strike sub-accounts (spec §6.6) aren't used; each plan is an isolated position on the main account. Funding to date comes from the position's `accumulated_funding_fees`, not `/v2/history/funding`.
+- **Not audited yet.** The vault contracts have unit, fuzz, invariant and Base-fork tests and a Slither scan, but no outside audit; vaults launch with deposit caps.
+- **Basis risk on fuel.** Crude explains only part of local fuel prices. The costs plan is a partial hedge, and the crude share is the business's own assumption.
+- **Market hours.** Oil markets on Avantis close at night and at weekends; the keeper can't add margin while a market is closed.
+- **No alerts outside the app.** The vault page shows what needs attention; there's no email or push channel yet.
 - **Dependencies.** `npm audit` still reports postcss inside Next 15 (build-time only); the fix is a Next 16 upgrade.
-- **API key lifetime.** Signing in again replaces the API key Locke stores and deletes the old one from Locke; Locke doesn't revoke it on Strike, so it lapses at its own expiry.
 
 ## Disclaimer
 
-Locke is a tool, not financial advice. Hedges can lose money on their own: a holdings hedge gives up upside, and a fuel hedge loses if fuel prices fall. Positions can be liquidated if margin runs out. Strike has eligibility rules, so check Strike's restricted persons policy before using it.
+Locke is a tool, not financial advice. Hedges can lose money on their own: a holdings hedge gives up upside, and a fuel hedge loses if fuel prices fall. Positions can be liquidated if margin runs out. Avantis has eligibility rules, so check them before using it.

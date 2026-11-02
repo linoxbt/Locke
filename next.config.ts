@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // No strict script-src: CIP-30 wallet extensions inject scripts into the page. Everything
+          // No strict script-src: browser wallet extensions inject scripts into the page. Everything
           // that can be locked down without breaking them is.
           {
             key: "Content-Security-Policy",

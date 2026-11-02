@@ -30,7 +30,7 @@ const MAX_KEYS = 10_000;
 
 /**
  * Token bucket per key (user id + route), kept in this function instance's memory: a cheap
- * brake on scripted calls that fan out to Strike or Koios, not a global quota.
+ * brake on scripted calls that fan out to Avantis or Base, not a global quota.
  */
 export function rateLimit(key: string, perMinute: number, now = Date.now()) {
   const rate = perMinute / 60_000;
@@ -47,11 +47,3 @@ export function rateLimit(key: string, perMinute: number, now = Date.now()) {
   }
   buckets.set(key, { tokens: tokens - 1, at: now, cap: perMinute });
 }
-
-/** Per-route budgets (calls per minute per user). */
-export const LIMITS = {
-  strikeWrite: 10,
-  sync: 30,
-  read: 30,
-  ack: 60,
-} as const;

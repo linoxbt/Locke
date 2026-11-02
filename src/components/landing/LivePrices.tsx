@@ -3,9 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { pct } from "@/lib/ui/format";
 
-/** A Strike perp's mark, index and hourly funding rate (a fraction). */
-export type Mark = { mark: number; index: number; fundingRate: number } | null;
-/** A Veranta market on Base: its price and what holding Locke's side costs per day (%). */
+/** An Avantis market on Base: its price and what holding Locke's side costs per day (%). */
 export type Quote = { price: number; carryPctPerDay: number | null } | null;
 
 const POLL_MS = 5_000;
@@ -92,11 +90,12 @@ function Price({ symbol, venue, value, note, started }: { symbol: string; venue:
   );
 }
 
-type Prices = { ada: Mark; wti: Mark; eth: Quote; baseWti: Quote };
+type Prices = { eth: Quote; btc: Quote; wti: Quote; brent: Quote };
+const PAIRS = { eth: 0, btc: 1, wti: 96, brent: 97 } as const;
 
 /**
- * Live prices on both sides Locke hedges on: Strike's ADA and WTI marks (Cardano) and Veranta's ETH
- * and WTI (Base). They count up when scrolled into view, then poll while visible.
+ * Live prices from Avantis on Base for the markets Locke hedges on. They count up when scrolled
+ * into view, then poll while visible.
  */
 export function LivePrices(initial: Prices) {
   const ref = useRef<HTMLDListElement>(null);
@@ -118,13 +117,7 @@ export function LivePrices(initial: Prices) {
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
-    const strike = async () => {
-      const r = await fetch("/api/market", { cache: "no-store" });
-      if (!r.ok) return;
-      const d = (await r.json()) as { ada: Mark; wti: Mark };
-      if (!cancelled) setP((prev) => ({ ...prev, ada: d.ada ?? prev.ada, wti: d.wti ?? prev.wti }));
-    };
-    const base = async () => {
+    const poll = async () => {
       const r = await fetch("/api/base/markets", { cache: "no-store" });
       if (!r.ok) return;
       const { markets } = (await r.json()) as { markets: { pairIndex: number; price: number | null; carryPctPerHour: number | null }[] };
@@ -132,13 +125,11 @@ export function LivePrices(initial: Prices) {
         const m = markets.find((x) => x.pairIndex === i);
         return m?.price ? { price: m.price, carryPctPerDay: m.carryPctPerHour == null ? null : m.carryPctPerHour * 24 } : null;
       };
-      if (!cancelled) setP((prev) => ({ ...prev, eth: pick(0) ?? prev.eth, baseWti: pick(96) ?? prev.baseWti }));
+      // A market that didn't answer this time (or is closed) keeps its last price; the next poll retries.
+      if (!cancelled) setP((prev) => ({ eth: pick(PAIRS.eth) ?? prev.eth, btc: pick(PAIRS.btc) ?? prev.btc, wti: pick(PAIRS.wti) ?? prev.wti, brent: pick(PAIRS.brent) ?? prev.brent }));
     };
-    // A market that didn't answer this time (or is closed) keeps its last price; the next poll retries.
     const tick = () => {
-      if (document.hidden) return;
-      strike().catch(() => {});
-      base().catch(() => {});
+      if (!document.hidden) poll().catch(() => {});
     };
     const id = setInterval(tick, POLL_MS);
     return () => {
@@ -147,13 +138,12 @@ export function LivePrices(initial: Prices) {
     };
   }, [visible]);
 
-  const funding = (m: Mark) => (m ? `funding ${pct(m.fundingRate * 24, 3)}/day` : "—");
   return (
     <dl ref={ref} className="mt-auto grid grid-cols-2 gap-x-4 gap-y-5 pt-6">
-      <Price symbol="ADA-USD" venue="Strike" value={p.ada?.mark ?? null} note={funding(p.ada)} started={started} />
-      <Price symbol="WTI-USD" venue="Strike" value={p.wti?.mark ?? null} note={funding(p.wti)} started={started} />
-      <Price symbol="ETH/USD" venue="Base" value={p.eth?.price ?? null} note={carry(p.eth?.carryPctPerDay)} started={started} />
-      <Price symbol="WTI/USD" venue="Base" value={p.baseWti?.price ?? null} note={carry(p.baseWti?.carryPctPerDay)} started={started} />
+      <Price symbol="ETH/USD" venue="Avantis" value={p.eth?.price ?? null} note={carry(p.eth?.carryPctPerDay)} started={started} />
+      <Price symbol="BTC/USD" venue="Avantis" value={p.btc?.price ?? null} note={carry(p.btc?.carryPctPerDay)} started={started} />
+      <Price symbol="WTI/USD" venue="Avantis" value={p.wti?.price ?? null} note={carry(p.wti?.carryPctPerDay)} started={started} />
+      <Price symbol="BRENT/USD" venue="Avantis" value={p.brent?.price ?? null} note={carry(p.brent?.carryPctPerDay)} started={started} />
     </dl>
   );
 }

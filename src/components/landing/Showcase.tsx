@@ -58,15 +58,15 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
     ),
   },
   {
-    lead: "Treasuries in ADA or ETH",
+    lead: "Treasuries in ETH or BTC",
     rest: "that hold their value when the market falls",
     href: "/how-it-works#holdings",
     visual: (
       <div className="relative h-full bg-cobalt">
         <span className="display absolute left-4 top-3 text-[56px] leading-[0.85] text-paper">
-          ADA
-          <br />
           ETH
+          <br />
+          BTC
         </span>
         <span className="num absolute bottom-4 right-4 text-[26px] text-paper">−30% → 0%</span>
       </div>
@@ -95,18 +95,18 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
         {/* What the plan holds the fleet's price to, whatever the bars do. */}
         <div className="absolute inset-x-4 bottom-[4.6rem] border-t-2 border-dashed border-ink/70" />
         <span className="num absolute bottom-[4.9rem] right-4 rounded-full bg-lime px-2 text-[11px] text-ink">budget</span>
-        <span className="display absolute left-4 top-3 text-[30px] text-ink">NGN 1,250/L</span>
+        <span className="display absolute left-4 top-3 text-[30px] text-ink">$40k/month</span>
       </div>
     ),
   },
   {
-    lead: "Cardano and Base teams",
+    lead: "Teams building on Base",
     rest: "paid in crypto, spending in dollars",
     href: "/how-it-works#holdings",
     visual: (
       <div className="relative h-full bg-paper">
         <span className="display absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-[44px] leading-none text-ink">
-          ₳ Ξ <span className="text-ink-3">→</span> $
+          Ξ ₿ <span className="text-ink-3">→</span> $
         </span>
       </div>
     ),

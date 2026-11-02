@@ -6,26 +6,26 @@ import { Arrow, Card, Display, Eyebrow, SUBTLE } from "@/components/ui";
 export const metadata: Metadata = { title: "How it works — Locke" };
 
 const STEPS = [
-  ["Describe", "ADA you hold, or litres you buy. Locke can read your wallet balance for you."],
-  ["Preview", "Hedge size, margin, fees, the daily cost of protection, and outcomes from −50% to +50%."],
-  ["Fund", "Sign one ADA deposit. Locke sets isolated margin and opens the hedge on Strike."],
-  ["Watch", "Locke watches margin around the clock and flags a plan the moment it needs a top-up. You see it, with the top-up ready to sign, when you open Locke."],
+  ["Describe", "ETH or BTC you hold, or the fuel you buy each month. Pick how much to protect and the leverage."],
+  ["Preview", "Hedge size, the vault's limits, Locke's fee, the daily cost of holding the hedge, and outcomes from −50% to +50%."],
+  ["Fund", "Sign in with Base and approve once: one wallet request creates your vault and deposits the USDC. Locke's keeper opens the hedge on Avantis."],
+  ["Watch", "The keeper watches margin around the clock and tops it up from the vault's buffer, within the limits your vault enforces."],
 ];
 
 const LADDER = [
-  { tone: "paper" as const, k: "Watch", v: "20% from liquidation or margin health 50%", d: "The plan card turns amber. Nothing to do yet." },
-  { tone: "watch" as const, k: "Action needed", v: "10% from liquidation or margin health 60%", d: "The plan shows a one-tap top-up, sized to move liquidation 25% away." },
-  { tone: "danger" as const, k: "Margin call", v: "Margin health 70%", d: "Strike's level. The plan stays flagged until it's topped up." },
-  { tone: "ink" as const, k: "Liquidation", v: "Margin health 100%", d: "Strike closes the position. Locke records it on the plan." },
+  { tone: "paper" as const, k: "Watch", v: "Margin use 50%", d: "The vault shows amber. Nothing to do yet." },
+  { tone: "watch" as const, k: "Top-up", v: "Margin use 60%", d: "The keeper adds margin from the vault's buffer, back to about 35%." },
+  { tone: "danger" as const, k: "Buffer used up", v: "Margin use 60%+", d: "The vault shows exactly how much USDC to add, or you can close part of the hedge." },
+  { tone: "ink" as const, k: "Liquidation", v: "Margin use 100%", d: "Avantis closes the position. What's left stays in your vault." },
 ];
 
-const BASE_POINTS = [
-  ["Your own contract", "Sign in with Base and create a vault: one wallet request approves the USDC and creates it, owned by you."],
+const VAULT_POINTS = [
+  ["Your own contract", "One wallet request approves the USDC and creates the vault, owned by you. Nobody else can withdraw from it."],
   ["Limits on Base", "The vault itself caps leverage, hedge size and slippage. Locke's keeper can trade within them and can never withdraw."],
-  ["Margin kept topped up", "When margin use reaches 60%, the keeper adds margin from the vault's buffer, back to a safe level."],
   ["Exit any time", "Withdraw, close the hedge or remove Locke's keeper from your own wallet, even if Locke is offline."],
-  ["Public proof", "While the hedge is open, a Protected by Locke attestation on Base shows it, so others can check it."],
+  ["Public proof", "While the hedge is open, a Protected by Locke attestation on Base shows it, so a lender or client can check it."],
   ["Protect as you get paid", "Optionally, sign once to move a share of incoming USDC into the vault, never more than your weekly cap."],
+  ["One vault per plan", "Each hedge has its own vault and its own margin, so trouble in one never touches another."],
 ];
 
 export default function HowItWorksPage() {
@@ -35,11 +35,7 @@ export default function HowItWorksPage() {
         <Eyebrow className="mb-6 text-ink-2">How it works</Eyebrow>
         <Display size="xl" lead="Describe. Preview. Fund. Watch." rest="Every plan, the same four steps." className="max-w-[14ch]" />
         <p className="mt-6 max-w-[60ch] text-[15px] leading-relaxed text-ink-2">
-          Locke runs on two networks: on Cardano with Strike Finance (below), and on Base with Avantis, from a vault you own (
-          <Link href="#base" className="underline underline-offset-4 hover:text-ink">
-            further down
-          </Link>
-          ).
+          Locke runs on Base. Each plan is a vault you own, and Locke hedges from it on Avantis, within limits the vault itself enforces.
         </p>
       </section>
 
@@ -57,32 +53,32 @@ export default function HowItWorksPage() {
 
       <section className="grid grid-cols-1 gap-3 pt-12 md:grid-cols-2">
         <Card tone="cobalt" id="holdings" className="scroll-mt-24">
-          <Eyebrow className={SUBTLE.cobalt}>Holdings plan · ADA-USD · protects against a fall</Eyebrow>
+          <Eyebrow className={SUBTLE.cobalt}>Holdings plan · ETH or BTC · protects against a fall</Eyebrow>
           <h2 className="display mt-7 text-[22px]">Protect what you hold</h2>
           <p className={`mt-4 text-[14px] leading-relaxed ${SUBTLE.cobalt}`}>
-            Locke sells ADA on Strike against the share of your treasury you choose to protect. If ADA falls, the hedge gains what the
-            treasury loses. It&apos;s a direct hedge: the only gaps are funding, fees and any share you leave unhedged. The ADA in your wallet
-            never moves and stays staked.
+            Locke sells ETH or BTC on Avantis against the share of your treasury you choose to protect. If the price falls, the hedge gains
+            what the treasury loses. It&apos;s a direct hedge: the only gaps are holding costs, fees and any share you leave unhedged. The coins
+            you hold never move; only the USDC margin sits in the vault.
           </p>
         </Card>
         <Card tone="lime" id="costs" className="scroll-mt-24">
-          <Eyebrow className={SUBTLE.lime}>Operating costs plan · WTI-USD · protects against a rise</Eyebrow>
+          <Eyebrow className={SUBTLE.lime}>Operating costs plan · WTI or Brent · protects against a rise</Eyebrow>
           <h2 className="display mt-7 text-[22px]">Manage what you buy</h2>
           <p className={`mt-4 text-[14px] leading-relaxed ${SUBTLE.lime}`}>
-            Locke buys crude on Strike for the part of your pump price you believe moves with oil. If crude rises, the hedge gains and pays
-            down your fuel bill. It&apos;s a partial hedge: local prices also move with exchange rates, taxes and policy, which WTI doesn&apos;t
-            capture. Each month you can close the slice that matched the fuel you used.
+            Locke buys crude on Avantis for the part of your fuel bill you believe moves with oil. If crude rises, the hedge gains and pays
+            down your fuel bill. It&apos;s a partial hedge: local prices also move with exchange rates, taxes and policy, which crude
+            doesn&apos;t capture.
           </p>
         </Card>
       </section>
 
       <section className="grid grid-cols-1 gap-3 pt-12 lg:grid-cols-12">
         <div className="lg:col-span-5">
-          <Display as="h2" size="lg" lead="Alerts before Strike's." rest="Not after." />
+          <Display as="h2" size="lg" lead="Margin kept topped up." rest="Before Avantis steps in." />
           <p className="mt-6 max-w-[44ch] text-[15px] leading-relaxed text-ink-2">
-            A Cardano deposit takes minutes to confirm, so Locke flags plans early: on margin health, and on how close the price is to
-            liquidation. Flags show when you open Locke; it can&apos;t message you or top up outside the app. Each plan has its own isolated
-            margin, so trouble in one never touches the other.
+            Each vault keeps a buffer of USDC beside the hedge. Locke&apos;s keeper watches margin use around the clock and adds from the
+            buffer well before liquidation, only within the limits your vault sets. When the buffer runs out, your vault page says how much
+            to add.
           </p>
         </div>
         <DropIn className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-7">
@@ -96,11 +92,11 @@ export default function HowItWorksPage() {
         </DropIn>
       </section>
 
-      <Card tone="ink" as="section" id="base" className="!mt-12 scroll-mt-24 px-6 py-10 sm:px-10">
-        <Eyebrow className="text-lime">On Base · with Avantis</Eyebrow>
+      <Card tone="ink" as="section" id="vault" className="!mt-12 scroll-mt-24 px-6 py-10 sm:px-10">
+        <Eyebrow className="text-lime">Your vault on Base</Eyebrow>
         <Display as="h2" size="lg" lead="A vault you own." rest="Locke hedges from it within limits you set." restClass="text-paper/55" className="mt-6 max-w-[22ch]" />
         <ul className="mt-8 grid grid-cols-1 gap-px overflow-hidden rounded-[18px] bg-paper/10 sm:grid-cols-2 lg:grid-cols-3">
-          {BASE_POINTS.map(([t, d]) => (
+          {VAULT_POINTS.map(([t, d]) => (
             <li key={t} className="bg-ink p-5 sm:p-6">
               <h3 className="display text-[17px]">{t}</h3>
               <p className="mt-3 text-[14px] leading-relaxed text-paper/60">{d}</p>

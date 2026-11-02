@@ -27,19 +27,15 @@ export default function Privacy() {
         </thead>
         <tbody>
           <tr>
-            <td>Wallet addresses: your Cardano payment address (and the stake address derived from it), or your Base address</td>
-            <td>To sign you in and show you your plans, vaults and balances</td>
+            <td>Your wallet address on Base</td>
+            <td>To sign you in and show you your vaults and balances</td>
           </tr>
           <tr>
-            <td>Your Strike account id and an encrypted trading key for it (Locke on Strike)</td>
-            <td>To place, change and close the orders your plans need. The key is encrypted with AES-256-GCM and can&apos;t withdraw</td>
-          </tr>
-          <tr>
-            <td>What you enter in a plan: amounts held, fuel spend, country, currency, leverage and similar</td>
+            <td>What you enter for a vault: amounts held, fuel spend, share protected, leverage and similar</td>
             <td>To size the hedge and show you what it protects</td>
           </tr>
           <tr>
-            <td>Plan and vault records: status, positions, prices, margin readings, alerts, deposits and transaction ids</td>
+            <td>Vault records: status, positions, prices, margin readings, alerts, deposits and transaction ids</td>
             <td>To run and monitor your protection and show you its history</td>
           </tr>
           <tr>
@@ -74,24 +70,24 @@ export default function Privacy() {
 
       <h2>Blockchains are public</h2>
       <p>
-        Your wallet address, deposits, vault and trades are recorded on public blockchains (Cardano, Base) and in venues&apos; public data.
-        Anyone can see them, and nobody, including us, can delete them. If you share a plan link, anyone with that link can see that
-        plan&apos;s numbers, read-only.
+        Your wallet address, deposits, vault and trades are recorded on the Base blockchain and in Avantis&apos;s public data.
+        Anyone can see them, and nobody, including us, can delete them. While a hedge is open, its Protected by Locke attestation on Base
+        is public too.
       </p>
 
       <h2>Who else sees data</h2>
       <ul>
         <li>
-          <strong>Trading venues:</strong> Strike Finance receives your Strike account&apos;s orders through Locke; Avantis (now operating as Veranta) sees your
-          vault&apos;s trades on Base. Each uses data under its own privacy policy.
+          <strong>Trading venue:</strong> Avantis (now operating as Veranta) sees your vault&apos;s trades on Base, and uses data under its
+          own privacy policy.
         </li>
         <li>
-          <strong>Your browser talks directly to</strong> your wallet, Strike&apos;s price stream (for live plan numbers) and, if you sign in
-          with Base Account, Coinbase&apos;s Base Account service. They see your IP address.
+          <strong>Your browser talks directly to</strong> your wallet, a Base RPC provider and, if you sign in with Base Account,
+          Coinbase&apos;s Base Account service. They see your IP address.
         </li>
         <li>
           <strong>Our providers:</strong> hosting (Netlify), database (Supabase), background workers (Railway), and blockchain data and price
-          services (such as Koios, Base RPC providers and Pyth through Avantis). They process data only to provide their service to us.
+          services (such as Base RPC providers and Pyth through Avantis). They process data only to provide their service to us.
         </li>
         <li>
           <strong>When the law requires it:</strong> to comply with a valid legal request, or to protect users and Locke from fraud or abuse.
@@ -102,18 +98,17 @@ export default function Privacy() {
       <h2>How long we keep it</h2>
       <ul>
         <li>Sign-in sessions last 24 hours. Sign-in challenges and network records are deleted within about 10 minutes.</li>
-        <li>Minute-by-minute plan snapshots are deleted after 90 days.</li>
         <li>
-          Plans, vaults, alerts and deposit records are kept while you use Locke and for as long as we need them for records, disputes or
+          Vaults, alerts and deposit records are kept while you use Locke and for as long as we need them for records, disputes or
           the law. You can ask us to delete them sooner (see below).
         </li>
       </ul>
 
       <h2>Security</h2>
       <p>
-        Trading keys are encrypted at rest; sessions use signed, HTTP-only cookies; the database has row-level security and its public access
-        roles have no access to tables; requests that change anything must come from Locke&apos;s own site. No system is perfectly secure, but
-        a leaked Locke trading key could not move your money out: withdrawals need your own wallet.
+        Sessions use signed, HTTP-only cookies; the database has row-level security and its public access roles have no access to tables;
+        requests that change anything must come from Locke&apos;s own site. No system is perfectly secure, but even a leaked keeper key
+        could not move your money out: only your own wallet can withdraw from your vault.
       </p>
 
       <h2>Your rights</h2>
@@ -124,7 +119,7 @@ export default function Privacy() {
         public blockchains can&apos;t be deleted. You can also complain to your data protection authority.
       </p>
       <p>
-        We rely on: performing our agreement with you (running your plans), our legitimate interests (security, preventing abuse, improving
+        We rely on: performing our agreement with you (running your vaults), our legitimate interests (security, preventing abuse, improving
         Locke), legal obligations, and, for optional browser storage, your consent (see the <Link href="/legal/cookies">Cookie Policy</Link>).
       </p>
 
