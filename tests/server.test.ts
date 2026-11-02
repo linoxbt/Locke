@@ -32,7 +32,7 @@ describe("post-login redirects", () => {
     expect(safeNext("/plans/0xabc?x=1#y")).toBe("/plans/0xabc?x=1#y");
     expect(safeNext(["/plans/new", "/x"])).toBe("/plans/new");
     for (const bad of ["//evil.com", "/\\evil.com", "/\t/evil.com", "/\n/evil.com", "https://evil.com", "evil.com", "/%0a/x\u0000", "", undefined]) {
-      expect(safeNext(bad as string | undefined)).toBe("/plans");
+      expect(safeNext(bad as string | undefined)).toBe("/portfolio");
     }
   });
 });

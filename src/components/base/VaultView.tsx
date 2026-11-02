@@ -31,7 +31,7 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
   const refresh = useCallback(async () => {
     try {
       const r = await fetch(`/api/base/vaults/${d.address}`, { cache: "no-store" });
-      if (r.status === 401) return window.location.assign(`/plans?next=${encodeURIComponent(window.location.pathname)}`);
+      if (r.status === 401) return window.location.assign(`/connect?reconnect=1&next=${encodeURIComponent(window.location.pathname)}`);
       if (!r.ok) throw new Error(String(r.status));
       setD(await r.json());
       setStale(false);

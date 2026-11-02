@@ -60,12 +60,25 @@ function storeCreated(address: string, c: Created | null) {
  * Describe what to protect and see the plan sized live. With no factory yet (before launch) it
  * previews only: everything but creating the plan works, and Locke's fee isn't known yet.
  */
-export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address: string; factory: Address | null; dataSuffix?: Hex; feeBps: number | null }) {
+export function NewVaultForm({
+  type: fixedType,
+  address,
+  factory,
+  dataSuffix,
+  feeBps,
+}: {
+  /** The plan type chosen on /protect; the form then asks only about that one. */
+  type?: BasePlanType;
+  address: string;
+  factory: Address | null;
+  dataSuffix?: Hex;
+  feeBps: number | null;
+}) {
   const router = useRouter();
   const [markets, setMarkets] = useState<MarketInfo[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [type, setType] = useState<BasePlanType>("holdings");
-  const [pairIndex, setPairIndex] = useState<number>(0);
+  const [type, setType] = useState<BasePlanType>(fixedType ?? "holdings");
+  const [pairIndex, setPairIndex] = useState<number>(BASE_MARKETS.find((m) => m.type === (fixedType ?? "holdings"))!.pairIndex);
   const [valueUsd, setValueUsd] = useState(1000);
   const [sharePct, setSharePct] = useState(50);
   const [monthlySpendUsd, setMonthlySpendUsd] = useState(500);
@@ -214,17 +227,19 @@ export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       <Card className="flex flex-col gap-6">
-        <Field label="What to protect" group>
-          <Segmented
-            label="Plan type"
-            value={type}
-            onChange={pickType}
-            options={[
-              { value: "holdings", label: "Crypto the business holds" },
-              { value: "costs", label: "Fuel the business buys" },
-            ]}
-          />
-        </Field>
+        {!fixedType && (
+          <Field label="What to protect" group>
+            <Segmented
+              label="Plan type"
+              value={type}
+              onChange={pickType}
+              options={[
+                { value: "holdings", label: "Crypto the business holds" },
+                { value: "costs", label: "Fuel the business buys" },
+              ]}
+            />
+          </Field>
+        )}
 
         <Field label="Market" group hint={market?.carryPctPerHour != null ? carryHint(market) : undefined}>
           <Segmented<number>

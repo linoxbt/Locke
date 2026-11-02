@@ -4,7 +4,7 @@
  * leave the site: anything with control characters or backslashes is refused, and the result
  * must resolve to our own origin.
  */
-export function safeNext(next: string | string[] | undefined, fallback = "/plans"): string {
+export function safeNext(next: string | string[] | undefined, fallback = "/portfolio"): string {
   const n = Array.isArray(next) ? next[0] : next;
   if (!n || n.length > 512 || !n.startsWith("/") || /[\u0000-\u001f\u007f\\]/.test(n)) return fallback;
   try {

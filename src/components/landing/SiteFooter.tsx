@@ -4,7 +4,7 @@ import { CookieSettingsLink } from "../CookieConsent";
 import { LockeLogoReverse } from "../Logo";
 
 const COLUMNS: { title: string; links: [string, string][] }[] = [
-  { title: "Plans", links: [["Sign in with Base", "/connect"], ["Your plans", "/plans"], ["New plan", "/plans/new"]] },
+  { title: "Plans", links: [["Sign in with Base", "/connect"], ["Portfolio", "/portfolio"], ["Protect your holdings", "/protect/holdings"], ["Manage fuel costs", "/protect/costs"]] },
   { title: "Product", links: [["How it works", "/how-it-works"], ["Holdings plan", "/how-it-works#holdings"], ["Operating costs plan", "/how-it-works#costs"], ["Metrics", "/metrics"], ["For agents", "/agents"]] },
   { title: "Legal", links: LEGAL_DOCS.map((d) => [d.label, d.href] as [string, string]) },
 ];

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { BaseMark } from "./base/BaseMark";
 import { LockeMark } from "./Logo";
 import { shortAddr } from "@/lib/ui/format";
 
@@ -51,8 +50,8 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
 
   const links = baseAddress
     ? [
-        { href: "/plans", label: "Plans" },
-        { href: "/plans/new", label: "New plan" },
+        { href: "/portfolio", label: "Portfolio" },
+        { href: "/protect", label: "New plan" },
         { href: "/how-it-works", label: "How it works" },
       ]
     : [
@@ -60,10 +59,10 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
         { href: "/metrics", label: "Metrics" },
         { href: "/agents", label: "For agents" },
       ];
-  // "Plans" stays lit on a plan's own page, but not on "New plan".
-  const isOn = (href: string) => path === href || (href === "/plans" ? path.startsWith("/plans/") && path !== "/plans/new" : path.startsWith(href + "/"));
-  // Signed in: the action is the plans, shown with the account's address.
-  const cta = baseAddress ? { href: "/plans", label: shortAddr(baseAddress) } : { href: "/connect", label: "Get started" };
+  // Portfolio stays lit on a plan's own page; New plan through the whole /protect flow.
+  const isOn = (href: string) => path === href || path.startsWith(href + "/") || (href === "/portfolio" && path.startsWith("/plans/"));
+  // Signed in: the account, shown by its address.
+  const cta = baseAddress ? { href: "/account", label: shortAddr(baseAddress) } : { href: "/connect", label: "Get started" };
   const showCta = !!baseAddress || path !== "/connect";
 
   return (
@@ -88,8 +87,7 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
           <div className="pointer-events-auto ml-auto flex items-center gap-1 md:ml-0">
             {/* On the sign-in page itself, "Get started" would only link back to it. */}
             {showCta && (
-              <Link href={cta.href} className={`${pill} ${baseAddress ? `num gap-2 ${quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}>
-                {baseAddress && <BaseMark size={10} />}
+              <Link href={cta.href} className={`${pill} ${baseAddress ? `num ${path === "/account" ? "bg-ink text-paper" : quiet}` : "bg-cobalt text-paper hover:bg-cobalt-deep"}`}>
                 {cta.label}
               </Link>
             )}
@@ -128,15 +126,15 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
               </button>
             </div>
             <nav aria-label="Menu" className="mt-6 flex flex-col px-3 pb-4">
-              {links.map((l) => (
+              {[...links, ...(baseAddress ? [{ href: "/account", label: "Account" }] : [])].map((l) => (
                 <Link key={l.href} href={l.href} className={`display border-b border-line py-3 text-[26px] ${isOn(l.href) ? "text-ink" : "text-ink-2"}`}>
                   {l.label}
                 </Link>
               ))}
             </nav>
             {showCta && (
-              <Link href={baseAddress ? "/plans" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
-                {baseAddress ? "Your plans" : "Get started"}
+              <Link href={baseAddress ? "/protect" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
+                {baseAddress ? "New protection plan" : "Get started"}
               </Link>
             )}
           </div>

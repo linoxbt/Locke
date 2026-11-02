@@ -27,7 +27,7 @@ export function BaseAccountBar({ address }: { address: string }) {
         onClick={async () => {
           setBusy(true);
           await signOutOfBase().catch(() => {});
-          router.replace("/plans");
+          router.replace("/");
           router.refresh();
         }}
         className="h-8 rounded-full px-3 text-ink-2 hover:text-ink disabled:opacity-50"

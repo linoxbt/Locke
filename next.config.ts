@@ -4,12 +4,14 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ["postgres"],
-  // Plans used to live under /base; old links keep working.
+  // Earlier addresses of the plan pages keep working.
   async redirects() {
     return [
-      { source: "/base", destination: "/plans", permanent: true },
-      { source: "/base/new", destination: "/plans/new", permanent: true },
+      { source: "/base", destination: "/portfolio", permanent: true },
+      { source: "/base/new", destination: "/protect", permanent: true },
       { source: "/base/vaults/:address", destination: "/plans/:address", permanent: true },
+      { source: "/plans", destination: "/portfolio", permanent: true },
+      { source: "/plans/new", destination: "/protect", permanent: true },
     ];
   },
   async headers() {
