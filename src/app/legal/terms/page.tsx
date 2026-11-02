@@ -13,7 +13,7 @@ export default function Terms() {
       lead={
         <>
           These terms are the agreement between you and {operatorName()} (&ldquo;Locke&rdquo;, &ldquo;we&rdquo;) for using {LEGAL.site} and
-          its apps. By signing in or creating a vault, you accept them. If you use Locke for a business, you accept them for
+          its apps. By signing in or creating a plan, you accept them. If you use Locke for a business, you accept them for
           that business and confirm you may do so.
         </>
       }
@@ -50,7 +50,7 @@ export default function Terms() {
       <h2>4. Risk</h2>
       <p>
         Hedging with leveraged perpetual futures carries real risk, including losing the margin you put in. Read the{" "}
-        <Link href="/legal/risk">Risk Disclosure</Link> before you create a vault. Locke asks you to confirm that you understand the
+        <Link href="/legal/risk">Risk Disclosure</Link> before you create a plan. Locke asks you to confirm that you understand the
         risks before it opens protection.
       </p>
 
@@ -106,7 +106,7 @@ export default function Terms() {
 
       <h2>10. Availability and changes</h2>
       <p>
-        We may change, pause or stop any part of Locke, including pausing new vaults, deposits or hedges to protect users. A pause never stops
+        We may change, pause or stop any part of Locke, including pausing new plans, deposits or hedges to protect users. A pause never stops
         you from withdrawing or closing: both work from your own wallet. We may update these terms;
         the date at the top shows the current version, and we will flag material changes in the app. Continuing to use Locke after a change
         means you accept it.

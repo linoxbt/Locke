@@ -77,7 +77,7 @@ export default function Risk() {
       </p>
 
       <h2>Your wallet</h2>
-      <p>Anyone who controls your wallet controls your vaults and your money. Keep it and its recovery phrase safe; Locke can&apos;t recover them.</p>
+      <p>Anyone who controls your wallet controls your plans and your money. Keep it and its recovery phrase safe; Locke can&apos;t recover them.</p>
 
       <h2>Law and tax</h2>
       <p>

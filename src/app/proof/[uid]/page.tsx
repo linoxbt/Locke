@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 
 const HEADLINE: Record<ProofStatus, { lead: string; rest: string; chip: string; cls: string }> = {
   protected: { lead: "Protected by Locke.", rest: "This hedge is open on Base right now.", chip: "Protected", cls: "bg-ok/15 text-ok" },
-  ended: { lead: "Protection ended.", rest: "This vault has closed, so Locke revoked its proof.", chip: "Ended", cls: "bg-mist text-ink-2" },
+  ended: { lead: "Protection ended.", rest: "This plan has closed, so Locke revoked its proof.", chip: "Ended", cls: "bg-mist text-ink-2" },
   unverified: { lead: "Not issued by Locke.", rest: "This attestation uses Locke's format, but Locke's keeper didn't sign it.", chip: "Unverified", cls: "bg-danger/10 text-danger-ink" },
   other: { lead: "Not a Locke proof.", rest: "This attestation exists on Base, but it isn't a Protected by Locke record.", chip: "Not Locke", cls: "bg-danger/10 text-danger-ink" },
 };

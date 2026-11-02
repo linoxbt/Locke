@@ -38,16 +38,18 @@ Margin use is maintenance ÷ equity: 100% is exactly Avantis's liquidation (loss
 
 ## Pages
 
+A **plan** is what a business sets up; each plan's USDC sits in its own **vault** contract on Base. The old `/base…` addresses redirect to `/plans…`.
+
 | Route | What it is |
 |---|---|
 | `/` | Home, with live prices from Avantis (ETH, BTC, WTI, Brent) |
 | `/how-it-works` | The four steps, both plan types, the margin ladder, and how a vault works |
 | `/connect` | Sign in with Base |
-| `/base` | Your vaults (signs you in when signed out) |
-| `/base/new` | Describe the exposure, preview, then create and fund the vault |
-| `/base/vaults/[address]` | The vault: hedge, margin, proof, income, and every exit |
+| `/plans` | Your plans (signs you in when signed out) |
+| `/plans/new` | Describe the exposure and preview the plan; then create it and fund its vault. Before launch (no factory deployed) it previews only |
+| `/plans/[address]` | A plan, by its vault's address: hedge, margin, proof, income, and every exit |
 | `/proof/[uid]` | Public "Protected by Locke" proof, read from EAS on Base |
-| `/metrics` | Value protected now, vaults, live proofs, Builder Code transactions |
+| `/metrics` | Value protected now, plans, live proofs, Builder Code transactions |
 | `/agents` | The agent API: endpoints, x402 prices, an example client |
 | `/legal/terms`, `/legal/privacy`, `/legal/cookies`, `/legal/risk` | Terms, Privacy Policy, Cookie Policy, Risk Disclosure |
 
@@ -117,7 +119,7 @@ cd contracts && npx hardhat test   # contract tests (FORK=1 with a Base RPC for 
 | `DATABASE_PREPARE` | app, keeper | `false` to force prepared statements off (they're off automatically on port 6543) |
 | `SESSION_SECRET` | app | At least 32 characters; signs session cookies |
 | `NEXT_PUBLIC_SITE_URL` | app | Public URL, also accepted by the same-origin check |
-| `BASE_FACTORY_ADDRESS` | app, keeper | The deployed `LockeVaultFactory`. Unset, `/base` shows "not live yet" |
+| `BASE_FACTORY_ADDRESS` | app, keeper | The deployed `LockeVaultFactory`. Unset, `/plans` shows "not live yet" and `/plans/new` previews only |
 | `BASE_RPC_URL` | app, keeper | Base RPC (default `https://mainnet.base.org`; Veranta's test network: `https://devnet-rpc.veranta.xyz`) |
 | `BASE_BUILDER_CODE` | app, keeper | Locke's Base Builder Code (`bc_…`), appended to every Base transaction (ERC-8021) |
 | `BASE_KEEPER_PRIVATE_KEY` | keeper | The keeper key (0x + 64 hex). Trades vaults within their on-chain limits; can never withdraw. Needs a little ETH on Base |

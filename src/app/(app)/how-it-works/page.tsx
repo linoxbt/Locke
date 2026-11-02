@@ -13,9 +13,9 @@ const STEPS = [
 ];
 
 const LADDER = [
-  { tone: "paper" as const, k: "Watch", v: "Margin use 50%", d: "The vault shows amber. Nothing to do yet." },
+  { tone: "paper" as const, k: "Watch", v: "Margin use 50%", d: "The plan shows amber. Nothing to do yet." },
   { tone: "watch" as const, k: "Top-up", v: "Margin use 60%", d: "The keeper adds margin from the vault's buffer, back to about 35%." },
-  { tone: "danger" as const, k: "Buffer used up", v: "Margin use 60%+", d: "The vault shows exactly how much USDC to add, or you can close part of the hedge." },
+  { tone: "danger" as const, k: "Buffer used up", v: "Margin use 60%+", d: "The plan shows exactly how much USDC to add, or you can close part of the hedge." },
   { tone: "ink" as const, k: "Liquidation", v: "Margin use 100%", d: "Avantis closes the position. What's left stays in your vault." },
 ];
 
@@ -77,7 +77,7 @@ export default function HowItWorksPage() {
           <Display as="h2" size="lg" lead="Margin kept topped up." rest="Before Avantis steps in." />
           <p className="mt-6 max-w-[44ch] text-[15px] leading-relaxed text-ink-2">
             Each vault keeps a buffer of USDC beside the hedge. Locke&apos;s keeper watches margin use around the clock and adds from the
-            buffer well before liquidation, only within the limits your vault sets. When the buffer runs out, your vault page says how much
+            buffer well before liquidation, only within the limits your vault sets. When the buffer runs out, your plan&apos;s page says how much
             to add.
           </p>
         </div>

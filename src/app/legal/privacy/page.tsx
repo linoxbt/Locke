@@ -28,7 +28,7 @@ export default function Privacy() {
         <tbody>
           <tr>
             <td>Your wallet address on Base</td>
-            <td>To sign you in and show you your vaults and balances</td>
+            <td>To sign you in and show you your plans and balances</td>
           </tr>
           <tr>
             <td>What you enter for a vault: amounts held, fuel spend, share protected, leverage and similar</td>
@@ -119,7 +119,7 @@ export default function Privacy() {
         public blockchains can&apos;t be deleted. You can also complain to your data protection authority.
       </p>
       <p>
-        We rely on: performing our agreement with you (running your vaults), our legitimate interests (security, preventing abuse, improving
+        We rely on: performing our agreement with you (running your plans), our legitimate interests (security, preventing abuse, improving
         Locke), legal obligations, and, for optional browser storage, your consent (see the <Link href="/legal/cookies">Cookie Policy</Link>).
       </p>
 

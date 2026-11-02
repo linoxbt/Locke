@@ -6,11 +6,11 @@ import { vaultDetail } from "@/lib/server/baseVaults";
 import { HttpError } from "@/lib/server/errors";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Vault · Locke" };
+export const metadata: Metadata = { title: "Plan · Locke" };
 
-export default async function VaultPage({ params }: { params: Promise<{ address: string }> }) {
+export default async function PlanPage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = await params;
-  const s = await requireBasePage(`/base/vaults/${address}`);
+  const s = await requireBasePage(`/plans/${address}`);
   let detail;
   try {
     detail = await vaultDetail(s.uid, address);

@@ -56,7 +56,11 @@ function storeCreated(address: string, c: Created | null) {
  * New Locke vault: pick what to protect, see the size and the deposit, then one wallet batch
  * approves the USDC and creates the vault (owned by this account) with its limits and deposit.
  */
-export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address: string; factory: Address; dataSuffix?: Hex; feeBps: number }) {
+/**
+ * Describe what to protect and see the plan sized live. With no factory yet (before launch) it
+ * previews only: everything but creating the plan works, and Locke's fee isn't known yet.
+ */
+export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address: string; factory: Address | null; dataSuffix?: Hex; feeBps: number | null }) {
   const router = useRouter();
   const [markets, setMarkets] = useState<MarketInfo[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -101,7 +105,7 @@ export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address
   }, [market, type, pairIndex, valueUsd, sharePct, monthlySpendUsd, months, crudeSharePct, leverage, bufferPct]);
 
   /** Locke's fee on this hedge, charged once it opens (at most once a month per market). */
-  const lockeFee = (z: BaseSizing) => Math.ceil(((z.notionalUsd * feeBps) / 10_000) * 100) / 100;
+  const lockeFee = (z: BaseSizing) => Math.ceil(((z.notionalUsd * (feeBps ?? 0)) / 10_000) * 100) / 100;
   /** What the vault needs: the plan's deposit plus Locke's fee, so the fee never eats the buffer. */
   const totalDeposit = (z: BaseSizing) => Math.round((z.depositUsd + lockeFee(z)) * 100) / 100;
 
@@ -119,7 +123,7 @@ export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? "Couldn't save the vault to Locke");
       storeCreated(address, null);
-      router.push(`/base/vaults/${String(body.address ?? c.vault).toLowerCase()}`);
+      router.push(`/plans/${String(body.address ?? c.vault).toLowerCase()}`);
     } catch (e) {
       setError(walletErrorMessage(e));
       setStep("idle");
@@ -128,7 +132,7 @@ export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address
 
   async function create() {
     const sizing = sized.sizing;
-    if (!sizing || created) return;
+    if (!sizing || created || !factory || feeBps == null) return;
     const depositUsd = totalDeposit(sizing);
     setError(null);
     // The server records only inputs it accepts; check them before anything is sent on chain.
@@ -201,9 +205,9 @@ export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address
   const busy = step !== "idle";
   const sizing = sized.sizing;
   const hint = {
-    wallet: "Approve in your wallet: one request covers the USDC approval and the vault.",
+    wallet: "Approve in your wallet: one request covers the USDC approval and the plan's vault.",
     confirming: "Waiting for Base to confirm…",
-    recording: "Saving your vault…",
+    recording: "Saving your plan…",
     idle: "",
   }[step];
 
@@ -263,7 +267,7 @@ export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address
       </Card>
 
       <Card tone="ink" className="flex h-fit flex-col gap-5 lg:sticky lg:top-24">
-        <div className="eyebrow text-lime">Your vault</div>
+        <div className="eyebrow text-lime">Your plan</div>
         {!markets && <p className="text-[14px] text-paper/70">Loading Avantis&apos;s markets…</p>}
         {sized.problem && <p className="text-[14px] text-paper">{sized.problem}</p>}
         {market && !market.available && <p className="text-[14px] text-paper">This market isn&apos;t available on Avantis right now.</p>}
@@ -281,8 +285,14 @@ export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address
               <Stat
                 subtle="text-paper/55"
                 label="Locke fee"
-                value={feeBps ? usd(lockeFee(sizing)) : "None"}
-                sub={feeBps ? `${(feeBps / 100).toFixed(2)}% of the hedge, once it opens; at most once a month per market` : undefined}
+                value={feeBps == null ? "Set at launch" : feeBps ? usd(lockeFee(sizing)) : "None"}
+                sub={
+                  feeBps == null
+                    ? "At most 0.20% of the hedge, shown before you create the plan"
+                    : feeBps
+                      ? `${(feeBps / 100).toFixed(2)}% of the hedge, once it opens; at most once a month per market`
+                      : undefined
+                }
               />
             </div>
             <p className="text-[12px] leading-relaxed text-paper/55">
@@ -303,9 +313,14 @@ export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address
                 .
               </span>
             </label>
-            {!created && (
+            {!created && factory && (
               <Button size="lg" variant="paper" onClick={create} busy={busy} disabled={!agreed || !market?.available}>
-                Create vault and deposit {usd(totalDeposit(sizing))}
+                Create plan and deposit {usd(totalDeposit(sizing))}
+              </Button>
+            )}
+            {!factory && (
+              <Button size="lg" variant="paper" disabled>
+                Creating plans opens at launch
               </Button>
             )}
             {hint && <p className="text-[12px] text-paper/70">{hint}</p>}
@@ -314,7 +329,7 @@ export function NewVaultForm({ address, factory, dataSuffix, feeBps }: { address
         {created && (
           <div className="flex flex-col gap-3 rounded-2xl bg-paper/10 p-4">
             <p className="text-[14px] text-paper">
-              Your vault is created on Base
+              Your plan&apos;s vault is created on Base
               {created.vault && (
                 <>
                   {" "}

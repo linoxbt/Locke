@@ -31,7 +31,7 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
   const refresh = useCallback(async () => {
     try {
       const r = await fetch(`/api/base/vaults/${d.address}`, { cache: "no-store" });
-      if (r.status === 401) return window.location.assign(`/base?next=${encodeURIComponent(window.location.pathname)}`);
+      if (r.status === 401) return window.location.assign(`/plans?next=${encodeURIComponent(window.location.pathname)}`);
       if (!r.ok) throw new Error(String(r.status));
       setD(await r.json());
       setStale(false);
@@ -134,7 +134,7 @@ export function VaultView({ initial, dataSuffix, factoryKeeper }: { initial: Det
         </div>
       </div>
 
-      {stale && <Notice>Live updates paused: Locke couldn&apos;t refresh this vault. The figures below may be out of date; it keeps trying.</Notice>}
+      {stale && <Notice>Live updates paused: Locke couldn&apos;t refresh this plan. The figures below may be out of date; it keeps trying.</Notice>}
       {d.partial.length > 0 && <Notice>Some live data didn&apos;t load ({d.partial.join(", ")}). Showing what&apos;s available; it retries every few seconds.</Notice>}
       {d.chain?.paused && <Notice>Locke has paused new deposits and new hedges. Withdrawals and closes still work.</Notice>}
       {d.statusNote && <Notice tone="info">{d.statusNote}</Notice>}

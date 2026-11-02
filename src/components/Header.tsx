@@ -51,8 +51,8 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
 
   const links = baseAddress
     ? [
-        { href: "/base", label: "Vaults" },
-        { href: "/base/new", label: "New vault" },
+        { href: "/plans", label: "Plans" },
+        { href: "/plans/new", label: "New plan" },
         { href: "/how-it-works", label: "How it works" },
       ]
     : [
@@ -60,9 +60,10 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
         { href: "/metrics", label: "Metrics" },
         { href: "/agents", label: "For agents" },
       ];
-  const isOn = (href: string) => path === href || (href !== "/base" && path.startsWith(href + "/")) || (href === "/base" && path.startsWith("/base/vaults/"));
-  // Signed in: the action is the vaults, shown with the account's address.
-  const cta = baseAddress ? { href: "/base", label: shortAddr(baseAddress) } : { href: "/connect", label: "Get started" };
+  // "Plans" stays lit on a plan's own page, but not on "New plan".
+  const isOn = (href: string) => path === href || (href === "/plans" ? path.startsWith("/plans/") && path !== "/plans/new" : path.startsWith(href + "/"));
+  // Signed in: the action is the plans, shown with the account's address.
+  const cta = baseAddress ? { href: "/plans", label: shortAddr(baseAddress) } : { href: "/connect", label: "Get started" };
   const showCta = !!baseAddress || path !== "/connect";
 
   return (
@@ -134,8 +135,8 @@ export function Header({ baseAddress = null }: { baseAddress?: string | null }) 
               ))}
             </nav>
             {showCta && (
-              <Link href={baseAddress ? "/base" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
-                {baseAddress ? "Your vaults" : "Get started"}
+              <Link href={baseAddress ? "/plans" : "/connect"} className="mt-4 flex h-12 items-center justify-center rounded-full bg-cobalt text-[15px] text-paper">
+                {baseAddress ? "Your plans" : "Get started"}
               </Link>
             )}
           </div>

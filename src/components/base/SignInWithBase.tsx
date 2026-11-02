@@ -13,7 +13,7 @@ export { BaseMark };
  * Sign in with Base (Base Account: a passkey wallet, no extension or seed phrase), or with any EVM
  * wallet already in the browser. Both end in the same signed Sign-In with Ethereum message.
  */
-export function SignInWithBase({ next = "/base" }: { next?: string }) {
+export function SignInWithBase({ next = "/plans" }: { next?: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState<WalletKind | null>(null);
   const [error, setError] = useState<string | null>(null);

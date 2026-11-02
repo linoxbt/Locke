@@ -18,7 +18,7 @@ export async function optionalBaseSession(): Promise<Session | null> {
 
 export async function requireBasePage(returnTo: string): Promise<Session> {
   const s = await optionalBaseSession();
-  if (!s) redirect(`/base?next=${encodeURIComponent(returnTo)}`);
+  if (!s) redirect(`/plans?next=${encodeURIComponent(returnTo)}`);
   return s;
 }
 

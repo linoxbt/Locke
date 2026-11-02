@@ -25,8 +25,8 @@ async function quote(pairIndex: number): Promise<Quote> {
 export default async function HomePage() {
   // Live prices from Avantis on Base, where Locke's vaults hedge.
   const [session, eth, btc, wti, brent] = await Promise.all([optionalBaseSession(), quote(0), quote(1), quote(96), quote(97)]);
-  // Signed in: straight to a new vault. Otherwise /connect, to Sign in with Base.
-  const start = session ? { href: "/base/new", label: "New vault" } : { href: "/connect", label: "Try Locke" };
+  // Signed in: straight to a new plan. Otherwise /connect, to Sign in with Base.
+  const start = session ? { href: "/plans/new", label: "New plan" } : { href: "/connect", label: "Try Locke" };
 
   return (
     <>
