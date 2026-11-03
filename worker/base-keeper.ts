@@ -501,11 +501,14 @@ async function main() {
   if (process.env.DATABASE_URL !== original) log("DATABASE_URL is Supabase's transaction pooler; using its session pooler (port 5432) instead");
   const sql = db();
   const port = Number(process.env.PORT ?? 8080);
+  // While a new deploy waits for the old keeper's lock it is ready to take over: it answers healthy,
+  // so the platform can retire the old one (which releases the lock) instead of failing the deploy.
+  let standby = true;
   http
     .createServer((req, res) => {
       if (req.url !== "/healthz") return res.writeHead(404).end();
-      const ok = healthy && !gasLow && failing === 0 && Date.now() - lastLoopOk < 4 * LOOP_MS;
-      res.writeHead(ok ? 200 : 503, { "content-type": "application/json" }).end(JSON.stringify({ ok, keeper: account.address, gasLow, failing, lastLoopOk }));
+      const ok = standby || (healthy && !gasLow && failing === 0 && Date.now() - lastLoopOk < 4 * LOOP_MS);
+      res.writeHead(ok ? 200 : 503, { "content-type": "application/json" }).end(JSON.stringify({ ok, standby, keeper: account.address, gasLow, failing, lastLoopOk }));
     })
     .listen(port, () => log(`health on :${port}/healthz, keeper ${account.address}`));
 
@@ -520,6 +523,7 @@ async function main() {
     log("another keeper holds the lock; standing by");
     await new Promise((r) => setTimeout(r, LOOP_MS));
   }
+  standby = false;
   // If the lock's connection drops, the lock is gone and another keeper may start: stop at once.
   setInterval(() => {
     reserved`select 1`.catch(() => {

@@ -51,6 +51,20 @@ export interface Metrics {
 
 const num = (v: unknown) => Number(v ?? 0) || 0;
 
+/** Base reads get this long: past it the page shows "—" for them rather than waiting. */
+const CHAIN_TIMEOUT_MS = 4_000;
+
+function within<T>(p: Promise<T>, ms: number, fallback: T, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const late = new Promise<T>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[metrics] ${what} took over ${ms} ms; showing the page without it`);
+      resolve(fallback);
+    }, ms);
+  });
+  return Promise.race([p.finally(() => clearTimeout(timer)), late]);
+}
+
 async function chainFigures(): Promise<Metrics["chain"]> {
   const factory = config.baseFactoryAddress;
   if (!factory) return null;
@@ -73,10 +87,14 @@ async function chainFigures(): Promise<Metrics["chain"]> {
 }
 
 export async function readMetrics(range: RangeDays): Promise<Metrics> {
+  const started = Date.now();
   const sql = db();
   const bucket = range > 30 ? "week" : "day";
   const notional = sql`(sizing->>'notionalUsd')::numeric`;
-  const [[totals], statuses, markets, types, protectedRows, createdRows, [txs], proofs, [live], activity, [beat], chain] = await Promise.all([
+  // Base is read alongside; the database queries run one after another on one connection, because
+  // opening several pooled connections at once can stall on the hosted pooler.
+  const chainRead = within(chainFigures(), CHAIN_TIMEOUT_MS, null, "Reading the factory on Base");
+  const queries = [
     sql`
       select coalesce(sum(${notional}) filter (where status = 'active'), 0) as usd,
              coalesce(sum(${notional}) filter (where opened_at <= now() - make_interval(days => ${range})
@@ -120,8 +138,13 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
       from base_vault_events e join base_vaults v on v.address = e.vault
       order by e.id desc limit 8`,
     sql`select extract(epoch from now() - at)::float8 as age from monitor_heartbeat where id = 2`,
-    chainFigures(),
-  ]);
+  ];
+  const results: Record<string, any>[][] = [];
+  for (const q of queries) results.push(await q);
+  const [[totals], statuses, markets, types, protectedRows, createdRows, [txs], proofs, [live], activity, [beat]] = results;
+  const chain = await chainRead;
+  const ms = Date.now() - started;
+  if (ms > 3_000) console.warn(`[metrics] range ${range} took ${ms} ms`);
 
   const byStatus: Record<string, number> = { funding: 0, opening: 0, active: 0, closed: 0 };
   for (const s of statuses) byStatus[String(s.status)] = num(s.n);

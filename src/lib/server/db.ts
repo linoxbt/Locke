@@ -8,7 +8,8 @@ const g = globalThis as unknown as { __lockeSql?: Sql };
 /**
  * One pool per process (survives Next dev hot reloads). Transaction poolers (port 6543: Supabase's
  * Supavisor or PgBouncer) don't keep prepared statements, so they're off there or when
- * DATABASE_PREPARE=false. Statements time out so a hung database can't pile up work.
+ * DATABASE_PREPARE=false, and queries aren't pipelined. Statements time out so a hung database can't
+ * pile up work.
  */
 export function db(): Sql {
   if (!g.__lockeSql) {
@@ -18,6 +19,9 @@ export function db(): Sql {
       max: Number(process.env.DATABASE_POOL_MAX ?? 3),
       idle_timeout: 20,
       prepare,
+      // A transaction pooler can stall when several queries are pipelined on one connection
+      // (a page that runs many at once): send one at a time there.
+      ...(prepare ? {} : ({ max_pipeline: 1 } as object)),
       connection: { statement_timeout: 15_000 },
       types: { numeric: { to: 1700, from: [1700], serialize: (x: unknown) => String(x), parse: (x: string) => Number(x) } },
     });
