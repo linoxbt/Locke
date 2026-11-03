@@ -1,0 +1,16 @@
+{
+  "chainId": 8453,
+  "deployedAt": "2026-11-03",
+  "factory": "0xeca48fab6d2616b81d3eb917359c9e25d885df94",
+  "vaultImplementation": "0x2CAAb3044BBEaD5A7fa2424160E06F7c1527Fd9e",
+  "admin": "0x584D6052458AfcAE947340620ac3B6C102d5200c",
+  "guardian": "0x584D6052458AfcAE947340620ac3B6C102d5200c",
+  "keeper": "0x747DF176962e1495355562Fe30b65F276f0B8404",
+  "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "router": "0x44914408af82bC9983bbb330e3578E1105e11d4e",
+  "tradingStorage": "0x8a311D7048c35985aa31C131B9A13e03a5f7422d",
+  "maxVaultDepositsUsd": 25000,
+  "maxTotalDepositsUsd": 25000,
+  "feeBps": 0,
+  "note": "Admin and guardian are a Safe on Base. The fee starts at 0; the admin sets it with setFee."
+}
