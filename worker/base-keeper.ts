@@ -485,8 +485,20 @@ async function loop() {
              on conflict (id) do update set at = excluded.at, result = excluded.result`.catch((e) => log("heartbeat failed:", reason(e)));
 }
 
+/**
+ * Supabase serves the same database through its transaction pooler (port 6543) and its session
+ * pooler (5432) on the same host and credentials. The keeper needs a session (for its lock), so a
+ * Supabase transaction-pooler URL, the one the websites use, is switched to the session pooler.
+ */
+function sessionPoolerUrl(url: string): string {
+  return url.replace(/(\.pooler\.supabase\.com):6543\b/, "$1:5432");
+}
+
 async function main() {
   if (!config.baseFactoryAddress) throw new Error("BASE_FACTORY_ADDRESS is not set");
+  const original = config.databaseUrl;
+  process.env.DATABASE_URL = sessionPoolerUrl(original);
+  if (process.env.DATABASE_URL !== original) log("DATABASE_URL is Supabase's transaction pooler; using its session pooler (port 5432) instead");
   const sql = db();
   const port = Number(process.env.PORT ?? 8080);
   http
