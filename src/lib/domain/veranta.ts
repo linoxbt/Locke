@@ -62,21 +62,37 @@ export interface RawTradingSnapshot {
   groupInfo: Record<string, { name: string }>;
 }
 
+const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+
 export function parseMarkets(snapshot: RawTradingSnapshot): VerantaMarket[] {
   return Object.values(snapshot.pairInfos)
     .map((p) => {
       const funding = p.fundingRate ?? { long: 0, short: 0 };
       const borrow = p.marginFee ?? { long: 0, short: 0 };
+      // A pair missing any number Locke sizes with is treated as not listed, never sized with NaN.
+      const complete = [
+        p.pairMinLevPosUSDC,
+        p.leverages?.minLeverage,
+        p.leverages?.maxLeverage,
+        p.openFeeP,
+        p.closeFeeP,
+        p.spreadP,
+        p.pairMaxOI,
+        funding.long,
+        funding.short,
+        borrow.long,
+        borrow.short,
+      ].every(finite);
       return {
         index: p.index,
         symbol: `${p.from}/${p.to}`,
         base: p.from,
         group: snapshot.groupInfo[String(p.groupIndex)]?.name ?? "",
-        listed: p.isPairListed,
+        listed: Boolean(p.isPairListed) && complete,
         closeOnly: Boolean(p.additionalPairParams2?.closeOnlyMode),
         minPositionUsd: p.pairMinLevPosUSDC,
-        minLeverage: p.leverages.minLeverage,
-        maxLeverage: p.leverages.maxLeverage,
+        minLeverage: p.leverages?.minLeverage ?? 0,
+        maxLeverage: p.leverages?.maxLeverage ?? 0,
         openFeePct: p.openFeeP,
         closeFeePct: p.closeFeeP,
         spreadPct: p.spreadP,
@@ -130,12 +146,20 @@ export interface RawPosition {
   openedAt?: number;
 }
 
+export class IncompletePositionError extends Error {}
+
 export function parsePosition(p: RawPosition): VerantaPosition {
   const collateralUsd = Number(p.collateral) / USDC;
   const leverage = Number(p.leverage) / P10;
   const openPrice = Number(p.openPrice) / P10;
   const notional = collateralUsd * leverage;
   const size = p.coinExposure ? Number(p.coinExposure) / P10 : notional / openPrice;
+  const rollover = Number(p.rolloverFee ?? 0) / USDC;
+  const funding = Number(p.unrealisedFundingFee ?? 0) / USDC;
+  // Risk math on a half-read position would be NaN: refuse it, so the keeper retries next round.
+  if (![collateralUsd, leverage, openPrice, size, rollover, funding].every(Number.isFinite) || collateralUsd <= 0 || leverage <= 0 || openPrice <= 0 || size <= 0) {
+    throw new IncompletePositionError(`Avantis reported an incomplete position (pair ${p.pairIndex}, index ${p.index})`);
+  }
   return {
     pairIndex: Number(p.pairIndex),
     index: Number(p.index),
@@ -145,9 +169,9 @@ export function parsePosition(p: RawPosition): VerantaPosition {
     openPrice,
     signedSize: p.buy ? size : -size,
     notionalAtOpen: notional,
-    rolloverFeeUsd: Number(p.rolloverFee ?? 0) / USDC,
-    fundingFeeUsd: Number(p.unrealisedFundingFee ?? 0) / USDC,
-    liquidationPrice: Number(p.liquidationPrice ?? 0) / P10,
+    rolloverFeeUsd: rollover,
+    fundingFeeUsd: funding,
+    liquidationPrice: Number(p.liquidationPrice ?? 0) / P10 || 0,
     openedAt: Number(p.openedAt ?? 0),
   };
 }

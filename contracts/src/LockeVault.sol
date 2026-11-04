@@ -16,6 +16,7 @@ interface ILockeFactory {
     function recordDeposit(uint256 amount, uint256 vaultNetDeposits) external;
     function recordWithdraw(uint256 amount) external;
     function keeperRevoked(address keeper) external view returns (bool);
+    function keeper() external view returns (address);
 }
 
 /**
@@ -24,10 +25,12 @@ interface ILockeFactory {
  * trader on Veranta, so every payout lands back here. Three roles:
  *  - owner: deposits, withdraws idle USDC at any time, closes any hedge, moves margin, sets the
  *    plan limits and replaces or removes the keeper;
- *  - keeper (Locke's server): opens, closes and tops up hedges, only within the plan limits and
- *    at most one open per market per hour, with bounded slippage, and can never send USDC anywhere
- *    but Veranta and, when the vault was created with a fee, Locke's fee: owed when an open is
- *    placed, paid only once the trade exists, at most once per market per 30 days;
+ *  - keeper (Locke's server, the factory's current keeper unless the owner picks another): opens
+ *    and tops up hedges, only within the plan limits, at most one open per market per hour and one
+ *    top-up per market every two minutes, with bounded slippage. It never closes a hedge (only the
+ *    owner does) and can never send USDC anywhere but Veranta and, when the vault was created with
+ *    a fee, Locke's fee: owed when an open is placed, paid only once the trade exists, at most once
+ *    per market per 30 days;
  *  - guardian (Locke's multisig, set on the factory): pauses new deposits and new hedges, and
  *    revokes a compromised keeper key for every vault at once; never touches exits.
  * Veranta pulls exactly the USDC each order needs: the vault approves that amount for the call
@@ -48,8 +51,12 @@ contract LockeVault is Initializable, ReentrancyGuard {
     uint16 public constant MAX_FEE_BPS = 20;
     /// @notice A keeper may open a market at most once per hour, so a stolen keeper key cannot churn fees.
     uint256 public constant OPEN_COOLDOWN = 1 hours;
-    /// @notice Most slippage an open may allow: 3% (Veranta's 1e10 = 1%).
+    /// @notice Most slippage an open may allow: 3% (Veranta's 1e10 = 1%). Market orders fill at the
+    /// oracle price; the wanted price and this bound only limit how far it may move before the fill.
     uint256 public constant MAX_SLIPPAGE_P = 3e10;
+    /// @notice A keeper may add margin to a market at most this often, so one top-up is seen applied
+    /// before the next is sized.
+    uint256 public constant TOP_UP_COOLDOWN = 2 minutes;
     /// @notice Locke's fee is charged at most once per market in this period, however often a hedge is reopened.
     uint256 public constant FEE_PERIOD = 30 days;
     /// @notice Base Account's SpendPermissionManager (the same address on Base and Base Sepolia).
@@ -60,7 +67,8 @@ contract LockeVault is Initializable, ReentrancyGuard {
         bool enabled;
         bool buy; // hedge side: true = long (costs plans), false = short (holdings plans)
         uint64 maxLeverage; // 1e10
-        uint128 maxNotional; // collateral x leverage, USDC 1e6; also caps the collateral in one position
+        uint128 maxNotional; // collateral x leverage of an open, USDC 1e6
+        uint128 maxCollateral; // collateral in the position, top-ups included, USDC 1e6
     }
 
     ILockeFactory public factory;
@@ -70,7 +78,11 @@ contract LockeVault is Initializable, ReentrancyGuard {
 
     address public owner;
     address public pendingOwner;
-    address public keeper;
+    /// @dev The keeper the owner picked; used only when keeperFollowsFactory is false.
+    address private ownKeeper;
+    /// @notice True while the vault's keeper is the factory's, so a keeper key Locke rotates moves
+    /// with it. The owner's setKeeper turns this off; followFactoryKeeper turns it back on.
+    bool public keeperFollowsFactory;
     bool public pausedByGuardian;
     /// @notice Locke's fee in basis points of notional, fixed when the vault was created.
     uint16 public feeBps;
@@ -83,11 +95,13 @@ contract LockeVault is Initializable, ReentrancyGuard {
     mapping(uint256 pairIndex => uint256) public feeOwed;
     /// @notice When Locke's fee was last paid for this market.
     mapping(uint256 pairIndex => uint256) public lastFeeAt;
+    mapping(uint256 pairIndex => uint256) public lastTopUpAt;
 
     event Deposited(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
-    event PlanSet(uint256 indexed pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional);
+    event PlanSet(uint256 indexed pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional, uint128 maxCollateral);
     event KeeperSet(address indexed keeper);
+    event KeeperFollowsFactory();
     event OwnershipTransferStarted(address indexed from, address indexed to);
     event OwnerSet(address indexed owner);
     event Paused(bool paused);
@@ -122,6 +136,7 @@ contract LockeVault is Initializable, ReentrancyGuard {
     error ShortReceipt();
     error SlippageOutOfRange();
     error LeverageTooLow();
+    error ZeroPrice();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -130,7 +145,8 @@ contract LockeVault is Initializable, ReentrancyGuard {
 
     /// @dev The vault's keeper, unless Locke's guardian revoked that key for every vault.
     modifier onlyKeeper() {
-        if (msg.sender != keeper || factory.keeperRevoked(msg.sender)) revert NotKeeper();
+        address k = keeper();
+        if (k == address(0) || msg.sender != k || factory.keeperRevoked(msg.sender)) revert NotKeeper();
         _;
     }
 
@@ -141,7 +157,6 @@ contract LockeVault is Initializable, ReentrancyGuard {
     /// @dev Called once by the factory, in the same transaction that deploys the clone.
     function initialize(
         address owner_,
-        address keeper_,
         uint16 feeBps_,
         uint256 pairIndex,
         Plan calldata plan,
@@ -157,11 +172,16 @@ contract LockeVault is Initializable, ReentrancyGuard {
         router = router_;
         tradingStorage = tradingStorage_;
         owner = owner_;
-        keeper = keeper_;
+        keeperFollowsFactory = true;
         feeBps = feeBps_;
-        _setPlan(pairIndex, plan.enabled, plan.buy, plan.maxLeverage, plan.maxNotional);
+        _setPlan(pairIndex, plan.enabled, plan.buy, plan.maxLeverage, plan.maxNotional, plan.maxCollateral);
         emit OwnerSet(owner_);
-        emit KeeperSet(keeper_);
+        emit KeeperFollowsFactory();
+    }
+
+    /// @notice The key allowed to act as this vault's keeper (zero: none).
+    function keeper() public view returns (address) {
+        return keeperFollowsFactory ? factory.keeper() : ownKeeper;
     }
 
     /// @notice True while new deposits and new hedges are stopped, by this vault's guardian or for all vaults.
@@ -176,8 +196,9 @@ contract LockeVault is Initializable, ReentrancyGuard {
     // ------------------------------------------------------------------ owner
 
     /// @notice Add USDC from the caller. Anyone may top the vault up; only the owner takes it out.
+    /// While paused only the owner may add (to keep a hedge's buffer up); the caps still apply.
     function deposit(uint256 amount) external nonReentrant {
-        if (paused()) revert IsPaused();
+        if (paused() && msg.sender != owner) revert IsPaused();
         if (amount == 0) revert ZeroAmount();
         netDeposits += amount;
         factory.recordDeposit(amount, netDeposits); // reverts above the launch caps
@@ -198,14 +219,23 @@ contract LockeVault is Initializable, ReentrancyGuard {
         emit Withdrawn(to, amount);
     }
 
-    function setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional) external onlyOwner {
-        _setPlan(pairIndex, enabled, buy, maxLeverage, maxNotional);
+    function setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional, uint128 maxCollateral) external onlyOwner {
+        _setPlan(pairIndex, enabled, buy, maxLeverage, maxNotional, maxCollateral);
     }
 
-    /// @notice Replace the keeper, or pass address(0) to remove it (deliberately allowed). The owner keeps every exit.
+    /// @notice Pick a keeper of the owner's own, or pass address(0) to remove it (deliberately
+    /// allowed). Either way the vault stops following Locke's keeper. The owner keeps every exit.
     function setKeeper(address keeper_) external onlyOwner {
-        keeper = keeper_;
+        ownKeeper = keeper_;
+        keeperFollowsFactory = false;
         emit KeeperSet(keeper_);
+    }
+
+    /// @notice Hand the keeper role back to Locke's keeper, as set on the factory now and later.
+    function followFactoryKeeper() external onlyOwner {
+        ownKeeper = address(0);
+        keeperFollowsFactory = true;
+        emit KeeperFollowsFactory();
     }
 
     /// @notice Start handing the vault to a new owner; it takes effect when they accept.
@@ -285,7 +315,7 @@ contract LockeVault is Initializable, ReentrancyGuard {
 
     /**
      * @notice Open the hedge for a pair, within the owner's plan. One position per pair: resizing
-     * is a close plus a new open, so the notional cap always covers the whole hedge.
+     * is the owner's close plus a new open, so the notional cap always covers the whole hedge.
      */
     function hedgeOpen(uint256 pairIndex, uint256 collateral, uint256 leverage, uint256 wantedPrice, uint256 slippageP)
         external
@@ -301,6 +331,8 @@ contract LockeVault is Initializable, ReentrancyGuard {
         if (leverage > plan.maxLeverage) revert LeverageTooHigh();
         // Slippage is the vault's only protection on the fill price: never off, never wide.
         if (slippageP == 0 || slippageP > MAX_SLIPPAGE_P) revert SlippageOutOfRange();
+        if (wantedPrice == 0) revert ZeroPrice();
+        if (collateral > plan.maxCollateral) revert CollateralTooHigh();
         uint256 notional = (collateral * leverage) / PRECISION;
         if (notional > plan.maxNotional) revert NotionalTooHigh();
         if (block.timestamp < lastOpenAt[pairIndex] + OPEN_COOLDOWN) revert TooSoon();
@@ -340,23 +372,10 @@ contract LockeVault is Initializable, ReentrancyGuard {
         emit HedgeOpenRequested(pairIndex, orderId, plan.buy, collateral, leverage);
     }
 
-    /// @notice Close all or part of a hedge. Proceeds come back to this vault.
-    function hedgeClose(uint256 pairIndex, uint256 index, uint256 collateral, uint256 wantedPrice)
-        external
-        payable
-        onlyKeeper
-        nonReentrant
-        returns (uint256 orderId)
-    {
-        _settleFee(pairIndex);
-        orderId = router.closeTradeMarket{value: msg.value}(pairIndex, index, collateral, wantedPrice);
-        emit HedgeCloseRequested(pairIndex, index, orderId, collateral, msg.sender);
-    }
-
     /**
      * @notice Add margin to a hedge to keep it away from liquidation. Allowed while paused. The
-     * position's collateral may not pass the plan's notional cap, which bounds what the keeper
-     * can move out of the vault's idle balance.
+     * position's collateral may not pass the plan's collateral cap, which bounds what the keeper
+     * can move out of the vault's idle balance; one top-up per market every two minutes.
      */
     function topUpMargin(
         uint256 pairIndex,
@@ -366,8 +385,10 @@ contract LockeVault is Initializable, ReentrancyGuard {
         uint8 priceSourcing
     ) external payable onlyKeeper nonReentrant returns (uint256 orderId) {
         if (amount == 0) revert ZeroAmount();
+        if (block.timestamp < lastTopUpAt[pairIndex] + TOP_UP_COOLDOWN) revert TooSoon();
         uint256 collateral = tradingStorage.openTrades(address(this), pairIndex, index).initialPosToken;
-        if (collateral + amount > plans[pairIndex].maxNotional) revert CollateralTooHigh();
+        if (collateral + amount > plans[pairIndex].maxCollateral) revert CollateralTooHigh();
+        lastTopUpAt[pairIndex] = block.timestamp;
         _settleFee(pairIndex);
         usdc.forceApprove(address(tradingStorage), amount);
         orderId = router.updateMargin{value: msg.value}(pairIndex, index, DEPOSIT, amount, priceUpdateData, priceSourcing);
@@ -443,9 +464,9 @@ contract LockeVault is Initializable, ReentrancyGuard {
         emit FeePaid(pairIndex, collector, amount);
     }
 
-    function _setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional) private {
-        if (enabled && (maxLeverage < PRECISION || maxNotional == 0)) revert BadPlan();
-        plans[pairIndex] = Plan(enabled, buy, maxLeverage, maxNotional);
-        emit PlanSet(pairIndex, enabled, buy, maxLeverage, maxNotional);
+    function _setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional, uint128 maxCollateral) private {
+        if (enabled && (maxLeverage < PRECISION || maxNotional == 0 || maxCollateral == 0)) revert BadPlan();
+        plans[pairIndex] = Plan(enabled, buy, maxLeverage, maxNotional, maxCollateral);
+        emit PlanSet(pairIndex, enabled, buy, maxLeverage, maxNotional, maxCollateral);
     }
 }

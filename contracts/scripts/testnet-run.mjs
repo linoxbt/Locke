@@ -107,14 +107,14 @@ log("funded", { owner: owner.account.address, usdc: ownerUsdc });
 const deployHash = await owner.deployContract({
   abi: Factory.abi,
   bytecode: Factory.bytecode,
-  // admin, guardian, keeper, USDC, Veranta, launch caps ($1,000 a vault, $10,000 in total)
-  args: [owner.account.address, guardian.account.address, keeper.account.address, USDC, ROUTER, STORAGE, USD(1000), USD(10_000)],
+  // admin, guardian, keeper, USDC, Veranta, launch caps ($1,000 a vault, $10,000 in total), no fee
+  args: [owner.account.address, guardian.account.address, keeper.account.address, USDC, ROUTER, STORAGE, USD(1000), USD(10_000), 0, "0x0000000000000000000000000000000000000000"],
 });
 const factory = (await pub.waitForTransactionReceipt({ hash: deployHash })).contractAddress;
 await send(owner, { address: USDC, abi: erc20, functionName: "approve", args: [factory, USD(300)] });
 const created = await send(owner, {
   address: factory, abi: Factory.abi, functionName: "createVault",
-  args: [ETH, { enabled: true, buy: false, maxLeverage: 3n * P10, maxNotional: USD(300) }, USD(300)],
+  args: [ETH, { enabled: true, buy: false, maxLeverage: 3n * P10, maxNotional: USD(300), maxCollateral: USD(300) }, USD(300)],
 });
 const vault = parseEventLogs({ abi: Factory.abi, logs: created.logs, eventName: "VaultCreated" })[0].args.vault;
 log("vault created", { factory, vault });
@@ -158,9 +158,9 @@ try {
   log("position API unavailable", { error: String(e) });
 }
 
-// 6. Keeper closes; proceeds return to the vault.
+// 6. The owner closes (the keeper can't); proceeds return to the vault.
 const before = await vaultUsdc();
-await send(keeper, { address: vault, abi: Vault.abi, functionName: "hedgeClose", args: [ETH, t2.index, t2.initialPosToken, (await price(ETH)).price] });
+await send(owner, { address: vault, abi: Vault.abi, functionName: "ownerClose", args: [ETH, t2.index, t2.initialPosToken, (await price(ETH)).price] });
 const closeFill = await waitFor(async () => (await count("openTradesCount")) === 0n);
 const after = await vaultUsdc();
 log("close filled", { seconds: closeFill, vaultUsdcBefore: Number(before) / 1e6, vaultUsdcAfter: Number(after) / 1e6 });

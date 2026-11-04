@@ -16,6 +16,19 @@ export async function optionalBaseSession(): Promise<Session | null> {
   }
 }
 
+/**
+ * The session for a public page (the landing page, /connect), where being signed in only changes
+ * a link: if the database can't be read, the page renders as signed out rather than failing.
+ */
+export async function publicBaseSession(): Promise<Session | null> {
+  try {
+    return await optionalBaseSession();
+  } catch (e) {
+    console.warn("[session] couldn't check the session; showing the page signed out:", (e as Error).message);
+    return null;
+  }
+}
+
 export async function requireBasePage(returnTo: string): Promise<Session> {
   const s = await optionalBaseSession();
   if (!s) redirect(`/connect?next=${encodeURIComponent(returnTo)}`);

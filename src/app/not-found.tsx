@@ -10,8 +10,8 @@ export default function NotFound() {
         <LinkButton href="/" variant="paper" size="lg">
           Home <Arrow />
         </LinkButton>
-        <LinkButton href="/connect" variant="ghost" size="lg">
-          Sign in
+        <LinkButton href="/portfolio" variant="ghost" size="lg">
+          Your plans
         </LinkButton>
       </div>
     </Card>

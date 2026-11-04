@@ -18,6 +18,8 @@ create table if not exists base_auth_nonces (
   network    text,
   created_at timestamptz not null default now()
 );
+create index if not exists base_auth_nonces_created_idx on base_auth_nonces(created_at);
+create index if not exists base_auth_nonces_network_idx on base_auth_nonces(network, created_at);
 
 -- A business's LockeVault, recorded from the VaultCreated event of the transaction that made it.
 create table if not exists base_vaults (
@@ -33,12 +35,19 @@ create table if not exists base_vaults (
   last_ratio  numeric,
   status_note text,
   created_tx  text not null,
+  created_via text not null default 'app',      -- 'agent': registered through the agent API, without a session
   open_sent_at timestamptz,                    -- the keeper sent hedgeOpen; cleared once Veranta fills it
+  topup_sent_at timestamptz,                   -- the keeper sent topUpMargin; cleared once Base shows the new margin
+  topup_from_usd numeric,                      -- the hedge's margin on Base when that top-up was sent
   opened_at   timestamptz,
   closed_at   timestamptz,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+-- Added after launch: columns the create table above has for new databases.
+alter table base_vaults add column if not exists topup_sent_at timestamptz;
+alter table base_vaults add column if not exists topup_from_usd numeric;
+alter table base_vaults add column if not exists created_via text not null default 'app';
 create index if not exists base_vaults_user_idx on base_vaults(user_id, created_at desc);
 
 create table if not exists base_vault_events (
@@ -59,6 +68,17 @@ alter table base_users        enable row level security;
 alter table base_auth_nonces  enable row level security;
 alter table base_vaults       enable row level security;
 alter table base_vault_events enable row level security;
+
+-- What a business asked for, saved just before its wallet creates the vault: if the page never
+-- gets to record the vault, Locke finds it on Base and records it with these inputs.
+create table if not exists base_vault_drafts (
+  id         bigserial primary key,
+  user_id    uuid not null references base_users(id) on delete cascade,
+  inputs     jsonb not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists base_vault_drafts_user_idx on base_vault_drafts(user_id, id desc);
+alter table base_vault_drafts enable row level security;
 
 -- "Protect as you get paid": a vault owner's spend permission (signed by their Base Account, the
 -- vault as spender) and what the keeper has counted and moved under it. One per vault.
@@ -89,8 +109,10 @@ create table if not exists x402_payments (
   nonce      text not null,
   resource   text not null,
   created_at timestamptz not null default now(),
+  settled    boolean not null default false,
   primary key (payer, nonce)
 );
+alter table x402_payments add column if not exists settled boolean not null default false;
 alter table x402_payments enable row level security;
 
 -- The Base keeper's last round (one row, id 2), for checking that it's alive.
@@ -101,13 +123,17 @@ create table if not exists monitor_heartbeat (
 );
 alter table monitor_heartbeat enable row level security;
 
--- Defense in depth: the app connects as a server role; the public API roles get nothing.
+-- Defense in depth: the app connects as a server role; the public API roles get nothing on
+-- Locke's own tables. Only these tables: the database may hold other apps' tables too.
 do $$
+declare t text;
 begin
-  if exists (select 1 from pg_roles where rolname = 'anon') then
-    revoke all on all tables in schema public from anon;
-  end if;
-  if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    revoke all on all tables in schema public from authenticated;
-  end if;
+  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat'] loop
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+      execute format('revoke all on table public.%I from anon', t);
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then
+      execute format('revoke all on table public.%I from authenticated', t);
+    end if;
+  end loop;
 end $$;

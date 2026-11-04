@@ -7,7 +7,7 @@
  */
 import hre from "hardhat";
 import { expect } from "chai";
-import { encodeAbiParameters, parseAbi, parseEther, parseEventLogs, type Address, type Hex } from "viem";
+import { encodeAbiParameters, parseAbi, parseEther, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { asSlotValue, expectRevert, P10, PAIR, USD, usdcBalanceSlot, VERANTA } from "./helpers";
 
@@ -51,13 +51,13 @@ describe("Protect as you get paid (Base fork, real SpendPermissionManager)", fun
     await test.setStorageAt({ address: VERANTA.usdc, index: usdcBalanceSlot(account), value: asSlotValue(USD(1000)) });
 
     // The business (the smart wallet) creates its vault.
-    const factory = await hre.viem.deployContract("LockeVaultFactory", [admin.account.address, guardian.account.address, keeper.account.address, VERANTA.usdc, VERANTA.router, VERANTA.storage, USD(5000), USD(50_000)]);
+    const factory = await hre.viem.deployContract("LockeVaultFactory", [admin.account.address, guardian.account.address, keeper.account.address, VERANTA.usdc, VERANTA.router, VERANTA.storage, USD(5000), USD(50_000), 0, zeroAddress]);
     await test.impersonateAccount({ address: account });
     await test.setBalance({ address: account, value: parseEther("1") });
     const biz = await hre.viem.getWalletClient(account);
     await biz.writeContract({ address: VERANTA.usdc, abi: usdcAbi, functionName: "approve", args: [factory.address, USD(300)] });
     const created = await pub.waitForTransactionReceipt({
-      hash: await biz.writeContract({ address: factory.address, abi: factory.abi, functionName: "createVault", args: [PAIR.ETH, { enabled: true, buy: false, maxLeverage: 2n * P10, maxNotional: USD(200) }, USD(300)] }),
+      hash: await biz.writeContract({ address: factory.address, abi: factory.abi, functionName: "createVault", args: [PAIR.ETH, { enabled: true, buy: false, maxLeverage: 2n * P10, maxNotional: USD(200), maxCollateral: USD(200) }, USD(300)] }),
     });
     const [ev] = parseEventLogs({ abi: factory.abi, logs: created.logs, eventName: "VaultCreated" });
     const vault = await hre.viem.getContractAt("LockeVault", ev.args.vault);

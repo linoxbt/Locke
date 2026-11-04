@@ -9,7 +9,13 @@ let clientUrl = "";
 export function basePublicClient(): PublicClient {
   const url = config.baseRpcUrl;
   if (!client || clientUrl !== url) {
-    client = createPublicClient({ chain: base, transport: http(url, { timeout: 10_000, retryCount: 2 }) }) as PublicClient;
+    // Reads made together (a vault's state, the dashboard's figures) go out as one Multicall3 call,
+    // and JSON-RPC requests in the same tick share one HTTP request: far fewer calls to the RPC.
+    client = createPublicClient({
+      chain: base,
+      batch: { multicall: { wait: 16 } },
+      transport: http(url, { timeout: 10_000, retryCount: 2, batch: { wait: 16 } }),
+    }) as PublicClient;
     clientUrl = url;
   }
   return client;

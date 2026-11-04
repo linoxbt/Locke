@@ -7,21 +7,21 @@ export const metadata: Metadata = { title: "How it works — Locke" };
 
 const STEPS = [
   ["Describe", "ETH or BTC you hold, or the fuel you buy each month. Pick how much to protect and the leverage."],
-  ["Preview", "Hedge size, the vault's limits, Locke's fee, the daily cost of holding the hedge, and outcomes from −50% to +50%."],
-  ["Fund", "Sign in with Base and approve once: one wallet request creates your vault and deposits the USDC. Locke's keeper opens the hedge on Avantis."],
+  ["Preview", "Hedge size, margin, buffer, trading fees, Locke's fee, the vault's limits and what holding the hedge costs on Avantis right now."],
+  ["Fund", "Sign in with Base and approve: one request in Base Account (two in other wallets) creates your vault and deposits the USDC. Locke's keeper opens the hedge on Avantis."],
   ["Watch", "The keeper watches margin around the clock and tops it up from the vault's buffer, within the limits your vault enforces."],
 ];
 
 const LADDER = [
   { tone: "paper" as const, k: "Watch", v: "Margin use 50%", d: "The plan shows amber. Nothing to do yet." },
   { tone: "watch" as const, k: "Top-up", v: "Margin use 60%", d: "The keeper adds margin from the vault's buffer, back to about 35%." },
-  { tone: "danger" as const, k: "Buffer used up", v: "Margin use 60%+", d: "The plan shows exactly how much USDC to add, or you can close part of the hedge." },
+  { tone: "danger" as const, k: "Buffer used up", v: "Margin use 60%+", d: "The plan shows how much USDC to deposit so the keeper can add it, or you can close the hedge." },
   { tone: "ink" as const, k: "Liquidation", v: "Margin use 100%", d: "Avantis closes the position. What's left stays in your vault." },
 ];
 
 const VAULT_POINTS = [
-  ["Your own contract", "One wallet request approves the USDC and creates the vault, owned by you. Nobody else can withdraw from it."],
-  ["Limits on Base", "The vault itself caps leverage, hedge size and slippage. Locke's keeper can trade within them and can never withdraw."],
+  ["Your own contract", "Your wallet approves the USDC and creates the vault, owned by you. Nobody else can withdraw from it."],
+  ["Limits on Base", "The vault itself caps leverage, hedge size, margin and slippage. Locke's keeper can open and add margin within them; it can never close your hedge or withdraw."],
   ["Exit any time", "Withdraw, close the hedge or remove Locke's keeper from your own wallet, even if Locke is offline."],
   ["Public proof", "While the hedge is open, a Protected by Locke attestation on Base shows it, so a lender or client can check it."],
   ["Protect as you get paid", "Optionally, sign once to move a share of incoming USDC into the vault, never more than your weekly cap."],

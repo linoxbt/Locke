@@ -2,7 +2,10 @@
  * Deploy LockeVaultFactory (its vault implementation comes with it) to Base or a Base fork.
  *
  *   RPC_URL=https://mainnet.base.org DEPLOYER_PRIVATE_KEY=0x… ADMIN=0x… GUARDIAN=0x… KEEPER=0x… \
- *   MAX_VAULT_USD=1000 MAX_TOTAL_USD=25000 node scripts/deploy.mjs
+ *   MAX_VAULT_USD=1000 MAX_TOTAL_USD=25000 FEE_BPS=20 FEE_COLLECTOR=0x… node scripts/deploy.mjs
+ *
+ * The fee (basis points of each hedge, at most 20) and its collector are set at deploy, so no
+ * admin transaction is needed before launch. FEE_BPS=0 needs no collector.
  *
  * ADMIN and GUARDIAN must be contracts (Locke's multisig): the script refuses plain wallets unless
  * ALLOW_EOA_ROLES=1 (tests and forks only), and refuses a keeper equal to either or to the deployer.
@@ -63,6 +66,10 @@ const [routerStorage, storageTrading] = await Promise.all([
 ]);
 if (lower(routerStorage) !== lower(STORAGE) || lower(storageTrading) !== lower(ROUTER)) throw new Error("Veranta's router and storage don't point at each other: addresses changed?");
 
+const feeBps = Number(env("FEE_BPS"));
+if (!Number.isInteger(feeBps) || feeBps < 0 || feeBps > 20) throw new Error("FEE_BPS must be a whole number from 0 to 20");
+const feeCollector = feeBps ? addr("FEE_COLLECTOR") : (process.env.FEE_COLLECTOR ?? "0x0000000000000000000000000000000000000000");
+
 const args = [
   admin,
   guardian,
@@ -72,6 +79,8 @@ const args = [
   STORAGE, // Veranta TradingStorage
   usd("MAX_VAULT_USD"),
   usd("MAX_TOTAL_USD"),
+  feeBps,
+  feeCollector,
 ];
 const hash = await wallet.deployContract({ abi: artifact.abi, bytecode: artifact.bytecode, args });
 const receipt = await pub.waitForTransactionReceipt({ hash });
@@ -80,10 +89,11 @@ if (receipt.status !== "success" || !receipt.contractAddress) throw new Error(`d
 // Read every setting back from the deployed factory.
 const factory = receipt.contractAddress;
 const read = (functionName) => pub.readContract({ address: factory, abi: artifact.abi, functionName });
-const onChain = { admin: await read("admin"), guardian: await read("guardian"), keeper: await read("keeper"), usdc: await read("usdc"), router: await read("router"), tradingStorage: await read("tradingStorage"), maxVaultDeposits: await read("maxVaultDeposits"), maxTotalDeposits: await read("maxTotalDeposits"), feeBps: await read("feeBps") };
-const expected = { admin, guardian, keeper, usdc: USDC, router: ROUTER, tradingStorage: STORAGE, maxVaultDeposits: args[6], maxTotalDeposits: args[7], feeBps: 0 };
+const onChain = { admin: await read("admin"), guardian: await read("guardian"), keeper: await read("keeper"), usdc: await read("usdc"), router: await read("router"), tradingStorage: await read("tradingStorage"), maxVaultDeposits: await read("maxVaultDeposits"), maxTotalDeposits: await read("maxTotalDeposits"), feeBps: await read("feeBps"), feeCollector: await read("feeCollector") };
+const expected = { admin, guardian, keeper, usdc: USDC, router: ROUTER, tradingStorage: STORAGE, maxVaultDeposits: args[6], maxTotalDeposits: args[7], feeBps, feeCollector };
 for (const [k, v] of Object.entries(expected)) {
   const got = onChain[k];
   if (typeof v === "string" ? lower(got) !== lower(v) : BigInt(got) !== BigInt(v)) throw new Error(`factory ${k} reads ${got}, expected ${v}`);
 }
-console.log(JSON.stringify({ factory: receipt.contractAddress, tx: hash, admin: args[0], guardian: args[1], keeper: args[2], maxVaultUsd: Number(args[6]) / 1e6, maxTotalUsd: Number(args[7]) / 1e6 }, null, 2));
+const implementation = await read("implementation");
+console.log(JSON.stringify({ factory: receipt.contractAddress, vaultImplementation: implementation, tx: hash, block: Number(receipt.blockNumber), admin: args[0], guardian: args[1], keeper: args[2], maxVaultUsd: Number(args[6]) / 1e6, maxTotalUsd: Number(args[7]) / 1e6, feeBps, feeCollector }, null, 2));

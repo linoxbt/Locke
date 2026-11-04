@@ -78,7 +78,7 @@ export default function Privacy() {
       <h2>Who else sees data</h2>
       <ul>
         <li>
-          <strong>Trading venue:</strong> Avantis (now operating as Veranta) sees your vault&apos;s trades on Base, and uses data under its
+          <strong>Trading venue:</strong> Avantis sees your vault&apos;s trades on Base, and uses data under its
           own privacy policy.
         </li>
         <li>

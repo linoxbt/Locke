@@ -67,6 +67,7 @@ export async function planCalls(ownerRaw: unknown, inputs: BasePlanInputs) {
     buy: q.sizing.buy,
     maxLeverage: BigInt(Math.round(q.sizing.limits.maxLeverage * 1e10)),
     maxNotional: usdcUnits(q.sizing.limits.maxNotionalUsd),
+    maxCollateral: usdcUnits(q.sizing.limits.maxCollateralUsd),
   };
   // Locke's Builder Code rides on the calldata, as in the app (ERC-8021; contracts ignore it).
   const suffix = builderSuffix(config.baseBuilderCode);

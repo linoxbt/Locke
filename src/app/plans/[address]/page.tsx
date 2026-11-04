@@ -19,5 +19,5 @@ export default async function PlanPage({ params }: { params: Promise<{ address: 
     throw e;
   }
   const { dataSuffix } = baseClientSettings();
-  return <VaultView initial={detail} dataSuffix={dataSuffix} factoryKeeper={await factoryKeeper()} />;
+  return <VaultView initial={detail} viewer={s.addr} dataSuffix={dataSuffix} factoryKeeper={await factoryKeeper()} />;
 }

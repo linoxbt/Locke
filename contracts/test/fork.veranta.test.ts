@@ -5,7 +5,7 @@
  */
 import hre from "hardhat";
 import { expect } from "chai";
-import { parseAbi, parseEther, parseEventLogs, type Address, type Hex } from "viem";
+import { parseAbi, parseEther, parseEventLogs, zeroAddress, type Address, type Hex } from "viem";
 import { VERANTA, PAIR, SOURCING, P10, USD, priceUpdate, usdcBalanceSlot, asSlotValue, NO_SPREAD, expectRevert } from "./helpers";
 
 const routerAbi = parseAbi([
@@ -55,10 +55,12 @@ describe("LockeVault on Veranta (Base fork)", function () {
       VERANTA.storage,
       USD(1000), // launch cap per vault
       USD(10_000), // launch cap across vaults
+      0, // no fee
+      zeroAddress, // fee collector
     ]);
     await owner.writeContract({ address: VERANTA.usdc, abi: usdcAbi, functionName: "approve", args: [factory.address, USD(500)] });
-    // Costs plan: long WTI, up to 5x and $200 of notional, funded with $400.
-    const hash = await factory.write.createVault([PAIR.WTI, { enabled: true, buy: true, maxLeverage: 5n * P10, maxNotional: USD(200) }, USD(400)], {
+    // Costs plan: long WTI, up to 5x, $200 of notional and $100 of collateral, funded with $400.
+    const hash = await factory.write.createVault([PAIR.WTI, { enabled: true, buy: true, maxLeverage: 5n * P10, maxNotional: USD(200), maxCollateral: USD(100) }, USD(400)], {
       account: owner.account,
     });
     const receipt = await pub.waitForTransactionReceipt({ hash });
@@ -129,25 +131,26 @@ describe("LockeVault on Veranta (Base fork)", function () {
     expect(t2!.initialPosToken > before, "margin went up").to.equal(true);
     console.log(`      WTI top-up: collateral ${Number(before) / 1e6} -> ${Number(t2!.initialPosToken) / 1e6} USDC`);
 
-    // --- Holdings plan on the same vault: owner allows an ETH short, up to 3x and $150.
-    await vault.write.setPlan([PAIR.ETH, true, false, 3n * P10, USD(150)], { account: owner.account });
+    // --- Holdings plan on the same vault: owner allows an ETH short, up to 3x, $150 notional and $60 collateral.
+    await vault.write.setPlan([PAIR.ETH, true, false, 3n * P10, USD(150), USD(60)], { account: owner.account });
     const eth = await priceUpdate(PAIR.ETH);
     await expectRevert(vault.write.hedgeOpen([PAIR.ETH, USD(50), 4n * P10, eth.price, P10], { account: keeper.account }), "LeverageTooHigh");
-    await expectRevert(vault.write.hedgeOpen([PAIR.ETH, USD(80), 2n * P10, eth.price, P10], { account: keeper.account }), "NotionalTooHigh");
+    await expectRevert(vault.write.hedgeOpen([PAIR.ETH, USD(61), P10, eth.price, P10], { account: keeper.account }), "CollateralTooHigh");
+    await expectRevert(vault.write.hedgeOpen([PAIR.ETH, USD(55), 3n * P10, eth.price, P10], { account: keeper.account }), "NotionalTooHigh");
     const ethHash = await vault.write.hedgeOpen([PAIR.ETH, USD(50), 2n * P10, eth.price, P10], { account: keeper.account });
     await fill(ethHash, PAIR.ETH);
     const e1 = await tradeAt(PAIR.ETH)();
     expect(e1!.buy).to.equal(false);
     console.log(`      ETH short open: collateral ${Number(e1!.initialPosToken) / 1e6} USDC at ${Number(e1!.openPrice) / 1e10}`);
 
-    // --- Guardian pause stops new hedges and deposits, never exits.
+    // --- Guardian pause stops new hedges and others' deposits, never exits.
     await vault.write.setPaused([true], { account: guardian.account });
     await expectRevert(vault.write.hedgeOpen([PAIR.WTI, USD(20), 2n * P10, wti.price, P10], { account: keeper.account }), "IsPaused");
-    await expectRevert(vault.write.deposit([USD(1)], { account: owner.account }), "IsPaused");
+    await expectRevert(vault.write.deposit([USD(1)], { account: stranger.account }), "IsPaused");
 
-    // --- Keeper closes WTI; the proceeds land in the vault.
+    // --- Owner closes WTI (the keeper never closes); the proceeds land in the vault.
     const idle1 = await usdcOf(vault.address);
-    const closeHash = await vault.write.hedgeClose([PAIR.WTI, t2!.index, t2!.initialPosToken, (await priceUpdate(PAIR.WTI)).price], { account: keeper.account });
+    const closeHash = await vault.write.ownerClose([PAIR.WTI, t2!.index, t2!.initialPosToken, (await priceUpdate(PAIR.WTI)).price], { account: owner.account });
     await fill(closeHash, PAIR.WTI);
     const idle2 = await usdcOf(vault.address);
     expect(await openCount(PAIR.WTI)).to.equal(0n);
@@ -155,8 +158,8 @@ describe("LockeVault on Veranta (Base fork)", function () {
     console.log(`      WTI closed: vault idle ${Number(idle1) / 1e6} -> ${Number(idle2) / 1e6} USDC`);
 
     // --- Owner removes the keeper and exits the ETH hedge alone, while paused.
-    await vault.write.setKeeper(["0x0000000000000000000000000000000000000000"], { account: owner.account });
-    await expectRevert(vault.write.hedgeClose([PAIR.ETH, e1!.index, e1!.initialPosToken, 0n], { account: keeper.account }), "NotKeeper");
+    await vault.write.setKeeper([zeroAddress], { account: owner.account });
+    await expectRevert(vault.write.topUpMargin([PAIR.ETH, e1!.index, USD(1), [], SOURCING.PYTH_LAZER], { account: keeper.account }), "NotKeeper");
     const ownerClose = await vault.write.ownerClose([PAIR.ETH, e1!.index, e1!.initialPosToken, (await priceUpdate(PAIR.ETH)).price], { account: owner.account });
     await fill(ownerClose, PAIR.ETH);
     expect(await openCount(PAIR.ETH)).to.equal(0n);

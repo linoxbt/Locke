@@ -63,6 +63,8 @@ async function build(): Promise<x402HTTPResourceServer | null> {
   return httpServer;
 }
 
+const redact = (s: string) => s.replace(/0x[0-9a-fA-F]{64}/g, "0x…[redacted]");
+
 function adapter(req: Request): HTTPAdapter {
   const url = new URL(req.url);
   return {
@@ -92,7 +94,8 @@ export function paid<H extends Handler>(handler: H): H {
     try {
       srv = await server();
     } catch (e) {
-      console.error("[x402]", e);
+      // Never the error object itself: a bad key in the configuration could be quoted in it.
+      console.error("[x402] payment layer unavailable:", redact((e as Error)?.message ?? String(e)));
       srv = null;
     }
     if (!srv) return NextResponse.json({ error: "Locke's agent API isn't live yet." }, { status: 503 });
@@ -117,8 +120,12 @@ export function paid<H extends Handler>(handler: H): H {
       await result.cancellationDispatcher.cancel({ reason: "handler_failed", responseStatus: 400 }).catch(() => {});
       return NextResponse.json({ error: "Unsupported payment" }, { status: 400 });
     }
+    // A claim left by a call that never finished (the function was stopped mid-way) frees up after
+    // two minutes; a settled one never does.
     const [claimed] = await db()`insert into x402_payments (payer, nonce, resource) values (${payer}, ${nonce}, ${url.pathname})
-                                  on conflict do nothing returning payer`;
+                                  on conflict (payer, nonce) do update set created_at = now(), resource = excluded.resource
+                                  where x402_payments.settled = false and x402_payments.created_at < now() - interval '2 minutes'
+                                  returning payer`;
     if (!claimed) {
       await result.cancellationDispatcher.cancel({ reason: "handler_failed", responseStatus: 409 }).catch(() => {});
       return NextResponse.json({ error: "This payment was already used. Sign a new one." }, { status: 409 });
@@ -140,9 +147,18 @@ export function paid<H extends Handler>(handler: H): H {
     }
     const settled = await srv.processSettlement(result.paymentPayload, result.paymentRequirements, result.declaredExtensions, { request: context }, undefined, result.beforeHandlerSettlement);
     if (!settled.success) {
+      // Submitted but not confirmed in time: it may still land and charge the agent, so it gets
+      // what it paid for, and the payment stays claimed so it can't be used twice.
+      const submitted = Boolean((settled as { transaction?: string }).transaction);
+      if (submitted || /time ?out|timed out|not confirmed|confirmation/i.test(`${settled.errorReason} ${settled.errorMessage ?? ""}`)) {
+        const headers = new Headers(res.headers);
+        headers.set("X-Payment-Settlement", "pending");
+        return new Response(res.body, { status: res.status, headers });
+      }
       await release();
       return toResponse(settled.response);
     }
+    await db()`update x402_payments set settled = true where payer = ${payer} and nonce = ${nonce}`.catch(() => {});
     const headers = new Headers(res.headers);
     for (const [k, v] of Object.entries(settled.headers)) headers.set(k, v);
     return new Response(res.body, { status: res.status, headers });

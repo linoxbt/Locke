@@ -51,6 +51,22 @@ export interface Metrics {
 
 const num = (v: unknown) => Number(v ?? 0) || 0;
 
+/**
+ * An event as the public page may show it: what happened, never how much a business moved, its
+ * income share or its weekly cap. Anything else that names an amount is shown generically.
+ */
+export function publicMessage(message: string): string {
+  const known: [RegExp, string][] = [
+    [/^Moved \$/, "Incoming USDC moved into a plan"],
+    [/^Protect as you get paid is on/, "Protect as you get paid turned on"],
+    [/^Added \$/, "Margin added from a plan's buffer"],
+    [/^Hedge sent to Avantis/, "Hedge sent to Avantis"],
+    [/^Margin is getting thin/, "A plan needs more margin"],
+  ];
+  for (const [re, text] of known) if (re.test(message)) return text;
+  return /\$\s?\d|\d+%/.test(message) && !/^Margin \d+% used$/.test(message) ? "Plan updated" : message;
+}
+
 /** Base reads get this long: past it the page shows "—" for them rather than waiting. */
 const CHAIN_TIMEOUT_MS = 4_000;
 
@@ -175,7 +191,7 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
       at: new Date(p.created_at).toISOString(),
     })),
     activity: activity.map((a) => ({
-      message: String(a.message),
+      message: publicMessage(String(a.message)),
       market: baseMarket(Number(a.pair_index))?.symbol ?? "—",
       type: String(a.type),
       level: String(a.level),

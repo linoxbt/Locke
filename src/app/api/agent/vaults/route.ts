@@ -16,6 +16,6 @@ export const POST = route(async (req: Request) => {
   const owner = await vaultCreator(txHash);
   const user = await signInBaseUser(owner.toLowerCase());
   const raw = typeof body.inputs === "object" && body.inputs ? (body.inputs as Record<string, unknown>) : body;
-  const { address } = await recordVault({ uid: user.id, addr: user.address }, txHash, agentInputs(raw));
+  const { address } = await recordVault({ uid: user.id, addr: user.address }, txHash, agentInputs(raw), "agent");
   return NextResponse.json({ address, status: new URL(`/api/agent/vaults/${address}`, req.url).toString() });
 });

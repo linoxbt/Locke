@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { setBaseSessionCookie, signInBaseUser } from "@/lib/server/baseSession";
 import { HttpError } from "@/lib/server/errors";
-import { readJson, route, str } from "@/lib/server/http";
+import { clientIp, readJson, route, str } from "@/lib/server/http";
+import { ipBucket, rateLimit } from "@/lib/server/rateLimit";
 import { assertSameOrigin } from "@/lib/server/session";
 import { verifySignIn } from "@/lib/server/siwe";
 
@@ -11,6 +12,8 @@ import { verifySignIn } from "@/lib/server/siwe";
  */
 export const POST = route(async (req: Request) => {
   assertSameOrigin(req);
+  // Each attempt also spends a nonce, which is limited per network in the database.
+  rateLimit(`${ipBucket(clientIp(req)) ?? "unknown"}:base-verify`, 30);
   const host = req.headers.get("host");
   if (!host) throw new HttpError(400, "Missing host");
   const body = await readJson(req);

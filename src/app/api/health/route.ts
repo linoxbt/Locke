@@ -9,12 +9,15 @@ export const dynamic = "force-dynamic";
 const TTL_MS = 15_000;
 let last: { at: number; ok: Promise<boolean> } | null = null;
 
-/** A heartbeat (2: the Base keeper) older than this means it stopped. */
+/** The Base keeper's heartbeat (row 2) older than this means it stopped. */
 const HEARTBEAT_STALE_S = 300;
 
-async function fresh(id: number) {
-  const [row] = await db()`select extract(epoch from now() - at)::float8 as age from monitor_heartbeat where id = ${id}`;
-  if (!row || Number(row.age) > HEARTBEAT_STALE_S) throw new Error(`heartbeat ${id} is stale`);
+/** The keeper's last round finished recently, and it isn't failing vaults, short of gas or revoked. */
+async function keeperWell() {
+  const [row] = await db()`select extract(epoch from now() - at)::float8 as age, result from monitor_heartbeat where id = 2`;
+  if (!row || Number(row.age) > HEARTBEAT_STALE_S) throw new Error("keeper heartbeat is stale");
+  const r = (row.result ?? {}) as { failing?: number; gasLow?: boolean; keeperRevoked?: boolean };
+  if ((r.failing ?? 0) > 0 || r.gasLow || r.keeperRevoked) throw new Error("keeper reports a problem");
 }
 
 async function compute(): Promise<boolean> {
@@ -33,7 +36,7 @@ async function compute(): Promise<boolean> {
     ),
     avantis: await check(() => getMarkets()),
     // Once Locke on Base is live, its keeper must be running.
-    baseKeeper: config.baseFactoryAddress ? await check(() => fresh(2)) : true,
+    baseKeeper: config.baseFactoryAddress ? await check(keeperWell) : true,
   };
   const ok = Object.values(checks).every(Boolean);
   if (!ok) console.error("[health] failing:", Object.entries(checks).filter(([, v]) => !v).map(([k]) => k).join(", "));

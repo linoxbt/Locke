@@ -33,12 +33,11 @@ describe("Locke's fee on Veranta (Base fork)", function () {
     await (await hre.viem.getWalletClient(gov)).writeContract({ address: VERANTA.router, abi: routerAbi, functionName: "updateOperator", args: [operator.account.address, true] });
     await test.setStorageAt({ address: VERANTA.usdc, index: usdcBalanceSlot(owner.account.address), value: asSlotValue(USD(1000)) });
 
-    const factory = await hre.viem.deployContract("LockeVaultFactory", [owner.account.address, guardian.account.address, keeper.account.address, VERANTA.usdc, VERANTA.router, VERANTA.storage, USD(1000), USD(10_000)]);
-    await factory.write.setFee([20, collector.account.address], { account: owner.account });
+    const factory = await hre.viem.deployContract("LockeVaultFactory", [owner.account.address, guardian.account.address, keeper.account.address, VERANTA.usdc, VERANTA.router, VERANTA.storage, USD(1000), USD(10_000), 20, collector.account.address]);
     await owner.writeContract({ address: VERANTA.usdc, abi: usdcAbi, functionName: "approve", args: [factory.address, USD(800)] });
     const newVault = async () => {
       const created = await pub.waitForTransactionReceipt({
-        hash: await factory.write.createVault([PAIR.ETH, { enabled: true, buy: true, maxLeverage: 5n * P10, maxNotional: USD(200) }, USD(400)], { account: owner.account }),
+        hash: await factory.write.createVault([PAIR.ETH, { enabled: true, buy: true, maxLeverage: 5n * P10, maxNotional: USD(200), maxCollateral: USD(200) }, USD(400)], { account: owner.account }),
       });
       return hre.viem.getContractAt("LockeVault", parseEventLogs({ abi: factory.abi, logs: created.logs, eventName: "VaultCreated" })[0].args.vault);
     };

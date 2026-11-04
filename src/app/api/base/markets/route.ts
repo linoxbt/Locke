@@ -27,7 +27,7 @@ async function load() {
   const markets = await Promise.all(
     BASE_MARKETS.map(async (b) => {
       const m = all.find((x) => x.index === b.pairIndex);
-      const price = await getSignedPrice(b.pairIndex).catch(() => null);
+      const price = await getSignedPrice(b.pairIndex, { forDisplay: true }).catch(() => null);
       return {
         ...b,
         available: !!m && m.listed && !m.closeOnly,

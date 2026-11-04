@@ -3,7 +3,7 @@ import { DropIn } from "@/components/DropIn";
 import { PlanCard, type PlanRow } from "@/components/PlanCard";
 import { Arrow, Card, Display, Eyebrow, LinkButton, Notice } from "@/components/ui";
 import { baseClientSettings, requireBasePage } from "@/lib/server/basePages";
-import { listVaults } from "@/lib/server/baseVaults";
+import { listVaults, recoverVaults } from "@/lib/server/baseVaults";
 import { usd } from "@/lib/ui/format";
 
 export const metadata: Metadata = { title: "Portfolio — Locke" };
@@ -12,6 +12,9 @@ export const dynamic = "force-dynamic";
 export default async function PortfolioPage() {
   const s = await requireBasePage("/portfolio");
   const { factory } = baseClientSettings();
+  // A plan created on Base that this account's browser never got to save: record it now. Bounded,
+  // so a slow Base read never holds the page up.
+  await Promise.race([recoverVaults(s), new Promise((r) => setTimeout(r, 4_000))]);
   const plans = (await listVaults(s.uid)) as unknown as PlanRow[];
 
   const live = plans.filter((p) => p.status !== "closed");

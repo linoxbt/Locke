@@ -6,7 +6,7 @@ import { PlanDemo } from "@/components/landing/PlanDemo";
 import { Showcase } from "@/components/landing/Showcase";
 import { SiteFooter } from "@/components/landing/SiteFooter";
 import { BASE_MARKETS } from "@/lib/base/contracts";
-import { optionalBaseSession } from "@/lib/server/basePages";
+import { publicBaseSession } from "@/lib/server/basePages";
 import { getMarkets, getSignedPrice } from "@/lib/veranta/client";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ const wrap = "mx-auto w-full max-w-[1440px] px-5 sm:px-14";
 
 /** An Avantis market's price and the daily carry on the side Locke takes; null when it can't be read (or is closed). */
 async function quote(pairIndex: number): Promise<Quote> {
-  const [markets, signed] = await Promise.all([getMarkets().catch(() => null), getSignedPrice(pairIndex).catch(() => null)]);
+  const [markets, signed] = await Promise.all([getMarkets().catch(() => null), getSignedPrice(pairIndex, { forDisplay: true }).catch(() => null)]);
   if (!signed) return null;
   const m = markets?.find((x) => x.index === pairIndex);
   const buy = BASE_MARKETS.find((b) => b.pairIndex === pairIndex)?.buy ?? false;
@@ -24,7 +24,7 @@ async function quote(pairIndex: number): Promise<Quote> {
 
 export default async function HomePage() {
   // Live prices from Avantis on Base, where Locke's vaults hedge.
-  const [session, eth, btc, wti, brent] = await Promise.all([optionalBaseSession(), quote(0), quote(1), quote(96), quote(97)]);
+  const [session, eth, btc, wti, brent] = await Promise.all([publicBaseSession(), quote(0), quote(1), quote(96), quote(97)]);
   // Signed in: straight to a new plan. Otherwise /connect, to Sign in with Base.
   const start = session ? { href: "/protect", label: "New protection plan" } : { href: "/connect", label: "Try Locke" };
 

@@ -144,31 +144,34 @@ function tiles(wti: number | null, eth: number | null): Tile[][] {
 export function Collage({ wti, eth }: { wti: number | null; eth: number | null }) {
   const cols = tiles(wti, eth);
   return (
-    <FallIn aria-hidden className="absolute inset-0 grid grid-cols-2 gap-2 overflow-hidden p-2 sm:grid-cols-3 lg:grid-cols-5">
-      {cols.map((col, i) => (
-        <div key={i} className={`overflow-hidden ${i >= 2 ? "hidden sm:block" : ""} ${i >= 3 ? "sm:hidden lg:block" : ""}`}>
-          {/* Two copies stacked so a -50% translate loops seamlessly. */}
-          <div
-            className={`${i % 2 ? "animate-drift-down" : "animate-drift-up"} hover:[animation-play-state:paused]`}
-            style={{ animationDuration: `${48 + i * 9}s` }}
-          >
-            {[0, 1].map((copy) => (
-              <div key={copy} className="flex flex-col gap-2 pb-2">
-                {col.concat(col).map((tile, k) => (
-                  <div
-                    key={k}
-                    // Candidates to fall in: the copy in view at load (drift-down columns start at
-                    // -50%, showing the second copy). <FallIn> picks the ones actually on screen.
-                    className={`${copy === i % 2 ? "fall " : ""}group ${tile.h} shrink-0 overflow-hidden rounded-[14px] transition-transform duration-300 hover:scale-[0.985]`}
-                  >
-                    {tile.node}
-                  </div>
-                ))}
-              </div>
-            ))}
+    <>
+      <span className="pointer-events-none absolute bottom-3 right-3 z-10 rounded-full bg-ink/70 px-2.5 py-1 text-[11px] text-paper/80">Example figures</span>
+      <FallIn aria-hidden className="absolute inset-0 grid grid-cols-2 gap-2 overflow-hidden p-2 sm:grid-cols-3 lg:grid-cols-5">
+        {cols.map((col, i) => (
+          <div key={i} className={`overflow-hidden ${i >= 2 ? "hidden sm:block" : ""} ${i >= 3 ? "sm:hidden lg:block" : ""}`}>
+            {/* Two copies stacked so a -50% translate loops seamlessly. */}
+            <div
+              className={`${i % 2 ? "animate-drift-down" : "animate-drift-up"} hover:[animation-play-state:paused]`}
+              style={{ animationDuration: `${48 + i * 9}s` }}
+            >
+              {[0, 1].map((copy) => (
+                <div key={copy} className="flex flex-col gap-2 pb-2">
+                  {col.concat(col).map((tile, k) => (
+                    <div
+                      key={k}
+                      // Candidates to fall in: the copy in view at load (drift-down columns start at
+                      // -50%, showing the second copy). <FallIn> picks the ones actually on screen.
+                      className={`${copy === i % 2 ? "fall " : ""}group ${tile.h} shrink-0 overflow-hidden rounded-[14px] transition-transform duration-300 hover:scale-[0.985]`}
+                    >
+                      {tile.node}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
-    </FallIn>
+        ))}
+      </FallIn>
+    </>
   );
 }

@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { createPublicClient, custom, decodeEventLog, encodeFunctionData, type Address, type Hex } from "viem";
+import { createPublicClient, custom, decodeEventLog, encodeFunctionData, type Address, type Hex, type TransactionReceipt } from "viem";
 import { base } from "viem/chains";
 import { BASE_MARKETS, erc20Abi, factoryAbi, USDC, usdcUnits, type BasePlanType } from "@/lib/base/contracts";
-import { providerFor, rememberedKind, sendBaseCalls, walletErrorMessage, walletFor } from "@/lib/base/wallet";
+import { providerFor, rememberedKind, sendBaseCalls, StillPendingError, waitForSent, walletErrorMessage, walletFor, type SentRef } from "@/lib/base/wallet";
 import { BasePlanError, parseBaseInputs, sizeBasePlan, type BasePlanInputs, type BaseSizing, type MarketTerms } from "@/lib/domain/basePlans";
 import { usd } from "@/lib/ui/format";
+import { CREATE_STEPS, Crumbs } from "../Crumbs";
 import { Field, Segmented, Slider } from "../form";
 import { Button, Card, ErrorNote, inputCls, Notice, Stat } from "../ui";
 
@@ -26,18 +27,23 @@ interface MarketInfo {
   carryPctPerHour: number | null;
 }
 
-type Step = "idle" | "wallet" | "confirming" | "recording";
+type Step = "idle" | "wallet" | "confirming" | "pending" | "recording";
 
-/** A vault created on Base but not yet saved to Locke: kept for this tab so saving can be retried. */
+/**
+ * A plan sent to Base and not yet saved to Locke: while Base hasn't confirmed it (`sent`, no
+ * txHash), or once it has and saving is still to do. Kept in this browser so a reload or a slow
+ * confirmation never leads to creating the plan twice.
+ */
 interface Created {
-  txHash: string;
+  txHash: string | null;
   vault: string | null;
   inputs: BasePlanInputs;
+  sent?: SentRef;
 }
 const createdKey = (address: string) => `locke.base.created.${address.toLowerCase()}`;
 function loadCreated(address: string): Created | null {
   try {
-    const raw = sessionStorage.getItem(createdKey(address));
+    const raw = localStorage.getItem(createdKey(address));
     return raw ? (JSON.parse(raw) as Created) : null;
   } catch {
     return null;
@@ -45,28 +51,28 @@ function loadCreated(address: string): Created | null {
 }
 function storeCreated(address: string, c: Created | null) {
   try {
-    if (c) sessionStorage.setItem(createdKey(address), JSON.stringify(c));
-    else sessionStorage.removeItem(createdKey(address));
+    if (c) localStorage.setItem(createdKey(address), JSON.stringify(c));
+    else localStorage.removeItem(createdKey(address));
   } catch {
-    /* private mode: the retry lasts until the page closes */
+    /* private mode: kept until the page closes; Locke also finds unsaved plans from Base itself */
   }
 }
 
 /**
- * New Locke vault: pick what to protect, see the size and the deposit, then one wallet batch
- * approves the USDC and creates the vault (owned by this account) with its limits and deposit.
- */
-/**
- * Describe what to protect and see the plan sized live. With no factory yet (before launch) it
+ * Describe what to protect and see the plan sized live, then one wallet batch approves the USDC
+ * and creates the plan's vault (owned by this account) with its limits and deposit. With no factory yet (before launch) it
  * previews only: everything but creating the plan works, and Locke's fee isn't known yet.
  */
 export function NewVaultForm({
+  trail = false,
   type: fixedType,
   address,
   factory,
   dataSuffix,
   feeBps,
 }: {
+  /** Show the Protect · Describe · Preview · Fund trail (and the way back) above the form, following its state. */
+  trail?: boolean;
   /** The plan type chosen on /protect; the form then asks only about that one. */
   type?: BasePlanType;
   address: string;
@@ -105,14 +111,28 @@ export function NewVaultForm({
   const inputs: BasePlanInputs =
     type === "holdings"
       ? { type, pairIndex, valueUsd, sharePct, leverage, bufferPct }
-      : { type, pairIndex, monthlySpendUsd, months, crudeSharePct, leverage, bufferPct };
+      : {
+          type,
+          pairIndex,
+          monthlySpendUsd,
+          months,
+          crudeSharePct,
+          leverage,
+          bufferPct,
+        };
 
-  const sized = useMemo((): { sizing: BaseSizing | null; problem: string | null } => {
+  const sized = useMemo((): {
+    sizing: BaseSizing | null;
+    problem: string | null;
+  } => {
     if (!market?.terms) return { sizing: null, problem: null };
     try {
       return { sizing: sizeBasePlan(inputs, market.terms), problem: null };
     } catch (e) {
-      return { sizing: null, problem: e instanceof BasePlanError ? e.message : String(e) };
+      return {
+        sizing: null,
+        problem: e instanceof BasePlanError ? e.message : String(e),
+      };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [market, type, pairIndex, valueUsd, sharePct, monthlySpendUsd, months, crudeSharePct, leverage, bufferPct]);
@@ -129,6 +149,7 @@ export function NewVaultForm({
 
   /** Save a created vault to Locke; on failure the vault stays on Base and saving can be retried. */
   async function record(c: Created) {
+    if (!c.txHash) return;
     setError(null);
     setStep("recording");
     try {
@@ -156,12 +177,19 @@ export function NewVaultForm({
       return;
     }
     setStep("wallet");
-    let saved: Created | null = null;
     try {
       const wallet = await walletFor(address, dataSuffix);
-      const reader = createPublicClient({ chain: base, transport: custom(await providerFor(rememberedKind())) });
+      const reader = createPublicClient({
+        chain: base,
+        transport: custom(await providerFor(rememberedKind())),
+      });
       const deposit = usdcUnits(depositUsd);
-      const balance = await reader.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [wallet.account.address] });
+      const balance = await reader.readContract({
+        address: USDC,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [wallet.account.address],
+      });
       if (balance < deposit) throw new Error(`This account holds ${usd(Number(balance) / 1e6)} of USDC on Base; the plan needs ${usd(depositUsd)}.`);
 
       const plan = {
@@ -169,46 +197,106 @@ export function NewVaultForm({
         buy: sizing.buy,
         maxLeverage: BigInt(Math.round(sizing.limits.maxLeverage * 1e10)),
         maxNotional: usdcUnits(sizing.limits.maxNotionalUsd),
+        maxCollateral: usdcUnits(sizing.limits.maxCollateralUsd),
       };
-      const receipts = await sendBaseCalls(wallet, [
-        { to: USDC, data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [factory, deposit] }) },
-        { to: factory, data: encodeFunctionData({ abi: factoryAbi, functionName: "createVault", args: [BigInt(pairIndex), plan, deposit] }) },
-      ]);
-      setStep("confirming");
-      let vault: string | null = null;
-      let txHash: string | null = null;
-      // The batch is mined: from here on, retry saving, never create again.
-      const createTx = receipts[receipts.length - 1]?.transactionHash ?? null;
-      if (createTx) {
-        saved = { txHash: createTx, vault: null, inputs };
-        storeCreated(address, saved);
-        setCreated(saved);
+      // Kept for the plan's inputs if this page never gets to save it (Locke finds the vault on Base later).
+      await fetch("/api/base/vaults/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs }),
+      }).catch(() => null);
+      const receipts = await sendBaseCalls(
+        wallet,
+        [
+          {
+            to: USDC,
+            data: encodeFunctionData({
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [factory, deposit],
+            }),
+          },
+          {
+            to: factory,
+            data: encodeFunctionData({
+              abi: factoryAbi,
+              functionName: "createVault",
+              args: [BigInt(pairIndex), plan, deposit],
+            }),
+          },
+        ],
+        // From the moment the wallet sends it, the form never offers to create again: it follows this one.
+        (sent) => {
+          const c: Created = { txHash: null, vault: null, inputs, sent };
+          storeCreated(address, c);
+          setCreated(c);
+          setStep("confirming");
+        },
+      );
+      await landed(receipts, inputs);
+    } catch (e) {
+      if (e instanceof StillPendingError) {
+        setStep("pending");
+        return;
       }
-      for (const r of receipts) {
-        for (const log of r.logs) {
-          if (log.address.toLowerCase() !== factory.toLowerCase()) continue;
-          try {
-            const ev = decodeEventLog({ abi: factoryAbi, data: log.data, topics: log.topics, eventName: "VaultCreated" });
-            vault = ev.args.vault;
-            txHash = r.transactionHash;
-          } catch {
-            /* another factory event */
-          }
+      // Sent and failed on Base, or never sent: nothing was created, so the form is free again.
+      storeCreated(address, null);
+      setCreated(null);
+      setError(walletErrorMessage(e));
+      setStep("idle");
+    }
+  }
+
+  /** The creation is on Base: find the new vault in it and save it to Locke. */
+  async function landed(receipts: TransactionReceipt[], planInputs: BasePlanInputs) {
+    if (!factory) return;
+    let vault: string | null = null;
+    let txHash: string | null = null;
+    for (const r of receipts) {
+      for (const log of r.logs) {
+        if (log.address.toLowerCase() !== factory.toLowerCase()) continue;
+        try {
+          const ev = decodeEventLog({
+            abi: factoryAbi,
+            data: log.data,
+            topics: log.topics,
+            eventName: "VaultCreated",
+          });
+          vault = ev.args.vault;
+          txHash = r.transactionHash;
+        } catch {
+          /* another factory event */
         }
       }
-      if (vault && txHash) {
-        saved = { txHash, vault, inputs };
-        storeCreated(address, saved);
-        setCreated(saved);
-      }
-    } catch (e) {
-      setError(walletErrorMessage(e));
+    }
+    if (!vault || !txHash) {
+      storeCreated(address, null);
+      setCreated(null);
+      setError("The transaction went through, but Locke couldn't find a new plan in it. Check your wallet's activity before trying again.");
       setStep("idle");
       return;
     }
-    if (saved) await record(saved);
-    else {
-      setError("The transaction went through, but Locke couldn't find a new vault in it. Check your wallet's activity before trying again.");
+    const saved: Created = { txHash, vault, inputs: planInputs };
+    storeCreated(address, saved);
+    setCreated(saved);
+    await record(saved);
+  }
+
+  /** Look again for a creation Base hadn't confirmed (this visit or an earlier one). */
+  async function checkAgain(c: Created) {
+    if (!c.sent) return;
+    setError(null);
+    setStep("confirming");
+    try {
+      const wallet = await walletFor(address, dataSuffix);
+      await landed(await waitForSent(wallet, c.sent, 60_000), c.inputs);
+    } catch (e) {
+      if (e instanceof StillPendingError) return setStep("pending");
+      if (/didn't go through/.test(String((e as Error).message))) {
+        storeCreated(address, null);
+        setCreated(null);
+      }
+      setError(walletErrorMessage(e));
       setStep("idle");
     }
   }
@@ -218,14 +306,28 @@ export function NewVaultForm({
   const busy = step !== "idle";
   const sizing = sized.sizing;
   const hint = {
-    wallet: "Approve in your wallet: one request covers the USDC approval and the plan's vault.",
+    wallet: "Approve in your wallet: the USDC approval and the plan's vault (one request in Base Account, two in other wallets).",
     confirming: "Waiting for Base to confirm…",
+    pending: "",
     recording: "Saving your plan…",
     idle: "",
   }[step];
 
+  // Describing until the plan sizes, previewing once it does, funding once the wallet is involved.
+  const trailStep = created || step !== "idle" ? 3 : sized.sizing && agreed ? 2 : 1;
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+      {trail && (
+        <div className="lg:col-span-2">
+          <Crumbs steps={CREATE_STEPS} current={trailStep} back={{ href: "/protect", label: "What to protect" }} />
+          {!factory && (
+            <div className="-mt-2">
+              <Notice tone="info">Locke isn&apos;t live yet. You can describe and preview a plan now; creating it opens at launch.</Notice>
+            </div>
+          )}
+        </div>
+      )}
       <Card className="flex flex-col gap-6">
         {!fixedType && (
           <Field label="What to protect" group>
@@ -246,14 +348,17 @@ export function NewVaultForm({
             label="Market"
             value={pairIndex}
             onChange={setPairIndex}
-            options={choices.map((m) => ({ value: m.pairIndex as number, label: m.label }))}
+            options={choices.map((m) => ({
+              value: m.pairIndex as number,
+              label: m.label,
+            }))}
           />
         </Field>
 
         {type === "holdings" ? (
           <>
             <Field label="Value held (USD)" hint={market?.price ? `${market.asset} is ${usd(market.price)} now.` : undefined}>
-              <input className={inputCls} inputMode="decimal" value={valueUsd} onChange={(e) => setValueUsd(Number(e.target.value) || 0)} />
+              <MoneyInput label="Value held (USD)" value={valueUsd} onChange={setValueUsd} />
             </Field>
             <Field label={`Share to protect: ${sharePct}%`} group>
               <Slider label="Share to protect" value={sharePct} min={10} max={100} step={5} onChange={setSharePct} />
@@ -262,7 +367,7 @@ export function NewVaultForm({
         ) : (
           <>
             <Field label="Fuel bought each month (USD)">
-              <input className={inputCls} inputMode="decimal" value={monthlySpendUsd} onChange={(e) => setMonthlySpendUsd(Number(e.target.value) || 0)} />
+              <MoneyInput label="Fuel bought each month (USD)" value={monthlySpendUsd} onChange={setMonthlySpendUsd} />
             </Field>
             <Field label={`Months to cover: ${months}`} group>
               <Slider label="Months" value={months} min={1} max={6} onChange={setMonths} />
@@ -311,7 +416,8 @@ export function NewVaultForm({
               />
             </div>
             <p className="text-[12px] leading-relaxed text-paper/55">
-              On-chain limits: Locke&apos;s keeper can never go above {sizing.limits.maxLeverage}x or {usd(sizing.limits.maxNotionalUsd)} of hedge, and can never withdraw. You can withdraw or close at any time.
+              On-chain limits: Locke&apos;s keeper can never go above {sizing.limits.maxLeverage}x, {usd(sizing.limits.maxNotionalUsd)} of hedge or{" "}
+              {usd(sizing.limits.maxCollateralUsd)} of margin, and can never withdraw. You can withdraw or close at any time.
             </p>
             <label className="flex items-start gap-3 text-[13px] text-paper/85">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#d6f36b]" />
@@ -328,6 +434,17 @@ export function NewVaultForm({
                 .
               </span>
             </label>
+            {!created && factory && market && !market.available && (
+              <p className="text-[13px] text-paper/80">
+                Avantis isn&apos;t taking new positions on this market right now, so plans for it can&apos;t be created.
+              </p>
+            )}
+            {!created && factory && market?.available && !market.marketOpen && (
+              <p className="text-[13px] text-paper/80">
+                The {market.asset} market is closed right now. You can create the plan; Locke opens the hedge when the market reopens, and the plan isn&apos;t
+                protected until then.
+              </p>
+            )}
             {!created && factory && (
               <Button size="lg" variant="paper" onClick={create} busy={busy} disabled={!agreed || !market?.available}>
                 Create plan and deposit {usd(totalDeposit(sizing))}
@@ -341,7 +458,35 @@ export function NewVaultForm({
             {hint && <p className="text-[12px] text-paper/70">{hint}</p>}
           </>
         )}
-        {created && (
+        {created && !created.txHash && (
+          <div className="flex flex-col gap-3 rounded-2xl bg-paper/10 p-4">
+            <p className="text-[14px] text-paper">
+              {step === "confirming"
+                ? "Your plan is on its way to Base. Waiting for it to confirm…"
+                : "Your plan was sent to Base and isn't confirmed yet. Don't create it again: it may still go through. Check your wallet's activity, then check again here."}
+            </p>
+            {step !== "confirming" && step !== "recording" && (
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="paper" onClick={() => checkAgain(created)}>
+                  Check again
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    // Only once the owner has seen in their wallet that it didn't go through.
+                    if (!window.confirm("Only do this if your wallet shows the plan was never created. Start over?")) return;
+                    storeCreated(address, null);
+                    setCreated(null);
+                    setStep("idle");
+                  }}
+                >
+                  It didn&apos;t go through
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+        {created && created.txHash && (
           <div className="flex flex-col gap-3 rounded-2xl bg-paper/10 p-4">
             <p className="text-[14px] text-paper">
               Your plan&apos;s vault is created on Base
@@ -358,9 +503,21 @@ export function NewVaultForm({
               . {step !== "idle" ? "Saving it to Locke…" : "Saving it to Locke didn't finish; your USDC is safe in it."}
             </p>
             {step === "idle" && (
-              <Button variant="paper" onClick={() => record(created)} busy={busy}>
-                Retry saving
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="paper" onClick={() => record(created)} busy={busy}>
+                  Retry saving
+                </Button>
+                {/* The portfolio saves it too: it looks on Base for plans this account created. */}
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    storeCreated(address, null);
+                    router.push("/portfolio");
+                  }}
+                >
+                  Go to my plans
+                </Button>
+              </div>
             )}
           </div>
         )}
@@ -380,4 +537,32 @@ function carryHint(m: MarketInfo): string {
   return yearly < 0
     ? `${m.symbol} on Avantis. This side is being paid about ${(-yearly).toFixed(1)}% a year right now.`
     : `${m.symbol} on Avantis. Holding costs about ${yearly.toFixed(1)}% a year right now.`;
+}
+
+/**
+ * A dollar amount typed as text: commas, spaces and a leading $ are fine, a half-typed "1." stays
+ * as typed, and anything that isn't a number is flagged rather than read as 0.
+ */
+function MoneyInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  const [text, setText] = useState(String(value));
+  const parsed = Number(text.replace(/[\s,$]/g, ""));
+  const bad = text.trim() === "" || !Number.isFinite(parsed) || parsed < 0;
+  return (
+    <>
+      <input
+        className={inputCls}
+        inputMode="decimal"
+        aria-label={label}
+        aria-invalid={bad}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          const n = Number(e.target.value.replace(/[\s,$]/g, ""));
+          // Not a number: the plan can't be sized (and so can't be created) until it is one.
+          onChange(e.target.value.trim() !== "" && Number.isFinite(n) && n >= 0 ? n : Number.NaN);
+        }}
+      />
+      {bad && <span className="mt-1 block text-[12px] text-danger-ink">Enter an amount in dollars, like 25,000.</span>}
+    </>
+  );
 }

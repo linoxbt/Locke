@@ -21,8 +21,8 @@ export default function Terms() {
       <h2>1. What Locke is</h2>
       <p>
         Locke is software that helps a business protect what it holds or buys against price moves. It sizes a hedge, opens it on a
-        third-party trading venue, watches it and tells you when it needs attention. Locke runs on Base: it hedges on Avantis (now
-        operating as Veranta, veranta.xyz), from a vault contract on Base that you own.
+        third-party trading venue, watches it and tells you when it needs attention. Locke runs on Base: it hedges on Avantis
+        (avantisfi.com), from a vault contract on Base that you own.
       </p>
       <p>
         Locke is a tool, not a broker, bank, exchange, fund, insurer or investment adviser. It does not give financial, legal or tax advice,

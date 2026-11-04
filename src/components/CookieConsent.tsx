@@ -1,17 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { currentConsent, OPEN_COOKIE_SETTINGS, saveConsent } from "@/lib/consent";
 
 /**
  * Cookie notice. Shown until the visitor chooses; "Reject" and "Accept" carry equal weight, and
- * "Customize cookies" opens the categories. Reopened from the footer's "Cookie settings". On the
- * legal pages it docks at the bottom without dimming the page, so the policies stay readable.
+ * "Customize cookies" opens the categories. Reopened from the footer's "Cookie settings". It docks
+ * at the bottom without dimming the page, so everything stays usable while it is open.
  */
 export function CookieConsent() {
-  const path = usePathname();
   const [open, setOpen] = useState(false);
   const [customize, setCustomize] = useState(false);
   const [preferences, setPreferences] = useState(false);
@@ -34,7 +32,9 @@ export function CookieConsent() {
     return () => window.removeEventListener(OPEN_COOKIE_SETTINGS, reopen);
   }, []);
 
-  const docked = path.startsWith("/legal");
+  // A bar along the bottom that never blocks the page: until a choice is made only the essential
+  // cookies are used, so nothing needs the visitor to answer first.
+  const docked = true;
 
   useEffect(() => {
     if (!open) return;

@@ -223,32 +223,73 @@ export interface Call {
   value?: bigint;
 }
 
+/** Where a sent batch can be looked up again: the wallet's call bundle, or the last transaction. */
+export type SentRef = { callsId: string } | { txHash: Hex };
+
+/** The calls were sent but Base hasn't confirmed them yet: they may still land, so never resend. */
+export class StillPendingError extends Error {
+  constructor(public ref: SentRef) {
+    super("Base hasn't confirmed this yet. It may still go through: check your wallet's activity before trying again.");
+  }
+}
+
+const sentFailed = () => new Error("The transaction didn't go through. Nothing was moved; check your wallet and try again.");
+const timedOut = (e: unknown) => /timeout|timed out/i.test(`${(e as Error)?.name ?? ""} ${(e as Error)?.message ?? ""}`);
+
 /**
  * Send calls as one batch (EIP-5792 wallet_sendCalls: one approval in Base Account, atomic where
  * the wallet supports it). Wallets without batching get one transaction per call instead, each
  * confirmed before the next, since an approval must land before the call that spends it.
- * Resolves with the receipts once they are on chain; throws if any call failed.
+ * Resolves with the receipts once they are on chain; throws if any call failed, and
+ * StillPendingError if Base hasn't confirmed them in time. `onSent` gets the lookup reference as
+ * soon as it exists, so a caller can keep it across a reload.
  */
-export async function sendBaseCalls(wallet: WalletClient & { account: { address: Address } }, calls: Call[]): Promise<TransactionReceipt[]> {
+export async function sendBaseCalls(
+  wallet: WalletClient & { account: { address: Address } },
+  calls: Call[],
+  onSent?: (ref: SentRef) => void
+): Promise<TransactionReceipt[]> {
   let id: string | null = null;
   try {
     ({ id } = await wallet.sendCalls({ account: wallet.account, chain: base, calls }));
   } catch (e) {
     if (!unsupported(e)) throw e;
   }
-  const failed = () => new Error("The transaction didn't go through. Nothing was moved; check your wallet and try again.");
   if (id) {
-    const status = await wallet.waitForCallsStatus({ id, timeout: 180_000 });
-    if (status.status !== "success") throw failed();
-    return (status.receipts ?? []) as unknown as TransactionReceipt[];
+    onSent?.({ callsId: id });
+    return waitForSent(wallet, { callsId: id });
   }
   const reader = wallet.extend(publicActions);
   const receipts: TransactionReceipt[] = [];
   for (const c of calls) {
     const hash = await wallet.sendTransaction({ account: wallet.account, chain: base, to: c.to, data: c.data, value: c.value });
-    const receipt = await reader.waitForTransactionReceipt({ hash, timeout: 180_000 });
-    if (receipt.status !== "success") throw failed();
+    onSent?.({ txHash: hash });
+    let receipt: TransactionReceipt;
+    try {
+      receipt = await reader.waitForTransactionReceipt({ hash, timeout: 180_000 });
+    } catch (e) {
+      if (timedOut(e)) throw new StillPendingError({ txHash: hash });
+      throw e;
+    }
+    if (receipt.status !== "success") throw sentFailed();
     receipts.push(receipt);
   }
   return receipts;
+}
+
+/** Wait for calls sent earlier (this page or before a reload) to land, by their reference. */
+export async function waitForSent(wallet: WalletClient & { account: { address: Address } }, ref: SentRef, timeout = 180_000): Promise<TransactionReceipt[]> {
+  try {
+    if ("callsId" in ref) {
+      const status = await wallet.waitForCallsStatus({ id: ref.callsId, timeout });
+      if (status.status !== "success") throw sentFailed();
+      return (status.receipts ?? []) as unknown as TransactionReceipt[];
+    }
+    const receipt = await wallet.extend(publicActions).waitForTransactionReceipt({ hash: ref.txHash, timeout });
+    if (receipt.status !== "success") throw sentFailed();
+    return [receipt];
+  } catch (e) {
+    if (timedOut(e)) throw new StillPendingError(ref);
+    throw e;
+  }
 }

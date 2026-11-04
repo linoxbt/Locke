@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ConnectExperience } from "@/components/ConnectExperience";
-import { optionalBaseSession } from "@/lib/server/basePages";
+import { publicBaseSession } from "@/lib/server/basePages";
 import { safeNext } from "@/lib/server/pageAuth";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +13,6 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const next = safeNext(sp.next);
   const reconnect = sp.reconnect === "1";
-  if (!reconnect && (await optionalBaseSession())) redirect(next);
+  if (!reconnect && (await publicBaseSession())) redirect(next);
   return <ConnectExperience next={next} reconnect={reconnect} />;
 }

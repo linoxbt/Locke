@@ -16,8 +16,14 @@ export const USDC_UNIT = 1_000_000n;
 export const usdcUnits = (usd: number) => BigInt(Math.round(usd * 1e6));
 export const fromUsdcUnits = (v: bigint) => Number(v) / 1e6;
 
-/** Signed Pyth Lazer updates cost this much ETH to verify on Base (PythLazer.verification_fee). */
-export const LAZER_FEE_WEI = 1n;
+/**
+ * Signed Pyth Lazer updates cost this much ETH to verify on Base (PythLazer.verification_fee, 1 wei
+ * today). LAZER_FEE_WEI overrides it if Pyth raises the fee, without a release.
+ */
+export const LAZER_FEE_WEI = (() => {
+  const v = typeof process !== "undefined" ? process.env.LAZER_FEE_WEI : undefined;
+  return v && /^\d+$/.test(v) ? BigInt(v) : 1n;
+})();
 /** Price sourcing for margin updates: Pyth Lazer, the only feed WTI and Brent have. */
 export const PRICE_SOURCING_LAZER = 1;
 
@@ -38,7 +44,7 @@ export function baseMarket(pairIndex: number): BaseMarket | undefined {
 }
 
 export const factoryAbi = parseAbi([
-  "struct Plan { bool enabled; bool buy; uint64 maxLeverage; uint128 maxNotional; }",
+  "struct Plan { bool enabled; bool buy; uint64 maxLeverage; uint128 maxNotional; uint128 maxCollateral; }",
   "function createVault(uint256 pairIndex, Plan plan, uint256 deposit) returns (address vault)",
   "function paused() view returns (bool)",
   "function feeBps() view returns (uint16)",
@@ -49,6 +55,8 @@ export const factoryAbi = parseAbi([
   "function isVault(address) view returns (bool)",
   "function feeCollector() view returns (address)",
   "function keeperRevoked(address) view returns (bool)",
+  "function vaultsOf(address creator) view returns (address[])",
+  "function createdAtBlock(address vault) view returns (uint256)",
   "event VaultCreated(address indexed owner, address indexed vault, uint256 indexed pairIndex, bool buy, uint128 maxNotional, uint16 feeBps)",
 ]);
 
@@ -56,10 +64,13 @@ export const vaultAbi = parseAbi([
   "function tradingStorage() view returns (address)",
   "function owner() view returns (address)",
   "function keeper() view returns (address)",
+  "function keeperFollowsFactory() view returns (bool)",
+  "function pendingOwner() view returns (address)",
   "function paused() view returns (bool)",
   "function feeBps() view returns (uint16)",
   "function netDeposits() view returns (uint256)",
-  "function plans(uint256 pairIndex) view returns (bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional)",
+  "function plans(uint256 pairIndex) view returns (bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional, uint128 maxCollateral)",
+  "function lastTopUpAt(uint256 pairIndex) view returns (uint256)",
   "function lastOpenAt(uint256 pairIndex) view returns (uint256)",
   "function feeOwed(uint256 pairIndex) view returns (uint256)",
   "function lastFeeAt(uint256 pairIndex) view returns (uint256)",
@@ -67,10 +78,10 @@ export const vaultAbi = parseAbi([
   "function deposit(uint256 amount)",
   "function withdraw(address to, uint256 amount)",
   "function setKeeper(address keeper)",
-  "function setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional)",
+  "function followFactoryKeeper()",
+  "function setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional, uint128 maxCollateral)",
   "function ownerClose(uint256 pairIndex, uint256 index, uint256 collateral, uint256 wantedPrice) payable returns (uint256)",
   "function hedgeOpen(uint256 pairIndex, uint256 collateral, uint256 leverage, uint256 wantedPrice, uint256 slippageP) payable returns (uint256)",
-  "function hedgeClose(uint256 pairIndex, uint256 index, uint256 collateral, uint256 wantedPrice) payable returns (uint256)",
   "function topUpMargin(uint256 pairIndex, uint256 index, uint256 amount, bytes[] priceUpdateData, uint8 priceSourcing) payable returns (uint256)",
   "event Deposited(address indexed from, uint256 amount)",
   "event Withdrawn(address indexed to, uint256 amount)",
@@ -87,6 +98,8 @@ export const erc20Abi = parseAbi([
 
 /** What the keeper reads from Avantis's TradingStorage to know whether a vault's hedge exists. */
 export const tradingStorageAbi = parseAbi([
+  "struct Trade { address trader; uint256 pairIndex; uint256 index; uint256 initialPosToken; uint256 positionSizeUSDC; uint256 openPrice; bool buy; uint256 leverage; uint256 tp; uint256 sl; uint256 timestamp; }",
+  "function openTrades(address trader, uint256 pairIndex, uint256 index) view returns (Trade)",
   "function openTradesCount(address trader, uint256 pairIndex) view returns (uint256)",
   "function pendingMarketOpenCount(address trader, uint256 pairIndex) view returns (uint256)",
 ]);

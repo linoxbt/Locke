@@ -33,6 +33,8 @@ export async function issueNonce(network: string | null): Promise<string> {
 export interface SignInFields {
   address: Address;
   nonce: string;
+  /** Version or Issued At is missing: only smart wallets (Base Account) write such messages. */
+  partial: boolean;
 }
 
 const HEADER = /^(?:[a-zA-Z][a-zA-Z0-9+\-.]*:\/\/)?(?<domain>[a-zA-Z0-9+\-.]*(?::[0-9]{1,5})?) wants you to sign in with your Ethereum account:\n(?<address>0x[a-fA-F0-9]{40})\n/;
@@ -82,8 +84,10 @@ export function checkSiweMessage(message: string, expected: { host: string; now?
   const { domain, address, fields: f } = readSiweMessage(message);
   const now = expected.now ?? Date.now();
   if (!address || !domain || !f.nonce || !f.uri || !f.chainId || (f.version !== undefined && f.version !== "1")) {
-    // Logged so a wallet whose message we can't read can be diagnosed; it holds no secret.
-    console.warn("[siwe] unreadable sign-in message", JSON.stringify(message));
+    // Which parts were missing, so a wallet whose message can't be read can be diagnosed; not the
+    // message itself, which names the account.
+    const present = [domain && "domain", address && "address", ...Object.keys(f)].filter(Boolean).join(",");
+    console.warn(`[siwe] unreadable sign-in message (${message.length} chars; has ${present || "nothing"})`);
     throw new HttpError(400, "Invalid sign-in message");
   }
   if (domain !== expected.host) throw new HttpError(400, "This sign-in was made for another site");
@@ -101,23 +105,23 @@ export function checkSiweMessage(message: string, expected: { host: string; now?
   if (expiresAt !== undefined && expiresAt <= now) throw new HttpError(400, "This sign-in expired. Try again.");
   if (notBefore !== undefined && notBefore > now + SKEW_MS) throw new HttpError(400, "This sign-in isn't valid yet");
   if (!/^[A-Za-z0-9]{8,64}$/.test(f.nonce)) throw new HttpError(400, "Invalid sign-in message");
-  return { address: getAddress(address), nonce: f.nonce };
+  return { address: getAddress(address), nonce: f.nonce, partial: f.version === undefined || f.issuedAt === undefined };
 }
 
 /**
  * The signature is the address's: an ordinary wallet's is recovered locally; a smart wallet
  * (Base Account) is checked on Base with ERC-1271, or ERC-6492 before it is deployed.
  */
-export async function signatureMatches(address: Address, message: string, signature: Hex): Promise<boolean> {
+export async function signatureMatches(address: Address, message: string, signature: Hex): Promise<"wallet" | "smart" | false> {
   if (signature.length === 132) {
     try {
-      if (isAddressEqual(await recoverMessageAddress({ message, signature }), address)) return true;
+      if (isAddressEqual(await recoverMessageAddress({ message, signature }), address)) return "wallet";
     } catch {
       /* not a plain ECDSA signature: fall through to the on-chain check */
     }
   }
   try {
-    return await basePublicClient().verifyMessage({ address, message, signature });
+    return (await basePublicClient().verifyMessage({ address, message, signature })) ? "smart" : false;
   } catch {
     return false;
   }
@@ -137,8 +141,10 @@ export async function verifySignIn(input: { message: string; signature: string }
   }
   const fields = checkSiweMessage(input.message, { host });
   if (!(await consumeNonce(fields.nonce))) throw new HttpError(400, "This sign-in expired. Try again.");
-  if (!(await signatureMatches(fields.address, input.message, input.signature as Hex))) {
-    throw new HttpError(401, "That signature isn't from this account. Try signing in again.");
-  }
+  const signer = await signatureMatches(fields.address, input.message, input.signature as Hex);
+  if (!signer) throw new HttpError(401, "That signature isn't from this account. Try signing in again.");
+  // Only Base Account leaves out Version and Issued At. An ordinary wallet's message must be the
+  // full EIP-4361 one Locke asked it to sign.
+  if (fields.partial && signer === "wallet") throw new HttpError(400, "Invalid sign-in message");
   return fields.address.toLowerCase();
 }

@@ -24,11 +24,11 @@ export function ConnectExperience({ next, reconnect = false }: { next: string; r
         </h1>
         <ol className="mt-6 grid max-w-[420px] grid-cols-3 gap-3">
           {STEPS.map((title, i) => (
-            <li key={title} aria-current={i === 0 ? "step" : undefined}>
-              <span className="block h-1 overflow-hidden rounded-full bg-paper/15">
-                <span className={`block h-full rounded-full bg-lime ${i === 0 ? "w-1/4" : "w-0"}`} />
+            <li key={title}>
+              <span className="block h-1 rounded-full bg-paper/15" />
+              <span className="mt-2 block text-[13px] text-paper/80">
+                <span className="num text-lime">{i + 1}</span> {title}
               </span>
-              <span className={`mt-2 block text-[13px] ${i === 0 ? "text-paper" : "text-paper/60"}`}>{title}</span>
             </li>
           ))}
         </ol>

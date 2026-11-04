@@ -21,8 +21,10 @@ export default function Risk() {
         margin is gone. That can happen fast in a sharp move.
       </p>
       <p>
-        On Avantis (now operating as Veranta), a position is liquidated when its losses and fees reach 85% of its margin. Locke&apos;s keeper
-        adds margin from your vault&apos;s buffer when 60% of the margin is used, but only while there is buffer left and the market is open.
+        On Avantis, a position is liquidated when its losses and fees reach 85% of its margin. Your plan page shows this as
+        &ldquo;margin used&rdquo;, where 100% is liquidation. Locke&apos;s keeper adds margin from your vault&apos;s buffer when it reaches
+        60% (by then losses and fees have taken about three quarters of the margin), but only while there is buffer left, the plan&apos;s
+        limit has room and the market is open.
       </p>
       <p>Higher leverage needs less money up front and puts liquidation closer. Locke caps leverage at 3x, and lower is safer.</p>
 

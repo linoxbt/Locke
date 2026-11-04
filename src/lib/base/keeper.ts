@@ -14,13 +14,20 @@ export interface VaultState {
   prevLevel: RiskLevel;
   /** USDC idle in the vault. */
   idleUsd: number;
-  /** The vault's on-chain cap on notional (also caps the collateral in one position). */
+  /** The vault's plan on Base for this market, as the owner has it now. */
+  planEnabled: boolean;
+  maxLeverage: number;
+  /** Cap on an open's notional. */
   maxNotionalUsd: number;
+  /** Cap on the margin in the position, top-ups included. */
+  maxCollateralUsd: number;
   position: VerantaPosition | null;
   mark: number | null;
   marketOpen: boolean;
+  /** Avantis takes no new positions on the market (margin can still be added). */
+  closeOnly: boolean;
   paused: boolean;
-  /** The vault's keeper is this keeper (the owner can remove it). */
+  /** The vault's keeper is this keeper and Locke hasn't revoked its key (the owner can remove it). */
   keeperIsUs: boolean;
   /** Seconds until the vault's one-open-per-hour cooldown ends. */
   cooldownLeftS: number;
@@ -33,6 +40,8 @@ export interface VaultState {
   chainTrades: number;
   /** Consecutive looks (this one included) in which Base showed no trade and no pending order. */
   goneRounds: number;
+  /** A margin top-up was sent and Base doesn't show the new margin yet (null: none in flight). */
+  topUpSentAgoS: number | null;
 }
 
 export type KeeperAction =
@@ -56,6 +65,8 @@ export const OPEN_RETRY_S = 120;
 export const CLOSE_CONFIRM_ROUNDS = 2;
 /** Margin use is capped here for display and storage (equity at or below zero reads as Infinity). */
 const MAX_RATIO = 10;
+/** Wait this long for Avantis to apply a top-up before sending another (they apply in seconds). */
+export const TOP_UP_RETRY_S = 180;
 /** Top-ups smaller than this aren't worth a transaction. */
 export const MIN_TOP_UP_USD = 1;
 /** The open fee is taken from the vault next to the collateral; keep this much spare. */
@@ -85,13 +96,16 @@ export function decide(v: VaultState): KeeperDecision {
     const p = position;
     if (v.mark == null) return wait("active", "No price from Avantis right now; checking again shortly.");
     const ratio = Math.min(verantaMarginRatio(p, v.mark), MAX_RATIO);
+    if (Number.isNaN(ratio)) return wait("active", "Avantis's figures for the hedge are incomplete right now; checking again shortly.");
     const level = riskLevel(ratio, v.prevLevel, LOCKE_THRESHOLDS);
     if (ratio < LOCKE_THRESHOLDS.action) return { status: "active", ratio, level, action: { kind: "wait", note: null } };
+    // A top-up already on its way: wait for Base to show it rather than send a second one.
+    if (v.topUpSentAgoS != null && v.topUpSentAgoS < TOP_UP_RETRY_S) return wait("active", "Adding margin on Avantis; waiting for it to apply.", ratio, level);
     if (!v.keeperIsUs) return wait("active", "Margin is getting thin, and Locke's keeper is removed: add margin or close the hedge.", ratio, level);
     if (!v.marketOpen) return wait("active", "Margin is getting thin and the market is closed; Locke adds margin when it reopens.", ratio, level);
 
     const wanted = verantaTopUpUsd(p, v.mark, LOCKE_THRESHOLDS.target);
-    const room = Math.max(0, v.maxNotionalUsd - p.collateralUsd);
+    const room = Math.max(0, v.maxCollateralUsd - p.collateralUsd);
     const amount = Math.floor(Math.min(wanted, room, v.idleUsd) * 100) / 100;
     if (amount >= MIN_TOP_UP_USD) return { status: "active", ratio, level, action: { kind: "topUp", index: p.index, amountUsd: amount } };
     if (wanted > room) return wait("active", "Margin is getting thin and the plan's limit is reached: close part of the hedge or raise the limit.", ratio, level);
@@ -109,7 +123,13 @@ export function decide(v: VaultState): KeeperDecision {
   if (v.openSentAgoS != null && v.openSentAgoS < OPEN_RETRY_S) return wait("opening", "Waiting for Avantis to fill the hedge.");
   if (!v.keeperIsUs) return wait(v.status, "Locke's keeper is removed, so it won't open the hedge.");
   if (v.paused) return wait(v.status, "Locke has paused new hedges for now.");
+  if (!v.planEnabled) return wait(v.status, "The plan is turned off on the vault, so Locke won't open the hedge.");
+  const s = v.sizing;
+  if (s.leverage > v.maxLeverage + 1e-9 || s.notionalUsd > v.maxNotionalUsd + 0.005 || s.collateralUsd > v.maxCollateralUsd + 0.005) {
+    return wait(v.status, "The vault's limits on Base are now below this plan's hedge, so Locke won't open it. Raise them again, or withdraw and start a new plan.");
+  }
   if (!v.marketOpen) return wait(v.status, "The market is closed; the hedge opens when it reopens.");
+  if (v.closeOnly) return wait(v.status, "Avantis isn't taking new positions on this market right now; the hedge opens when it does.");
   const need = v.sizing.collateralUsd + openFeeReserve(v.sizing);
   if (v.idleUsd + 1e-9 < need) return wait("funding", `Waiting for the deposit: the vault holds $${v.idleUsd.toFixed(2)} of the $${need.toFixed(2)} the hedge needs.`);
   if (v.cooldownLeftS > 0) return wait(v.status, `Opening again in ${Math.ceil(v.cooldownLeftS / 60)} min (one open per hour).`);

@@ -30,7 +30,7 @@ contract LockeVaultFactory {
     address public guardian;
     bool public paused;
 
-    /// @notice Keeper and fee given to vaults created from now on. A vault's own owner changes its keeper.
+    /// @notice Keeper of every vault that follows the factory, and fee for vaults created from now on.
     address public keeper;
     uint16 public feeBps;
     address public feeCollector;
@@ -41,12 +41,16 @@ contract LockeVaultFactory {
     uint256 public totalDeposits;
 
     mapping(address => bool) public isVault;
+    /// @notice Each vault's creation block, so its creation can be found again from the vault alone.
+    mapping(address => uint256) public createdAtBlock;
+    mapping(address => address[]) private vaultsByOwner;
     /// @notice Keeper keys no vault accepts any more (read by every vault's keeper check).
     mapping(address => bool) public keeperRevoked;
     uint256 public vaultCount;
 
     event VaultCreated(address indexed owner, address indexed vault, uint256 indexed pairIndex, bool buy, uint128 maxNotional, uint16 feeBps);
     event AdminTransferStarted(address indexed from, address indexed to);
+    event AdminTransferCancelled(address indexed pendingAdmin);
     event AdminSet(address indexed admin);
     event GuardianSet(address indexed guardian);
     event KeeperSet(address indexed keeper);
@@ -80,7 +84,9 @@ contract LockeVaultFactory {
         IVerantaRouter router_,
         IVerantaTradingStorage tradingStorage_,
         uint256 maxVaultDeposits_,
-        uint256 maxTotalDeposits_
+        uint256 maxTotalDeposits_,
+        uint16 feeBps_,
+        address feeCollector_
     ) {
         if (admin_ == address(0) || guardian_ == address(0) || address(usdc_) == address(0)) revert ZeroAddress();
         if (address(router_) == address(0) || address(tradingStorage_) == address(0)) revert ZeroAddress();
@@ -93,6 +99,11 @@ contract LockeVaultFactory {
         keeper = keeper_;
         maxVaultDeposits = maxVaultDeposits_;
         maxTotalDeposits = maxTotalDeposits_;
+        if (feeBps_ > LockeVault(payable(implementation)).MAX_FEE_BPS()) revert FeeTooHigh();
+        if (feeBps_ != 0 && feeCollector_ == address(0)) revert ZeroAddress();
+        feeBps = feeBps_;
+        feeCollector = feeCollector_;
+        emit FeeSet(feeBps_, feeCollector_);
         emit AdminSet(admin_);
         emit GuardianSet(guardian_);
         emit KeeperSet(keeper_);
@@ -109,15 +120,22 @@ contract LockeVaultFactory {
         if (paused) revert IsPaused();
         vault = LockeVault(payable(Clones.clone(implementation)));
         isVault[address(vault)] = true;
+        createdAtBlock[address(vault)] = block.number;
+        vaultsByOwner[msg.sender].push(address(vault));
         vaultCount += 1;
         emit VaultCreated(msg.sender, address(vault), pairIndex, plan.buy, plan.maxNotional, feeBps);
-        vault.initialize(msg.sender, keeper, feeBps, pairIndex, plan, usdc, router, tradingStorage);
+        vault.initialize(msg.sender, feeBps, pairIndex, plan, usdc, router, tradingStorage);
         if (deposit != 0) {
             // Through the vault's own deposit, so the launch caps count it.
             usdc.safeTransferFrom(msg.sender, address(this), deposit);
             usdc.forceApprove(address(vault), deposit);
             vault.deposit(deposit);
         }
+    }
+
+    /// @notice Every vault an address created here, oldest first (ownership handed on later isn't tracked).
+    function vaultsOf(address creator) external view returns (address[] memory) {
+        return vaultsByOwner[creator];
     }
 
     // ------------------------------------------------------------------ vault accounting
@@ -146,6 +164,7 @@ contract LockeVaultFactory {
         emit GuardianSet(guardian_);
     }
 
+    /// @notice The keeper of every vault that follows the factory (the default), now and for new vaults.
     function setKeeper(address keeper_) external onlyAdmin {
         keeper = keeper_;
         emit KeeperSet(keeper_);
@@ -170,6 +189,11 @@ contract LockeVaultFactory {
         if (to == address(0)) revert ZeroAddress();
         pendingAdmin = to;
         emit AdminTransferStarted(admin, to);
+    }
+
+    function cancelAdminTransfer() external onlyAdmin {
+        emit AdminTransferCancelled(pendingAdmin);
+        pendingAdmin = address(0);
     }
 
     function acceptAdmin() external {

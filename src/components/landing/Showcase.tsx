@@ -23,8 +23,8 @@ const HOP_S = 0.55;
 
 const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode }[] = [
   {
-    lead: "Stake pools and node operators",
-    rest: "that keep running through grid outages",
+    lead: "Factories and cold stores",
+    rest: "that keep running on diesel through grid outages",
     href: "/how-it-works#costs",
     visual: (
       <div className="relative h-full bg-ink">

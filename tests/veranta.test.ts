@@ -114,13 +114,23 @@ describe("Veranta client", () => {
     expect(pos.buy).toBe(false);
     expect(String((f.mock.calls[0] as unknown[])[0])).toContain("/core/user-data?trader=0x66d5");
     await expect(getPositions("0xnope")).rejects.toThrow("Not an address");
+    // A half-read position is an error, never NaN in the keeper's risk math.
+    vi.stubGlobal("fetch", respond({ positions: [{ ...ETH_SHORT, collateral: undefined }] }));
+    await expect(getPositions("0x66d5d2Ef1a9855eCb7817732d87b5f230Fc0DBC4")).rejects.toThrow("incomplete position");
   });
 
   it("returns null for a price while the market is closed, and errors on a bad status", async () => {
     vi.stubGlobal("fetch", respond({ core: null, pro: null }));
     expect(await getSignedPrice(96)).toBeNull();
+    const at = Date.now() - 5_000;
+    vi.stubGlobal("fetch", respond({ pro: { priceUpdateData: "0xab", price: 100.9, publishTimestampMs: at } }));
+    expect(await getSignedPrice(96)).toEqual({ price: 100.9, updateData: "0xab", publishedAt: at });
+    // A stale price is never acted on, though it may still be shown; a missing or bad one is never used.
     vi.stubGlobal("fetch", respond({ pro: { priceUpdateData: "0xab", price: 100.9, publishTimestampMs: 1 } }));
-    expect(await getSignedPrice(96)).toEqual({ price: 100.9, updateData: "0xab", publishedAt: 1 });
+    expect(await getSignedPrice(96)).toBeNull();
+    expect(await getSignedPrice(96, { forDisplay: true })).toMatchObject({ price: 100.9 });
+    vi.stubGlobal("fetch", respond({ pro: { priceUpdateData: "0xab", price: "abc", publishTimestampMs: at } }));
+    expect(await getSignedPrice(96, { forDisplay: true })).toBeNull();
     vi.stubGlobal("fetch", respond({ message: "down" }, 503));
     await expect(getSignedPrice(96)).rejects.toThrow("failed (503)");
   });

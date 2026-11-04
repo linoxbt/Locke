@@ -9,7 +9,7 @@ vi.mock("@/lib/server/baseChain", () => ({ basePublicClient: () => ({ verifyMess
 
 import { builderSuffix } from "@/lib/base/builderCode";
 import { factoryAbi, vaultAbi } from "@/lib/base/contracts";
-import { decide, OPEN_RETRY_S, type VaultState } from "@/lib/base/keeper";
+import { decide, OPEN_RETRY_S, TOP_UP_RETRY_S, type VaultState } from "@/lib/base/keeper";
 import { BasePlanError, parseBaseInputs, planLimits, sizeBasePlan, type MarketTerms } from "@/lib/domain/basePlans";
 import { verantaMarginRatio, type VerantaPosition } from "@/lib/domain/veranta";
 import { HttpError } from "@/lib/server/errors";
@@ -25,14 +25,14 @@ describe("Base plan sizing", () => {
     expect(s).toMatchObject({ buy: false, notionalUsd: 500, collateralUsd: 250, bufferUsd: 125 });
     expect(s.feesUsd).toBeCloseTo(0.55, 6); // (0.045 + 0.045 + 2×0.01)% of $500
     expect(s.depositUsd).toBe(375.55);
-    expect(s.limits).toEqual({ maxLeverage: 2, maxNotionalUsd: 550 });
+    expect(s.limits).toEqual({ maxLeverage: 2, maxNotionalUsd: 550, maxCollateralUsd: 375 });
   });
 
   it("sizes a costs plan long on oil", () => {
     const i = parseBaseInputs({ type: "costs", pairIndex: 96, monthlySpendUsd: 500, months: 3, crudeSharePct: 60, leverage: 1, bufferPct: 25 });
     const s = sizeBasePlan(i, WTI_TERMS);
     expect(s).toMatchObject({ buy: true, notionalUsd: 900, collateralUsd: 900, bufferUsd: 225 });
-    expect(planLimits(i)).toEqual({ maxLeverage: 1, maxNotionalUsd: 990 });
+    expect(planLimits(i)).toEqual({ maxLeverage: 1, maxNotionalUsd: 990, maxCollateralUsd: 1125 }); // $900 margin + the 25% buffer
   });
 
   it("refuses what Veranta or Locke won't take", () => {
@@ -51,22 +51,42 @@ describe("Base keeper decisions", () => {
     sizing,
     prevLevel: "ok",
     idleUsd: sizing.depositUsd,
+    planEnabled: true,
+    maxLeverage: 2,
     maxNotionalUsd: 550,
+    maxCollateralUsd: sizing.limits.maxCollateralUsd,
     position: null,
     mark: 2300,
     marketOpen: true,
+    closeOnly: false,
     paused: false,
     keeperIsUs: true,
     cooldownLeftS: 0,
     openSentAgoS: null,
     chainTrades: 0,
     goneRounds: 1,
+    topUpSentAgoS: null,
   };
   // A $500 ETH short at 2x opened at 2,300.
   const short: VerantaPosition = {
     pairIndex: 0, index: 0, buy: false, collateralUsd: 250, leverage: 2, openPrice: 2300, signedSize: -500 / 2300,
     notionalAtOpen: 500, rolloverFeeUsd: 0, fundingFeeUsd: 0, liquidationPrice: 2300 * 1.425, openedAt: 0,
   };
+
+  it("won't open when the plan on Base is off, lowered below the hedge, or the market is close-only", () => {
+    expect(decide({ ...base, planEnabled: false }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("turned off") });
+    expect(decide({ ...base, maxLeverage: 1.5 }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("limits on Base") });
+    expect(decide({ ...base, maxNotionalUsd: 400 }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("limits on Base") });
+    expect(decide({ ...base, maxCollateralUsd: 200 }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("limits on Base") });
+    expect(decide({ ...base, closeOnly: true }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("new positions") });
+  });
+
+  it("sizes the margin cap to the whole buffer, at any leverage", () => {
+    const one = sizeBasePlan(parseBaseInputs({ type: "holdings", pairIndex: 0, valueUsd: 1000, sharePct: 50, leverage: 1, bufferPct: 50 }), ETH_TERMS);
+    expect(one.limits.maxNotionalUsd).toBe(550);
+    expect(one.limits.maxCollateralUsd).toBe(750); // $500 margin + the $250 buffer
+    expect(sizing.limits.maxCollateralUsd).toBe(375); // $250 margin + $125 buffer at 2x
+  });
 
   it("opens the hedge once the deposit is in", () => {
     expect(decide(base).action).toEqual({ kind: "open", collateralUsd: 250, leverage: 2 });
@@ -102,8 +122,21 @@ describe("Base keeper decisions", () => {
   it("asks the owner for funds when the buffer is spent, and respects the plan's cap", () => {
     const mark = 3200;
     expect(decide({ ...base, status: "active", position: short, idleUsd: 0, mark, chainTrades: 1, goneRounds: 0 }).action.kind).toBe("needFunds");
-    const capped = decide({ ...base, status: "active", position: short, idleUsd: 125, mark, maxNotionalUsd: 250, chainTrades: 1, goneRounds: 0 });
+    const capped = decide({ ...base, status: "active", position: short, idleUsd: 125, mark, maxCollateralUsd: 250, chainTrades: 1, goneRounds: 0 });
     expect(capped.action).toMatchObject({ kind: "wait", note: expect.stringContaining("limit is reached") });
+  });
+
+  it("never sends a second top-up while the first is still applying", () => {
+    const thin = { ...base, status: "active" as const, position: short, idleUsd: 125, mark: 3200, chainTrades: 1, goneRounds: 0 };
+    expect(decide({ ...thin, topUpSentAgoS: 20 }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("waiting for it to apply") });
+    expect(decide({ ...thin, topUpSentAgoS: TOP_UP_RETRY_S + 1 }).action.kind).toBe("topUp");
+    // Thin margin still adds margin on a close-only market.
+    expect(decide({ ...thin, closeOnly: true }).action.kind).toBe("topUp");
+  });
+
+  it("waits instead of acting on incomplete figures", () => {
+    const d = decide({ ...base, status: "active", position: { ...short, collateralUsd: NaN }, mark: 2300, chainTrades: 1, goneRounds: 0 });
+    expect(d.action).toMatchObject({ kind: "wait", note: expect.stringContaining("incomplete") });
   });
 
   it("marks the vault closed only when Base shows no trade on two looks in a row", () => {
@@ -144,16 +177,16 @@ describe("Sign in with Base", () => {
     });
 
   it("accepts a fresh message for this site on Base", () => {
-    expect(checkSiweMessage(msg(), { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718" });
+    expect(checkSiweMessage(msg(), { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718", partial: false });
   });
 
   it("reads a wallet's message with a multi-line statement or Windows line endings", () => {
     const multi = msg().replace("Sign in to Locke on Base.", "Sign in to Locke.\nThis request will not trigger a transaction.");
-    expect(checkSiweMessage(multi, { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718" });
+    expect(checkSiweMessage(multi, { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718", partial: false });
     expect(checkSiweMessage(msg().replace(/\n/g, "\r\n"), { host: "trylocke.online", now }).nonce).toBe("a1b2c3d4e5f60718");
     // Coinbase Wallet's own message: no Version and no Issued At (as logged on the preview).
     const coinbase = `trylocke.online wants you to sign in with your Ethereum account:\n${acct.address}\n\nURI: https://trylocke.online\nChain ID: 8453\nNonce: a1b2c3d4e5f60718`;
-    expect(checkSiweMessage(coinbase, { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718" });
+    expect(checkSiweMessage(coinbase, { host: "trylocke.online", now })).toEqual({ address: acct.address, nonce: "a1b2c3d4e5f60718", partial: true });
     expect(() => checkSiweMessage(coinbase.replace("Chain ID: 8453", "Chain ID: 1"), { host: "trylocke.online", now })).toThrow(/Base/);
     expect(() => checkSiweMessage(`${coinbase}\nNonce: ffffffffffffffff`, { host: "trylocke.online", now })).toThrow(/Invalid/);
     expect(() => checkSiweMessage(coinbase.replace("URI: https://trylocke.online\n", ""), { host: "trylocke.online", now })).toThrow(/Invalid/);
@@ -180,7 +213,7 @@ describe("Sign in with Base", () => {
   it("checks an ordinary wallet's signature locally", async () => {
     const m = msg();
     const sig = await acct.signMessage({ message: m });
-    expect(await signatureMatches(acct.address, m, sig)).toBe(true);
+    expect(await signatureMatches(acct.address, m, sig)).toBe("wallet");
     const other = privateKeyToAccount("0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a");
     expect(await signatureMatches(acct.address, m, await other.signMessage({ message: m }))).toBe(false);
   });

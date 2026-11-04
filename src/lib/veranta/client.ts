@@ -4,6 +4,7 @@
 
 import { config } from "../server/config";
 import {
+  IncompletePositionError,
   parseMarkets,
   parsePosition,
   type RawPosition,
@@ -77,7 +78,12 @@ export async function getPositions(trader: string): Promise<VerantaPosition[]> {
   // would let a glitch look like a closed hedge.
   const raw = body?.positions ?? body?.data?.positions;
   if (!Array.isArray(raw)) throw new VerantaError("Avantis positions: unexpected response", 502, body);
-  return (raw as RawPosition[]).map(parsePosition);
+  try {
+    return (raw as RawPosition[]).map(parsePosition);
+  } catch (e) {
+    if (e instanceof IncompletePositionError) throw new VerantaError(e.message, 502, body);
+    throw e;
+  }
 }
 
 export interface SignedPrice {
@@ -88,10 +94,29 @@ export interface SignedPrice {
   publishedAt: number;
 }
 
-/** The signed price Veranta's keepers post for a pair; null while its market is closed. */
-export async function getSignedPrice(pairIndex: number): Promise<SignedPrice | null> {
+/** A signed price older than this is treated as no price: the market is closed or the feed stalled. */
+export const PRICE_MAX_AGE_MS = 60_000;
+
+/**
+ * The signed price Veranta's keepers post for a pair; null while its market is closed, and when
+ * the answer has no usable price or a stale one, so nothing is sized or sent on it.
+ */
+export async function getSignedPrice(pairIndex: number, opts: { forDisplay?: boolean } = {}): Promise<SignedPrice | null> {
   const body = await getJson(`${config.verantaFeedUrl}/v2/pairs/${pairIndex}/price-update-data`, "Avantis price");
   const pro = body?.pro ?? body?.data?.pro;
-  if (!pro?.priceUpdateData) return null;
-  return { price: Number(pro.price), updateData: pro.priceUpdateData, publishedAt: Number(pro.publishTimestampMs) };
+  return readSignedPrice(pro, Date.now(), opts.forDisplay ? Infinity : PRICE_MAX_AGE_MS);
+}
+
+/** A price shown to people may be older (it says when it is from); one acted on may not. */
+export function readSignedPrice(
+  pro: { price?: unknown; priceUpdateData?: unknown; publishTimestampMs?: unknown } | null | undefined,
+  now = Date.now(),
+  maxAgeMs = PRICE_MAX_AGE_MS
+): SignedPrice | null {
+  if (!pro || typeof pro.priceUpdateData !== "string" || !/^0x[0-9a-fA-F]+$/.test(pro.priceUpdateData)) return null;
+  const price = Number(pro.price);
+  const publishedAt = Number(pro.publishTimestampMs);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  if (maxAgeMs !== Infinity && (!Number.isFinite(publishedAt) || now - publishedAt > maxAgeMs)) return null;
+  return { price, updateData: pro.priceUpdateData as `0x${string}`, publishedAt };
 }

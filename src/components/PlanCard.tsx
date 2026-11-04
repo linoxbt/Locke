@@ -54,7 +54,15 @@ export function PlanCard({ p }: { p: PlanRow }) {
         <div className="mt-auto pt-8">
           <div className="num text-[24px] leading-none sm:text-[28px]">{usd(p.sizing?.notionalUsd, 0)}</div>
           <div className={`mt-2 flex items-center justify-between text-[13px] ${SUBTLE[tone]}`}>
-            <span>{p.type === "holdings" ? "Protected value" : "Fuel spend hedged"}</span>
+            <span>
+              {p.status === "active"
+                ? p.type === "holdings"
+                  ? "Protected value"
+                  : "Fuel spend hedged"
+                : p.status === "closed"
+                  ? "Was protected"
+                  : "To protect once the hedge opens"}
+            </span>
             <span className="num">{market?.symbol}</span>
           </div>
         </div>

@@ -56,8 +56,8 @@ export interface BaseSizing {
   feesUsd: number;
   /** What the business deposits: collateral + buffer + fees, rounded up to the cent. */
   depositUsd: number;
-  /** The vault's on-chain limits: the keeper can never trade beyond them. */
-  limits: { maxLeverage: number; maxNotionalUsd: number };
+  /** On-chain limits (the keeper can never trade beyond them): the keeper's open is capped at maxNotionalUsd, the hedge's margin (top-ups included) at maxCollateralUsd. */
+  limits: { maxLeverage: number; maxNotionalUsd: number; maxCollateralUsd: number };
 }
 
 /** Room above today's notional for the keeper to re-hedge after prices move (on-chain cap). */
@@ -109,7 +109,15 @@ export function hedgeNotional(i: BasePlanInputs): number {
  * server can check a created vault against what the business asked for.
  */
 export function planLimits(i: BasePlanInputs): BaseSizing["limits"] {
-  return { maxLeverage: i.leverage, maxNotionalUsd: ceilCents(hedgeNotional(i) * NOTIONAL_HEADROOM) };
+  const notional = hedgeNotional(i);
+  const collateral = notional / i.leverage;
+  // The margin may grow by the whole buffer through top-ups, whatever the leverage; the open stays
+  // capped near the hedge's own size.
+  return {
+    maxLeverage: i.leverage,
+    maxNotionalUsd: ceilCents(notional * NOTIONAL_HEADROOM),
+    maxCollateralUsd: ceilCents(Math.max(collateral * NOTIONAL_HEADROOM, collateral * (1 + i.bufferPct / 100))),
+  };
 }
 
 export function sizeBasePlan(i: BasePlanInputs, m: MarketTerms): BaseSizing {
