@@ -17,7 +17,7 @@ Locke is not a trading terminal. Every screen is about an exposure the business 
 
 - **Sign in with Base.** Base Account (Coinbase Wallet) or any EVM wallet in the browser signs a Sign-In with Ethereum message. No transaction, no gas.
 - **A vault per plan.** The business's wallet approves USDC and calls `createVault` in one batch. The `LockeVault` contract (see `contracts/`) holds the USDC and is the trader on Avantis, so every payout comes back to it. Only the owner can withdraw.
-- **Limits on chain.** The vault caps market, side, leverage, hedge size and slippage. Locke's keeper can trade only within them and can never withdraw.
+- **Limits on chain.** The vault caps market, side, leverage, hedge size, margin and slippage. Locke's keeper can open and add margin only within them (one open an hour, one top-up every two minutes), can never close a hedge and can never withdraw.
 - **Margin kept topped up.** The keeper opens the hedge once the deposit is in and adds margin from the vault's buffer when margin use reaches 60%, back to about 35%.
 - **Exit any time.** Deposit, withdraw, close the hedge and remove the keeper all go straight from the owner's wallet to the vault, even if Locke is offline.
 - **Protected by Locke.** While a hedge is open, an [EAS](https://attest.org) attestation on Base says so; `/proof/[uid]` reads it straight from EAS.
@@ -116,7 +116,7 @@ cd contracts && npx hardhat test   # contract tests (FORK=1 with a Base RPC for 
 
 | Name | Where | Purpose |
 |---|---|---|
-| `DATABASE_URL` | app, keeper | Postgres URL (the Supabase pooler works for the app; the keeper needs the session pooler, port 5432, or a direct connection) |
+| `DATABASE_URL` | app, keeper | Postgres URL. The app uses Supabase's transaction pooler (6543); the keeper switches a Supabase 6543 URL to the session pooler (5432) itself, since its lock needs a session |
 | `DATABASE_POOL_MAX` | app, keeper | Connections per process (default `3`; keep 1–2 on Netlify with the transaction pooler) |
 | `DATABASE_PREPARE` | app, keeper | `false` to force prepared statements off (they're off automatically on port 6543) |
 | `SESSION_SECRET` | app | At least 32 characters; signs session cookies |
@@ -135,16 +135,16 @@ cd contracts && npx hardhat test   # contract tests (FORK=1 with a Base RPC for 
 ### Deploy
 
 - **App:** Netlify (`netlify.toml`, Next.js runtime). Set the variables above in the Netlify UI with the Functions scope and mark the secrets as secret.
-- **Keeper:** a Railway service from the same repo using `railway.base-keeper.json` (set it as the service's config file). It runs the schema migration before each deploy and starts `tsx worker/base-keeper.ts`, with `DATABASE_URL` (session pooler or direct: it refuses the transaction pooler), `BASE_FACTORY_ADDRESS`, `BASE_KEEPER_PRIVATE_KEY`, `BASE_BUILDER_CODE` and a paid `BASE_RPC_URL`. It answers `/healthz` (503 when it can't read Base or the database, is low on ETH, or a vault has failed for two minutes), holds an advisory lock so only one instance acts (exiting if its connection drops), and writes a heartbeat.
+- **Keeper:** a Railway service from the same repo, configured on the service itself (Railway's config-as-code is no longer used): pre-deploy `npx tsx scripts/migrate.ts`, start `node --import tsx worker/base-keeper.ts` (run by node directly so SIGTERM reaches it; `npx` doesn't pass it on), healthcheck `/healthz`, restart always. Variables: `DATABASE_URL`, `BASE_FACTORY_ADDRESS`, `BASE_KEEPER_PRIVATE_KEY`, `BASE_BUILDER_CODE` and a paid `BASE_RPC_URL`. `/healthz` answers 503 when rounds stop finishing, a vault has failed for two minutes, the keeper is low on ETH or its key is revoked; a new deploy waiting for the lock answers 200 while it keeps checking. One advisory lock keeps a single keeper acting; the watchdog exits if the lock or its connection is lost, or a round hangs for five minutes. SIGTERM finishes the vault in hand and exits. Every transaction is signed and its hash recorded before it is broadcast.
 - **Contracts:** `contracts/scripts/deploy.mjs` deploys the factory; the admin and guardian must be multisigs. See `contracts/README.md`.
-- **Health:** `/api/health` checks the session secret, the database and Avantis, and, once `BASE_FACTORY_ADDRESS` is set, that the keeper wrote a heartbeat in the last 5 minutes. Point an uptime monitor at it.
+- **Health:** `/api/health` checks the session secret, the database and Avantis, and, once `BASE_FACTORY_ADDRESS` is set, that the keeper wrote a heartbeat in the last 5 minutes reporting no failing vaults, enough gas and an unrevoked key. Point an uptime monitor at it.
 - **Database:** create a Supabase project, put its connection string in `DATABASE_URL`, and run `npm run db:migrate` (safe to re-run after every schema change).
 
 ## Security
 
 - **Sign-in** is Sign-In with Ethereum. Base Account answers `wallet_connect` with the signed message; other wallets sign it with `personal_sign`. The server checks the domain, URI, chain (8453), age (when the wallet includes one) and a single-use nonce that expires in 10 minutes, then the signature: recovered locally for ordinary wallets, verified on Base for smart wallets (ERC-1271, or ERC-6492 before deployment). Sessions are HMAC-signed, HTTP-only `__Host-` cookies that last 24 hours; signing out bumps a per-user version, which ends every session. Nonces are rate-limited per network (/24, /64) and globally.
 - **Vaults** are recorded only from their `VaultCreated` event in the creating transaction, after checking the owner is the signed-in account and that the limits on Base match the plan.
-- **The keeper** can't withdraw, and every trade stays inside the limits the vault enforces on chain. It simulates each transaction before sending it. The owner can remove it from their own wallet; Locke's guardian can cut it off from every vault at once.
+- **The keeper** can't withdraw or close, and every trade stays inside the limits the vault enforces on chain. It simulates each transaction before sending it. The owner can remove it from their own wallet; Locke's guardian can cut it off from every vault at once.
 - **Agent payments** are claimed once per (payer, nonce) before any work, and settle only when the call succeeded.
 - State-changing routes check `Origin` against the host, on top of `SameSite=Lax` cookies. Bodies are capped at 256 KB and every field is length-checked. Pages send CSP `frame-ancestors`/`object-src`/`base-uri`/`form-action` rules, HSTS and a Permissions-Policy.
 - Row-level security is enabled on every table with no policies, and the database's public API roles have no table access. The app and keeper use a server role.

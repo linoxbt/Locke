@@ -7,12 +7,25 @@ vault. Locke's keeper can steer the hedge within the owner's plan limits; it can
 | Role | Can | Can never |
 | --- | --- | --- |
 | Owner (the business's wallet) | Deposit, withdraw idle USDC, close any hedge, add or remove margin, set plan limits, replace or remove the keeper, hand the vault over (two steps), rescue other tokens | n/a |
-| Keeper (Locke's server) | `hedgeOpen` within the plan (market, side, max leverage, max notional, one position per market, one open per market per hour), `hedgeClose`, `topUpMargin` up to the plan's notional cap | Withdraw, change limits, remove margin, move USDC anywhere but Veranta (and the vault's fee, if it has one) |
+| Keeper (Locke's server: the factory's keeper, unless the owner picked another) | `hedgeOpen` within the plan (market, side, max leverage, max notional, max collateral, one position per market, one open per market per hour), `topUpMargin` up to the plan's collateral cap, one per market every two minutes | Close a hedge, withdraw, change limits, remove margin, move USDC anywhere but Veranta (and the vault's fee, if it has one) |
 | Guardian (Locke multisig, set on the factory) | Pause new deposits and new hedges for one vault or all of them | Block withdrawals, closes or top-ups |
-| Admin (Locke multisig, factory only) | Set the guardian, the keeper and fee for new vaults, the fee collector and the launch caps; two-step handover | Touch any vault's money, limits or keeper |
+| Admin (Locke multisig, factory only) | Set the guardian, the keeper (for every vault that follows the factory), the fee for new vaults, the fee collector and the launch caps; two-step handover (cancellable) | Touch any vault's money or limits, or the keeper of a vault whose owner picked their own |
 
 `LockeVaultFactory.createVault(pairIndex, plan, deposit)` deploys a clone owned by the caller, sets
-its first plan and funds it in one transaction. Vaults are not upgradeable.
+its first plan and funds it in one transaction. Vaults are not upgradeable. `vaultsOf(creator)` and
+`createdAtBlock(vault)` let the app find a vault it never recorded. The fee and its collector are
+set in the constructor, so a fresh factory needs no admin transaction before launch.
+
+**Second review (v2).** A plan now has a separate `maxCollateral`: at low leverage the notional cap
+left almost no room for top-ups, so the buffer couldn't be used. The keeper lost `hedgeClose` (it
+never needs it, and a stolen key could otherwise churn open/close fees); top-ups have a two-minute
+cooldown; a vault follows the factory's keeper by default, so rotating a compromised key reaches
+existing vaults (`setKeeper` picks the owner's own, `followFactoryKeeper` goes back); the owner may
+deposit while paused (to keep a hedge's buffer up); a zero wanted price is refused. Accepted as
+designed: market orders fill at the oracle price, so the wanted price only bounds movement before
+the fill (slippage is capped at 3%); the router and storage are fixed per vault (if Avantis moves,
+owners withdraw and create a new vault); `netDeposits` ignores fees paid out, which only makes the
+launch caps slightly stricter; a partly paid fee starts the 30-day period (in the owner's favour).
 
 **Locke's fee** is optional and fixed per vault when it is created: a share of the notional of each
 hedge the keeper opens, at most 0.20% (`MAX_FEE_BPS = 20`), paid to the factory's fee collector.
@@ -122,7 +135,7 @@ An independent review (Slither, a Base-fork proof of concept, and reading agains
 source) found these; all are fixed and tested:
 
 - **Fee on fill, not on request.** `hedgeOpen` now only records `feeOwed`; `settleFee` (anyone; the
-  keeper calls it once the hedge is open, and closes and top-ups settle it first) pays it once the
+  keeper calls it once the hedge is open and the vault holds the fee idle; closes and top-ups settle it first) pays it once the
   trade exists and cancels it if the order ended without one. A Veranta order that misses its
   slippage is never filled and its fee is never kept (`test/fork.fee.test.ts`, on the real Veranta).
   Paying never reverts, so a blocked collector or a short balance can't stop an owner's close.

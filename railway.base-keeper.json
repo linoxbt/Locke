@@ -3,7 +3,7 @@
   "build": { "builder": "RAILPACK", "buildCommand": "echo 'no build: the keeper runs from source with tsx'" },
   "deploy": {
     "preDeployCommand": ["npx tsx scripts/migrate.ts"],
-    "startCommand": "npx tsx worker/base-keeper.ts",
+    "startCommand": "node --import tsx worker/base-keeper.ts",
     "healthcheckPath": "/healthz",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ALWAYS",
