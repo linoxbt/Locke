@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPublicClient, custom, decodeEventLog, encodeFunctionData, type Address, type Hex, type TransactionReceipt } from "viem";
 import { base } from "viem/chains";
 import { BASE_MARKETS, erc20Abi, factoryAbi, USDC, usdcUnits, type BasePlanType } from "@/lib/base/contracts";
-import { providerFor, rememberedKind, sendBaseCalls, StillPendingError, waitForSent, walletErrorMessage, walletFor, type SentRef } from "@/lib/base/wallet";
+import { providerFor, rememberedKind, sendBaseCalls, SentFailedError, StillPendingError, waitForSent, walletErrorMessage, walletFor, type SentRef } from "@/lib/base/wallet";
 import { BasePlanError, parseBaseInputs, sizeBasePlan, type BasePlanInputs, type BaseSizing, type MarketTerms } from "@/lib/domain/basePlans";
 import { usd } from "@/lib/ui/format";
 import { CREATE_STEPS, Crumbs } from "../Crumbs";
@@ -177,6 +177,8 @@ export function NewVaultForm({
       return;
     }
     setStep("wallet");
+    // Set once the wallet has sent the batch: from then on only Base saying it failed frees the form.
+    let sentRef: SentRef | null = null;
     try {
       const wallet = await walletFor(address, dataSuffix);
       const reader = createPublicClient({
@@ -227,6 +229,7 @@ export function NewVaultForm({
         ],
         // From the moment the wallet sends it, the form never offers to create again: it follows this one.
         (sent) => {
+          sentRef = sent;
           const c: Created = { txHash: null, vault: null, inputs, sent };
           storeCreated(address, c);
           setCreated(c);
@@ -235,7 +238,10 @@ export function NewVaultForm({
       );
       await landed(receipts, inputs);
     } catch (e) {
-      if (e instanceof StillPendingError) {
+      // Sent, and anything but a definite failure (a timeout, a wallet or RPC hiccup): it may still
+      // land, so the form keeps following it rather than offering to create again.
+      if (e instanceof StillPendingError || (sentRef && !(e instanceof SentFailedError))) {
+        if (!(e instanceof StillPendingError)) setError(`${walletErrorMessage(e)} Your plan may still go through: check again before doing anything else.`);
         setStep("pending");
         return;
       }
@@ -291,13 +297,15 @@ export function NewVaultForm({
       const wallet = await walletFor(address, dataSuffix);
       await landed(await waitForSent(wallet, c.sent, 60_000), c.inputs);
     } catch (e) {
-      if (e instanceof StillPendingError) return setStep("pending");
-      if (/didn't go through/.test(String((e as Error).message))) {
+      if (e instanceof SentFailedError) {
         storeCreated(address, null);
         setCreated(null);
+        setError(walletErrorMessage(e));
+        return setStep("idle");
       }
-      setError(walletErrorMessage(e));
-      setStep("idle");
+      // Still pending, or the check itself failed: keep following it.
+      if (!(e instanceof StillPendingError)) setError(walletErrorMessage(e));
+      setStep("pending");
     }
   }
 

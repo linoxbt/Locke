@@ -100,6 +100,8 @@ create table if not exists base_income (
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
+alter table base_income add column if not exists inflight_nonce bigint;   -- the signed collection's nonce and bytes,
+alter table base_income add column if not exists inflight_raw text;       -- to resend it or know it can't land
 alter table base_income enable row level security;
 
 -- Agent API payments (x402) already used: one EIP-3009 authorization pays for one call, even when

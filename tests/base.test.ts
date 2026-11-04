@@ -66,6 +66,7 @@ describe("Base keeper decisions", () => {
     chainTrades: 0,
     goneRounds: 1,
     topUpSentAgoS: null,
+    topUpCooldownLeftS: 0,
   };
   // A $500 ETH short at 2x opened at 2,300.
   const short: VerantaPosition = {
@@ -130,6 +131,8 @@ describe("Base keeper decisions", () => {
     const thin = { ...base, status: "active" as const, position: short, idleUsd: 125, mark: 3200, chainTrades: 1, goneRounds: 0 };
     expect(decide({ ...thin, topUpSentAgoS: 20 }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("waiting for it to apply") });
     expect(decide({ ...thin, topUpSentAgoS: TOP_UP_RETRY_S + 1 }).action.kind).toBe("topUp");
+    // The vault's own two-minute spacing: wait for it rather than fail every round.
+    expect(decide({ ...thin, topUpCooldownLeftS: 40 }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("just added") });
     // Thin margin still adds margin on a close-only market.
     expect(decide({ ...thin, closeOnly: true }).action.kind).toBe("topUp");
   });

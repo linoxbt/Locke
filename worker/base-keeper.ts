@@ -41,7 +41,7 @@ import { EAS_ADDRESS, easAbi, PROTECTION_SCHEMA, PROTECTION_SCHEMA_UID, protecti
 import { builderSuffix } from "../src/lib/base/builderCode";
 import { baseMarket, erc20Abi, factoryAbi, fromUsdcUnits, tradingStorageAbi, LAZER_FEE_WEI, P10, PRICE_SOURCING_LAZER, USDC, usdcUnits, vaultAbi } from "../src/lib/base/contracts";
 import { collectIncomeAbi, incomeUsd, nextCollectionUsd, onChain, SPEND_PERMISSION_MANAGER, spendPermissionManagerAbi, type SpendPermission } from "../src/lib/base/income";
-import { decide, type VaultState, type VaultStatus } from "../src/lib/base/keeper";
+import { decide, TOP_UP_COOLDOWN_S, type VaultState, type VaultStatus } from "../src/lib/base/keeper";
 import type { BaseSizing } from "../src/lib/domain/basePlans";
 import type { RiskLevel } from "../src/lib/domain/types";
 import { basePublicClient } from "../src/lib/server/baseChain";
@@ -86,7 +86,16 @@ const DROPPED_AFTER_MS = 10 * 60_000;
  * means a crash at any point leaves a hash to look up, never a transaction Locke doesn't know it
  * sent. Locke's Builder Code rides on the calldata (ERC-8021; contracts ignore it).
  */
-async function broadcast(call: { address: Address; abi: Abi; functionName: string; args?: readonly unknown[]; value?: bigint }, record?: (hash: Hex) => Promise<unknown>): Promise<Hex> {
+/** What is kept of a signed transaction so it can be looked up, or sent again, after a restart. */
+interface Signed {
+  nonce: number;
+  raw: Hex;
+}
+
+async function broadcast(
+  call: { address: Address; abi: Abi; functionName: string; args?: readonly unknown[]; value?: bigint },
+  record?: (hash: Hex, signed: Signed) => Promise<unknown>
+): Promise<Hex> {
   const data = encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args } as never);
   const prepared = await wallet.prepareTransactionRequest({
     account,
@@ -97,16 +106,25 @@ async function broadcast(call: { address: Address; abi: Abi; functionName: strin
   });
   const signed = await wallet.signTransaction(prepared as never);
   const hash = keccak256(signed);
-  await record?.(hash);
+  await record?.(hash, { nonce: Number(prepared.nonce), raw: signed });
   await client.sendRawTransaction({ serializedTransaction: signed });
   return hash;
 }
 
-/** "mined", "pending" (still in a mempool), or "dropped" (unknown to the node: never sent, or replaced). */
-async function txState(hash: Hex): Promise<"mined" | "pending" | "dropped"> {
-  if (await client.getTransactionReceipt({ hash }).catch(() => null)) return "mined";
-  const tx = await client.getTransaction({ hash }).catch(() => null);
-  return tx ? "pending" : "dropped";
+/**
+ * "mined"; "dropped" only once another transaction of the keeper's has used its nonce, so it can
+ * never land later; otherwise "pending", and the stored signed transaction is sent again (the
+ * same bytes: it can land at most once). Without a stored nonce, an old record falls back to
+ * asking the node about the hash.
+ */
+async function txState(hash: Hex, signed?: Partial<Signed> | null): Promise<"mined" | "pending" | "dropped"> {
+  const mined = async () => !!(await client.getTransactionReceipt({ hash }).catch(() => null));
+  if (await mined()) return "mined";
+  if (signed?.nonce == null) return (await client.getTransaction({ hash }).catch(() => null)) ? "pending" : "dropped";
+  const used = await client.getTransactionCount({ address: account.address, blockTag: "latest" });
+  if (used > signed.nonce) return (await mined()) ? "mined" : "dropped";
+  if (signed.raw) await client.sendRawTransaction({ serializedTransaction: signed.raw }).catch(() => null);
+  return "pending";
 }
 /** Each vault's Avantis TradingStorage (fixed at creation) and how many looks in a row it showed no trade. */
 const storageOf = new Map<string, Address>();
@@ -137,18 +155,20 @@ async function snapshot(row: Row): Promise<VaultState> {
   }
   const onBase = (functionName: "openTradesCount" | "pendingMarketOpenCount") =>
     client.readContract({ address: storage!, abi: tradingStorageAbi, functionName, args: [vault, pair] });
-  const [idle, plan, paused, keeper, lastOpen, block, positions, price, market, openTrades, pendingOpens] = await Promise.all([
+  const [idle, plan, paused, keeper, lastOpen, block, positions, price, market, openTrades, pendingOpens, lastTopUp, owed] = await Promise.all([
     client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [vault] }),
     read<readonly [boolean, boolean, bigint, bigint, bigint]>("plans", [pair]),
     read<boolean>("paused"),
     read<Address>("keeper"),
     read<bigint>("lastOpenAt", [pair]),
     client.getBlock(),
-    getPositions(row.address),
+    getPositions(row.address, { pairIndex: row.pair_index }),
     getSignedPrice(row.pair_index),
     getMarket(row.pair_index),
     onBase("openTradesCount"),
     onBase("pendingMarketOpenCount"),
+    read<bigint>("lastTopUpAt", [pair]),
+    read<bigint>("feeOwed", [pair]),
   ]);
   const chainTrades = Number(openTrades) + Number(pendingOpens);
   const gone = chainTrades === 0 ? (goneRounds.get(row.address) ?? 0) + 1 : 0;
@@ -165,14 +185,15 @@ async function snapshot(row: Row): Promise<VaultState> {
   // A top-up in flight ends once Base shows a different margin (it applied), or after its retry window.
   let topUpSentAgoS = row.topup_sent_at ? (Date.now() - row.topup_sent_at.getTime()) / 1000 : null;
   if (topUpSentAgoS != null && (!position || Math.abs(position.collateralUsd - Number(row.topup_from_usd ?? 0)) > 0.005)) {
-    await db()`update base_vaults set topup_sent_at = null, topup_from_usd = null where address = ${row.address} and topup_sent_at = ${row.topup_sent_at}`;
+    await db()`update base_vaults set topup_sent_at = null, topup_from_usd = null where address = ${row.address}`;
     topUpSentAgoS = null;
   }
   return {
     status: row.status,
     sizing: row.sizing,
     prevLevel: row.risk_level,
-    idleUsd: fromUsdcUnits(idle),
+    // A fee still owed is paid from idle USDC before any margin moves, so it isn't there to use.
+    idleUsd: Math.max(0, fromUsdcUnits(idle) - fromUsdcUnits(owed)),
     planEnabled: plan[0],
     maxLeverage: Number(plan[2]) / 1e10,
     maxNotionalUsd: fromUsdcUnits(plan[3]),
@@ -188,6 +209,7 @@ async function snapshot(row: Row): Promise<VaultState> {
     chainTrades,
     goneRounds: gone,
     topUpSentAgoS,
+    topUpCooldownLeftS: Math.max(0, Number(lastTopUp) + TOP_UP_COOLDOWN_S - Number(block.timestamp)),
   };
 }
 
@@ -269,7 +291,7 @@ async function tend(row: Row) {
   if (row.status !== "active" && d.status === "active") await addVaultEvent(row.address, "info", "Hedge open on Avantis: the vault is protected");
   // Locke's fee is owed from the open and paid once Base shows the trade (whatever the API says yet).
   // Never holds up the hedge; the next round retries.
-  if (state.chainTrades > 0) await settleFee(row, state.idleUsd).catch((e) => log("settleFee", row.address, "failed:", reason(e)));
+  if (state.chainTrades > 0) await settleFee(row).catch((e) => log("settleFee", row.address, "failed:", reason(e)));
   // The public proof follows the hedge.
   if (d.status === "active") await attest(row).catch((e) => log("attest", row.address, "failed:", reason(e)));
   if (d.level !== row.risk_level && d.level !== "ok") await addVaultEvent(row.address, "action", `Margin ${Math.round((d.ratio ?? 0) * 100)}% used`, { level: d.level });
@@ -309,14 +331,15 @@ async function tend(row: Row) {
   }
 }
 
-async function settleFee(row: Row, idleUsd: number) {
+async function settleFee(row: Row) {
   const vault = getAddress(row.address);
   const pair = BigInt(row.pair_index);
   const owed = (await client.readContract({ address: vault, abi: vaultAbi, functionName: "feeOwed", args: [pair] })) as bigint;
   if (owed === 0n) return;
   // The vault pays what it holds idle; with less than the fee there, sending would only part-pay it
   // (or pay nothing) and spend gas every round. It is paid once the vault holds enough.
-  if (usdcUnits(idleUsd) < owed) return;
+  const idle = await client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [vault] });
+  if (idle < owed) return;
   // Paid only once the trade exists: while the order is still pending, there is nothing to send.
   const storage = storageOf.get(row.address);
   if (storage && (await client.readContract({ address: storage, abi: tradingStorageAbi, functionName: "openTradesCount", args: [vault, pair] })) === 0n) return;
@@ -331,7 +354,7 @@ async function settleFee(row: Row, idleUsd: number) {
  */
 async function resolvePendingAttestation(address: string): Promise<boolean> {
   const [pending] = await db()`
-    select e.detail->>'attestTx' as tx, e.created_at from base_vault_events e
+    select e.detail->>'attestTx' as tx, e.detail->>'nonce' as nonce, e.detail->>'raw' as raw, e.created_at from base_vault_events e
     where e.vault = ${address} and e.detail ? 'attestTx'
       and not exists (select 1 from base_vault_events r where r.vault = e.vault and r.detail->>'tx' = e.detail->>'attestTx')
     order by e.id desc limit 1`;
@@ -339,10 +362,11 @@ async function resolvePendingAttestation(address: string): Promise<boolean> {
   const hash = pending.tx as Hex;
   const receipt = await client.getTransactionReceipt({ hash }).catch(() => null);
   if (!receipt) {
-    // Not mined: still waiting, unless the node has never heard of it for a good while (it was
-    // never broadcast, or was replaced). Then it is closed off so a new one can be issued.
+    // Not mined: still waiting (sent again if need be), unless it can no longer land. Then it is
+    // closed off so a new one can be issued.
     const old = Date.now() - new Date(pending.created_at).getTime() > DROPPED_AFTER_MS;
-    if (old && (await txState(hash)) === "dropped") {
+    const signed = pending.nonce == null ? null : { nonce: Number(pending.nonce), raw: pending.raw as Hex };
+    if ((old || signed) && (await txState(hash, signed)) === "dropped") {
       await addVaultEvent(address, "info", "The proof didn't publish; Locke tries again", { tx: hash, failed: true }, hash);
       return false;
     }
@@ -370,8 +394,8 @@ async function attest(row: Row) {
   });
   await client.simulateContract({ account, address: EAS_ADDRESS, abi: easAbi, functionName: "attest", args: [request] });
   // Recorded before it is broadcast, so a timeout or restart resolves this transaction instead of sending another.
-  const hash = await broadcast({ address: EAS_ADDRESS, abi: easAbi as Abi, functionName: "attest", args: [request] }, (h) =>
-    addVaultEvent(row.address, "info", "Publishing the Protected by Locke proof on Base", { attestTx: h }, h)
+  const hash = await broadcast({ address: EAS_ADDRESS, abi: easAbi as Abi, functionName: "attest", args: [request] }, (h, s) =>
+    addVaultEvent(row.address, "info", "Publishing the Protected by Locke proof on Base", { attestTx: h, nonce: s.nonce, raw: s.raw }, h)
   );
   await client.waitForTransactionReceipt({ hash, timeout: 90_000 }).catch(() => null);
   await resolvePendingAttestation(row.address);
@@ -426,6 +450,8 @@ interface IncomeRow {
   inflight_tx: Hex | null;
   inflight_usd: string | null;
   inflight_at: Date | null;
+  inflight_nonce: number | null;
+  inflight_raw: Hex | null;
 }
 
 /** Blocks a USDC transfer must be under before it counts as income (shallow reorgs). */
@@ -439,7 +465,7 @@ async function collectIncome() {
   try {
     rows = (await db()`
       select i.vault, v.status as vault_status, i.permission, i.signature, i.share_pct, i.pending_usd, i.last_block,
-             i.inflight_tx, i.inflight_usd, i.inflight_at
+             i.inflight_tx, i.inflight_usd, i.inflight_at, i.inflight_nonce, i.inflight_raw
       from base_income i join base_vaults v on v.address = i.vault where i.status = 'on'`) as unknown as IncomeRow[];
   } catch (e) {
     if ((e as { code?: string }).code === "42P01") return; // not migrated yet
@@ -473,8 +499,11 @@ async function tendIncome(r: IncomeRow, latest: bigint) {
   if (r.inflight_tx) {
     const booked = await bookCollection(r.vault, r.inflight_tx, Number(r.inflight_usd));
     // Forgotten only once the node has never heard of it: one still in a mempool can still land.
-    if (booked === "waiting" && r.inflight_at && Date.now() - new Date(r.inflight_at).getTime() > INFLIGHT_DROPPED_MS && (await txState(r.inflight_tx)) === "dropped") {
-      await sql`update base_income set inflight_tx = null, inflight_usd = null, inflight_at = null where vault = ${r.vault} and inflight_tx = ${r.inflight_tx}`;
+    const signed = r.inflight_nonce == null ? null : { nonce: Number(r.inflight_nonce), raw: r.inflight_raw ?? undefined };
+    const old = r.inflight_at && Date.now() - new Date(r.inflight_at).getTime() > INFLIGHT_DROPPED_MS;
+    if (booked === "waiting" && (old || signed) && (await txState(r.inflight_tx, signed)) === "dropped") {
+      await sql`update base_income set inflight_tx = null, inflight_usd = null, inflight_at = null, inflight_nonce = null, inflight_raw = null
+                where vault = ${r.vault} and inflight_tx = ${r.inflight_tx}`;
       log("income", r.vault, "collection dropped:", r.inflight_tx);
     }
     return;
@@ -508,8 +537,8 @@ async function tendIncome(r: IncomeRow, latest: bigint) {
   const args = [p, approved ? "0x" : r.signature, usdcUnits(amount)] as const;
   await client.simulateContract({ account, address: vault, abi: collectIncomeAbi, functionName: "collectIncome", args });
   // Marked before it is broadcast: a timeout or restart books this transaction next round instead of sending another.
-  const hash = await broadcast({ address: vault, abi: collectIncomeAbi as Abi, functionName: "collectIncome", args }, (h) =>
-    sql`update base_income set inflight_tx = ${h}, inflight_usd = ${amount}, inflight_at = now() where vault = ${r.vault}`
+  const hash = await broadcast({ address: vault, abi: collectIncomeAbi as Abi, functionName: "collectIncome", args }, (h, s) =>
+    sql`update base_income set inflight_tx = ${h}, inflight_usd = ${amount}, inflight_at = now(), inflight_nonce = ${s.nonce}, inflight_raw = ${s.raw} where vault = ${r.vault}`
   );
   await client.waitForTransactionReceipt({ hash, timeout: 90_000 }).catch(() => null);
   await bookCollection(r.vault, hash, amount);
@@ -521,13 +550,13 @@ async function bookCollection(vaultAddr: string, hash: Hex, amount: number): Pro
   const receipt = await client.getTransactionReceipt({ hash }).catch(() => null);
   if (!receipt) return "waiting";
   if (receipt.status !== "success") {
-    await sql`update base_income set inflight_tx = null, inflight_usd = null, inflight_at = null where vault = ${vaultAddr} and inflight_tx = ${hash}`;
+    await sql`update base_income set inflight_tx = null, inflight_usd = null, inflight_at = null, inflight_nonce = null, inflight_raw = null where vault = ${vaultAddr} and inflight_tx = ${hash}`;
     log("income", vaultAddr, "collection reverted:", hash);
     return "failed";
   }
   const [row] = await sql`
     update base_income set pending_usd = greatest(pending_usd - ${amount}, 0), collected_usd = collected_usd + ${amount},
-      last_collected_at = now(), inflight_tx = null, inflight_usd = null, inflight_at = null, updated_at = now()
+      last_collected_at = now(), inflight_tx = null, inflight_usd = null, inflight_at = null, inflight_nonce = null, inflight_raw = null, updated_at = now()
     where vault = ${vaultAddr} and inflight_tx = ${hash} returning vault`;
   if (row) {
     log("collected income", vaultAddr, amount, hash);

@@ -150,7 +150,9 @@ export function paid<H extends Handler>(handler: H): H {
       // Submitted but not confirmed in time: it may still land and charge the agent, so it gets
       // what it paid for, and the payment stays claimed so it can't be used twice.
       const submitted = Boolean((settled as { transaction?: string }).transaction);
-      if (submitted || /time ?out|timed out|not confirmed|confirmation/i.test(`${settled.errorReason} ${settled.errorMessage ?? ""}`)) {
+      if (submitted || /\btime ?out\b|\btimed out\b/i.test(`${settled.errorReason} ${settled.errorMessage ?? ""}`)) {
+        // Counted as used: the authorization may still settle, so it can never pay for a second call.
+        await db()`update x402_payments set settled = true where payer = ${payer} and nonce = ${nonce}`.catch(() => {});
         const headers = new Headers(res.headers);
         headers.set("X-Payment-Settlement", "pending");
         return new Response(res.body, { status: res.status, headers });

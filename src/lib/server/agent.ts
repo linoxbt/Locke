@@ -8,6 +8,7 @@ import { BasePlanError, parseBaseInputs, sizeBasePlan, type BasePlanInputs, type
 import { verantaCarryPerDay } from "../domain/veranta";
 import { getMarket, getSignedPrice } from "../veranta/client";
 import { marketTerms, requireFactory } from "./baseVaults";
+import { factoryFeeBps } from "./basePages";
 import { config } from "./config";
 import { HttpError } from "./errors";
 
@@ -39,7 +40,7 @@ export interface AgentQuote {
 }
 
 export async function quote(inputs: BasePlanInputs): Promise<AgentQuote> {
-  const [m, price] = await Promise.all([getMarket(inputs.pairIndex), getSignedPrice(inputs.pairIndex).catch(() => null)]);
+  const [m, price] = await Promise.all([getMarket(inputs.pairIndex), getSignedPrice(inputs.pairIndex, { forDisplay: true }).catch(() => null)]);
   let sizing: BaseSizing;
   try {
     sizing = sizeBasePlan(inputs, marketTerms(m));
@@ -60,8 +61,12 @@ export async function planCalls(ownerRaw: unknown, inputs: BasePlanInputs) {
   if (typeof ownerRaw !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(ownerRaw)) throw new HttpError(400, "owner must be the address that will own the vault");
   const owner = getAddress(ownerRaw);
   const factory = requireFactory();
-  const q = await quote(inputs);
-  const deposit = usdcUnits(q.sizing.depositUsd);
+  const [q, feeBps] = await Promise.all([quote(inputs), factoryFeeBps()]);
+  if (feeBps == null) throw new HttpError(503, "Locke couldn't read its fee from Base just now. Try again shortly.");
+  // As in the app: the deposit covers Locke's fee too, so paying it never eats the hedge's buffer.
+  const lockeFeeUsd = Math.ceil(((q.sizing.notionalUsd * feeBps) / 10_000) * 100) / 100;
+  const depositUsd = Math.round((q.sizing.depositUsd + lockeFeeUsd) * 100) / 100;
+  const deposit = usdcUnits(depositUsd);
   const plan = {
     enabled: true,
     buy: q.sizing.buy,
@@ -73,11 +78,13 @@ export async function planCalls(ownerRaw: unknown, inputs: BasePlanInputs) {
   const suffix = builderSuffix(config.baseBuilderCode);
   const withCode = (data: Hex) => (suffix ? concatHex([data, suffix]) : data);
   const calls: { to: Address; data: Hex; value: "0x0"; description: string }[] = [
-    { to: USDC, data: withCode(encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [factory, deposit] })), value: "0x0", description: `Approve ${q.sizing.depositUsd} USDC for Locke's vault factory` },
+    { to: USDC, data: withCode(encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [factory, deposit] })), value: "0x0", description: `Approve ${depositUsd} USDC for Locke's vault factory` },
     { to: factory, data: withCode(encodeFunctionData({ abi: factoryAbi, functionName: "createVault", args: [BigInt(inputs.pairIndex), plan, deposit] })), value: "0x0", description: "Create the vault, owned by the sender, with these limits and deposit" },
   ];
   return {
     ...q,
+    lockeFeeUsd,
+    depositUsd,
     owner,
     chainId: 8453,
     calls,

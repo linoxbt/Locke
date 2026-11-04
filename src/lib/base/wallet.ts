@@ -233,7 +233,13 @@ export class StillPendingError extends Error {
   }
 }
 
-const sentFailed = () => new Error("The transaction didn't go through. Nothing was moved; check your wallet and try again.");
+/** Base says the calls failed (a failed bundle or a reverted receipt): nothing happened, so trying again is safe. */
+export class SentFailedError extends Error {
+  constructor() {
+    super("The transaction didn't go through. Nothing was moved; check your wallet and try again.");
+  }
+}
+const sentFailed = () => new SentFailedError();
 const timedOut = (e: unknown) => /timeout|timed out/i.test(`${(e as Error)?.name ?? ""} ${(e as Error)?.message ?? ""}`);
 
 /**

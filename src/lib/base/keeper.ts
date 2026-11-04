@@ -42,6 +42,8 @@ export interface VaultState {
   goneRounds: number;
   /** A margin top-up was sent and Base doesn't show the new margin yet (null: none in flight). */
   topUpSentAgoS: number | null;
+  /** Seconds until the vault allows the next top-up on this market (two minutes between them). */
+  topUpCooldownLeftS: number;
 }
 
 export type KeeperAction =
@@ -65,6 +67,8 @@ export const OPEN_RETRY_S = 120;
 export const CLOSE_CONFIRM_ROUNDS = 2;
 /** Margin use is capped here for display and storage (equity at or below zero reads as Infinity). */
 const MAX_RATIO = 10;
+/** The vault's own minimum time between top-ups on one market (LockeVault.TOP_UP_COOLDOWN). */
+export const TOP_UP_COOLDOWN_S = 120;
 /** Wait this long for Avantis to apply a top-up before sending another (they apply in seconds). */
 export const TOP_UP_RETRY_S = 180;
 /** Top-ups smaller than this aren't worth a transaction. */
@@ -101,6 +105,7 @@ export function decide(v: VaultState): KeeperDecision {
     if (ratio < LOCKE_THRESHOLDS.action) return { status: "active", ratio, level, action: { kind: "wait", note: null } };
     // A top-up already on its way: wait for Base to show it rather than send a second one.
     if (v.topUpSentAgoS != null && v.topUpSentAgoS < TOP_UP_RETRY_S) return wait("active", "Adding margin on Avantis; waiting for it to apply.", ratio, level);
+    if (v.topUpCooldownLeftS > 0) return wait("active", "Margin was just added; Locke adds more in a moment if it's still needed.", ratio, level);
     if (!v.keeperIsUs) return wait("active", "Margin is getting thin, and Locke's keeper is removed: add margin or close the hedge.", ratio, level);
     if (!v.marketOpen) return wait("active", "Margin is getting thin and the market is closed; Locke adds margin when it reopens.", ratio, level);
 

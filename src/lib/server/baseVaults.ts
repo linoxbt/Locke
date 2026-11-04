@@ -261,7 +261,7 @@ export async function vaultDetail(uid: string, address: string): Promise<VaultVi
       partial.push("Base");
       return null;
     }),
-    getPositions(vault).catch(() => {
+    getPositions(vault, { pairIndex: market.pairIndex }).catch(() => {
       partial.push("Avantis");
       return null;
     }),

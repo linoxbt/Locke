@@ -71,19 +71,27 @@ export async function getMarket(symbolOrIndex: string | number): Promise<Veranta
 }
 
 /** A vault's open positions as Veranta reports them (with its liquidation price and accrued fees). */
-export async function getPositions(trader: string): Promise<VerantaPosition[]> {
+/**
+ * With `pairIndex`, an incomplete entry for another pair is left out rather than failing the
+ * read: one bad record mustn't stop the keeper tending this pair's hedge.
+ */
+export async function getPositions(trader: string, opts: { pairIndex?: number } = {}): Promise<VerantaPosition[]> {
   if (!/^0x[0-9a-fA-F]{40}$/.test(trader)) throw new VerantaError("Not an address", 400, null);
   const body = await getJson(`${config.verantaApiUrl}/core/user-data?trader=${trader}`, "Avantis positions");
   // An answer without a positions list is an error, never "no positions": reading it as empty
   // would let a glitch look like a closed hedge.
   const raw = body?.positions ?? body?.data?.positions;
   if (!Array.isArray(raw)) throw new VerantaError("Avantis positions: unexpected response", 502, body);
-  try {
-    return (raw as RawPosition[]).map(parsePosition);
-  } catch (e) {
-    if (e instanceof IncompletePositionError) throw new VerantaError(e.message, 502, body);
-    throw e;
+  const out: VerantaPosition[] = [];
+  for (const r of raw as RawPosition[]) {
+    try {
+      out.push(parsePosition(r));
+    } catch (e) {
+      if (!(e instanceof IncompletePositionError)) throw e;
+      if (opts.pairIndex === undefined || Number(r.pairIndex) === opts.pairIndex) throw new VerantaError(e.message, 502, body);
+    }
   }
+  return out;
 }
 
 export interface SignedPrice {
