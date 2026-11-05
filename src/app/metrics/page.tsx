@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 /** Chart colours for plan types, validated together on the light surface (cobalt, orange). */
 const TYPE_COLOR = { holdings: "#2343ff", costs: "#eb6834" } as const;
 /** The keeper's gas floor (worker/base-keeper.ts MIN_GAS_ETH): below it, it reports itself unhealthy. */
-const KEEPER_GAS_FLOOR_ETH = 0.0005;
+const KEEPER_GAS_FLOOR_ETH = 0.0002;
 
 const count = (n: number) => n.toLocaleString("en-US");
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });

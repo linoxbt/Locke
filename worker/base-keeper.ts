@@ -56,8 +56,8 @@ const LOOP_MS = 15_000;
 const LOCK = 7_310_001; // advisory lock id: one active Base keeper
 /** Slippage allowed on an open: 1% (Veranta's 1e10 = 1%). */
 const SLIPPAGE = P10;
-/** Below this the keeper can't pay for its transactions; health goes red well before it runs out. */
-const MIN_GAS_ETH = parseEther("0.0005");
+/** Below this the keeper may soon be unable to pay for its transactions (on Base one costs about 0.000001–0.00003 ETH, so this still covers well over a hundred): health goes red well before it runs out. */
+const MIN_GAS_ETH = parseEther("0.0002");
 /** Blocks of USDC transfers read per call when counting income (public RPCs cap log ranges). */
 const SCAN_BLOCKS = 1000n;
 const USDC_TRANSFER = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
