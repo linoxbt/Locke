@@ -68,10 +68,21 @@ export function readSiweMessage(message: string): SiweFields {
   return { domain: head?.domain, address: head?.address as Address | undefined, fields };
 }
 
-/** An EIP-4361 date-time; undefined when absent, NaN when present but malformed. */
+/**
+ * An EIP-4361 date-time; undefined when absent, NaN when present but unreadable. Wallets that
+ * write another ISO-8601 shape (no seconds fraction rules, a space for the T) are still read.
+ */
 function time(v: string | undefined): number | undefined {
   if (v === undefined) return undefined;
-  return DATE_TIME.test(v) ? new Date(v).getTime() : Number.NaN;
+  if (DATE_TIME.test(v)) return new Date(v).getTime();
+  const t = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(v) ? Date.parse(v.replace(" ", "T")) : Number.NaN;
+  return Number.isFinite(t) ? t : Number.NaN;
+}
+
+/** Why a sign-in message was refused, logged (never the message, which names the account). */
+function refuse(reason: string, status = 400, text = "Invalid sign-in message"): never {
+  console.warn(`[siwe] refused: ${reason}`);
+  throw new HttpError(status, text);
 }
 
 /**
@@ -83,28 +94,32 @@ export function checkSiweMessage(message: string, expected: { host: string; now?
   if (typeof message !== "string" || message.length > 4096) throw new HttpError(400, "Invalid sign-in message");
   const { domain, address, fields: f } = readSiweMessage(message);
   const now = expected.now ?? Date.now();
-  if (!address || !domain || !f.nonce || !f.uri || !f.chainId || (f.version !== undefined && f.version !== "1")) {
+  if (!address || !domain || !f.nonce || !f.uri || !f.chainId || (f.version !== undefined && !/^1(\.0)?$/.test(f.version))) {
     // Which parts were missing, so a wallet whose message can't be read can be diagnosed; not the
     // message itself, which names the account.
     const present = [domain && "domain", address && "address", ...Object.keys(f)].filter(Boolean).join(",");
     console.warn(`[siwe] unreadable sign-in message (${message.length} chars; has ${present || "nothing"})`);
     throw new HttpError(400, "Invalid sign-in message");
   }
-  if (domain !== expected.host) throw new HttpError(400, "This sign-in was made for another site");
-  let uriHost: string;
+  if (domain !== expected.host) refuse(`domain ${domain.length} chars, not this site`, 400, "This sign-in was made for another site");
+  // The URI is this site; some wallets write it without the scheme.
+  let uriHost: string | null = null;
   try {
-    uriHost = new URL(f.uri).host;
+    uriHost = new URL(/^[a-z][a-z0-9+\-.]*:\/\//i.test(f.uri) ? f.uri : `https://${f.uri}`).host;
   } catch {
-    throw new HttpError(400, "Invalid sign-in message");
+    refuse("uri unreadable");
   }
-  if (uriHost !== expected.host) throw new HttpError(400, "This sign-in was made for another site");
-  if (!/^\d+$/.test(f.chainId) || Number(f.chainId) !== BASE_CHAIN_ID) throw new HttpError(400, "Sign in on Base");
+  if (uriHost !== expected.host) refuse("uri for another site", 400, "This sign-in was made for another site");
+  const chain = f.chainId.replace(/^eip155:/i, "");
+  if (!/^\d+$/.test(chain) || Number(chain) !== BASE_CHAIN_ID) refuse(`chain ${f.chainId.slice(0, 20)}`, 400, "Sign in on Base");
   const [issuedAt, expiresAt, notBefore] = [time(f.issuedAt), time(f.expirationTime), time(f.notBefore)];
-  if ([issuedAt, expiresAt, notBefore].some((t) => Number.isNaN(t))) throw new HttpError(400, "Invalid sign-in message");
-  if (issuedAt !== undefined && (issuedAt > now + SKEW_MS || now - issuedAt > MAX_AGE_MS)) throw new HttpError(400, "This sign-in expired. Try again.");
-  if (expiresAt !== undefined && expiresAt <= now) throw new HttpError(400, "This sign-in expired. Try again.");
-  if (notBefore !== undefined && notBefore > now + SKEW_MS) throw new HttpError(400, "This sign-in isn't valid yet");
-  if (!/^[A-Za-z0-9]{8,64}$/.test(f.nonce)) throw new HttpError(400, "Invalid sign-in message");
+  if ([issuedAt, expiresAt, notBefore].some((t) => Number.isNaN(t))) refuse("a date is unreadable");
+  if (issuedAt !== undefined && (issuedAt > now + SKEW_MS || now - issuedAt > MAX_AGE_MS))
+    refuse("issued-at outside the window", 400, "This sign-in expired. Try again.");
+  if (expiresAt !== undefined && expiresAt <= now) refuse("expired", 400, "This sign-in expired. Try again.");
+  if (notBefore !== undefined && notBefore > now + SKEW_MS) refuse("not-before in the future", 400, "This sign-in isn't valid yet");
+  // Locke issues the nonce and spends it once; this only keeps junk out of the lookup.
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(f.nonce)) refuse("nonce shape");
   return { address: getAddress(address), nonce: f.nonce, partial: f.version === undefined || f.issuedAt === undefined };
 }
 
@@ -140,11 +155,13 @@ export async function verifySignIn(input: { message: string; signature: string }
     throw new HttpError(400, "Invalid signature");
   }
   const fields = checkSiweMessage(input.message, { host });
-  if (!(await consumeNonce(fields.nonce))) throw new HttpError(400, "This sign-in expired. Try again.");
+  if (!(await consumeNonce(fields.nonce))) refuse("nonce unknown, used or old", 400, "This sign-in expired. Try again.");
   const signer = await signatureMatches(fields.address, input.message, input.signature as Hex);
-  if (!signer) throw new HttpError(401, "That signature isn't from this account. Try signing in again.");
-  // Only Base Account leaves out Version and Issued At. An ordinary wallet's message must be the
-  // full EIP-4361 one Locke asked it to sign.
-  if (fields.partial && signer === "wallet") throw new HttpError(400, "Invalid sign-in message");
+  if (!signer) {
+    console.warn(`[siwe] refused: signature does not match (${input.signature.length} chars)`);
+    throw new HttpError(401, "That signature isn't from this account. Try signing in again.");
+  }
+  // A message without Version or Issued At (Base Account writes those) is as safe as a full one:
+  // its nonce is Locke's, single use, and at most 10 minutes old. Whatever signed it, it counts.
   return fields.address.toLowerCase();
 }

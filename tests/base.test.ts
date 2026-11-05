@@ -193,6 +193,10 @@ describe("Sign in with Base", () => {
     expect(() => checkSiweMessage(coinbase.replace("Chain ID: 8453", "Chain ID: 1"), { host: "trylocke.online", now })).toThrow(/Base/);
     expect(() => checkSiweMessage(`${coinbase}\nNonce: ffffffffffffffff`, { host: "trylocke.online", now })).toThrow(/Invalid/);
     expect(() => checkSiweMessage(coinbase.replace("URI: https://trylocke.online\n", ""), { host: "trylocke.online", now })).toThrow(/Invalid/);
+    // Other shapes wallets write: a URI with no scheme, a CAIP chain id, a space for the T.
+    const loose = coinbase.replace("URI: https://", "URI: ").replace("Chain ID: 8453", "Chain ID: eip155:8453") + `\nIssued At: 2026-10-29 14:59:30Z`;
+    expect(checkSiweMessage(loose, { host: "trylocke.online", now }).nonce).toBe("a1b2c3d4e5f60718");
+    expect(() => checkSiweMessage(loose.replace("URI: trylocke.online", "URI: evil.example"), { host: "trylocke.online", now })).toThrow(/another site/);
     const evil = multi.replace("trylocke.online wants", "evil.example wants");
     expect(() => checkSiweMessage(evil, { host: "trylocke.online", now })).toThrow(/another site/);
   });

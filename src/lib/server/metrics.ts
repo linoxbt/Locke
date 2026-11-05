@@ -6,6 +6,7 @@ import { BASE_MARKETS, baseMarket, factoryAbi, fromUsdcUnits } from "../base/con
 import { basePublicClient } from "./baseChain";
 import { config } from "./config";
 import { db } from "./db";
+import { getSignedPrice } from "../veranta/client";
 
 export const RANGES = [7, 30, 90] as const;
 export type RangeDays = (typeof RANGES)[number];
@@ -30,7 +31,8 @@ export interface Metrics {
   /** Plans by status (funding, opening, active, closed). */
   byStatus: Record<string, number>;
   /** Active hedges by market: USD and count, in BASE_MARKETS order (stocks only when they have a plan). */
-  byMarket: { symbol: string; label: string; usd: number; plans: number }[];
+  /** Each market with its last Veranta price (null when it couldn't be read). */
+  byMarket: { symbol: string; label: string; type: string; usd: number; plans: number; price: number | null }[];
   /** Active hedge value by plan type. */
   byType: { holdings: number; costs: number; stocks: number };
   /** Daily protected value over the range. */
@@ -165,6 +167,9 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
   const byStatus: Record<string, number> = { funding: 0, opening: 0, active: 0, closed: 0 };
   for (const s of statuses) byStatus[String(s.status)] = num(s.n);
   const byPair = new Map(markets.map((m) => [Number(m.pair_index), m]));
+  // Crypto, oil, the two indexes and the largest stocks always; any other stock once it has a plan.
+  const shown = BASE_MARKETS.filter((m, i) => m.type !== "stocks" || i < FEATURED_UNTIL || num(byPair.get(m.pairIndex)?.n) > 0);
+  const prices = await lastPrices(shown.map((m) => m.pairIndex));
   const byType = { holdings: 0, costs: 0, stocks: 0 };
   for (const t of types) byType[t.type === "costs" ? "costs" : t.type === "stocks" ? "stocks" : "holdings"] = num(t.usd);
 
@@ -177,10 +182,14 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
     plansCreated: num(totals.created),
     plansCreatedInRange: num(totals.created_in_range),
     byStatus,
-    // The crypto and oil markets always; a stock only once it has a live plan (there are dozens).
-    byMarket: BASE_MARKETS.map((m) => ({ symbol: m.symbol, label: m.label, type: m.type, usd: num(byPair.get(m.pairIndex)?.usd), plans: num(byPair.get(m.pairIndex)?.n) }))
-      .filter((m) => m.type !== "stocks" || m.plans > 0)
-      .map(({ type: _type, ...m }) => m),
+    byMarket: shown.map((m) => ({
+      symbol: m.symbol,
+      label: m.label,
+      type: m.type,
+      usd: num(byPair.get(m.pairIndex)?.usd),
+      plans: num(byPair.get(m.pairIndex)?.n),
+      price: prices.get(m.pairIndex) ?? null,
+    })),
     byType,
     protectedSeries: protectedRows.map((r) => ({ t: new Date(r.day).toISOString(), v: num(r.usd) })),
     createdSeries: createdRows.map((r) => ({ t: new Date(r.t).toISOString(), v: num(r.n) })),
@@ -209,6 +218,26 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
 /** The dashboard's figures, computed at most once a minute per server and range. */
 const TTL_MS = 60_000;
 const cached = new Map<RangeDays, { at: number; value: Promise<Metrics> }>();
+
+/** BASE_MARKETS up to here is crypto, oil, US500, US100 and the seven largest stocks. */
+const FEATURED_UNTIL = BASE_MARKETS.findIndex((m) => m.asset === "GOOG") + 1;
+
+/** Last prices for display, read together; a market that doesn't answer within 4 s shows none. */
+async function lastPrices(pairs: number[]): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  const timeout = new Promise<void>((r) => setTimeout(r, 4_000));
+  await Promise.race([
+    Promise.all(
+      pairs.map((p) =>
+        getSignedPrice(p, { forDisplay: true })
+          .then((x) => x && out.set(p, x.price))
+          .catch(() => undefined),
+      ),
+    ),
+    timeout,
+  ]);
+  return new Map(out);
+}
 
 export function cachedMetrics(range: RangeDays): Promise<Metrics> {
   const hit = cached.get(range);

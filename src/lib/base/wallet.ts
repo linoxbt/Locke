@@ -140,10 +140,20 @@ async function switchToBase(provider: EIP1193Provider) {
   }
 }
 
+/** A server refusal, with its HTTP status. */
+class HttpStatusError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
+  if (!res.ok) throw new HttpStatusError(data?.error ?? `Request failed (${res.status})`, res.status);
   return data as T;
 }
 
@@ -153,44 +163,50 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
  */
 export async function signInWithBase(kind: WalletKind): Promise<string> {
   const provider = await providerFor(kind);
-  const { nonce } = await postJson<{ nonce: string }>("/api/base/auth/nonce", {});
+  let { nonce } = await postJson<{ nonce: string }>("/api/base/auth/nonce", {});
   await switchToBase(provider);
 
   let address: Address | null = null;
-  let message: string | null = null;
-  let signature: Hex | null = null;
   try {
     const res = (await provider.request({
       method: "wallet_connect" as never,
       params: [{ version: "1", capabilities: { signInWithEthereum: { nonce, chainId: BASE_HEX } } }] as never,
     })) as { accounts: { address: Address; capabilities?: { signInWithEthereum?: { message: string; signature: Hex } } }[] };
     const acct = res.accounts?.[0];
-    if (acct?.capabilities?.signInWithEthereum) {
-      address = acct.address;
-      message = acct.capabilities.signInWithEthereum.message;
-      signature = acct.capabilities.signInWithEthereum.signature;
+    const siwe = acct?.capabilities?.signInWithEthereum;
+    if (acct?.address) address = getAddress(acct.address);
+    if (siwe?.message && siwe.signature) {
+      try {
+        const out = await postJson<{ address: string }>("/api/base/auth/verify", { message: siwe.message, signature: siwe.signature });
+        rememberKind(kind);
+        return out.address;
+      } catch (e) {
+        // The wallet wrote its own message and Locke couldn't accept it: sign Locke's instead,
+        // with a fresh nonce (the first may be spent).
+        if (!(e instanceof HttpStatusError) || e.status !== 400) throw e;
+        ({ nonce } = await postJson<{ nonce: string }>("/api/base/auth/nonce", {}));
+      }
     }
   } catch (e) {
     if (!unsupported(e)) throw e;
   }
 
-  if (!message || !signature || !address) {
+  if (!address) {
     const [first] = (await provider.request({ method: "eth_requestAccounts" })) as Address[];
     if (!first) throw new Error("The wallet didn't share an account.");
     address = getAddress(first);
-    message = createSiweMessage({
-      domain: window.location.host,
-      address,
-      statement: "Sign in to Locke on Base.",
-      uri: window.location.origin,
-      version: "1",
-      chainId: BASE_CHAIN_ID,
-      nonce,
-      issuedAt: new Date(),
-    });
-    signature = (await provider.request({ method: "personal_sign", params: [toHex(message), address] })) as Hex;
   }
-
+  const message = createSiweMessage({
+    domain: window.location.host,
+    address,
+    statement: "Sign in to Locke on Base.",
+    uri: window.location.origin,
+    version: "1",
+    chainId: BASE_CHAIN_ID,
+    nonce,
+    issuedAt: new Date(),
+  });
+  const signature = (await provider.request({ method: "personal_sign", params: [toHex(message), address] })) as Hex;
   const out = await postJson<{ address: string }>("/api/base/auth/verify", { message, signature });
   rememberKind(kind);
   return out.address;

@@ -128,12 +128,7 @@ export default async function MetricsPage({ searchParams }: { searchParams: Prom
           <TimeChart points={m.createdSeries as TimePoint[]} kind="columns" format="count" week={m.createdBucket === "week"} label={`Plans created per ${m.createdBucket}`} empty="No plans created in this period yet" />
         </ChartCard>
 
-        <ChartCard
-          title="Protected by market"
-          sub="Open hedges on Veranta, by the market they hedge on"
-          table={m.byMarket.map((r) => [r.symbol, usd(r.usd, 0), count(r.plans)])}
-          columns={["Market", "Protected", "Plans"]}
-        >
+        <ChartCard title="Protected by market" sub="Open hedges on Veranta, by the market they hedge on, with each market's last price">
           <MarketBars rows={m.byMarket} />
         </ChartCard>
       </div>
@@ -253,8 +248,9 @@ function ChartCard({
 }: {
   title: string;
   sub: string;
-  table: string[][];
-  columns: string[];
+  /** A table of the chart's figures, for charts that don't print every value. */
+  table?: string[][];
+  columns?: string[];
   className?: string;
   children: React.ReactNode;
 }) {
@@ -265,36 +261,38 @@ function ChartCard({
         <p className="mt-1 text-[13px] text-ink-2">{sub}</p>
       </div>
       {children}
-      <details className="group text-[13px]">
-        <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-ink-2 hover:text-ink">
-          <span className="group-open:hidden">View as table</span>
-          <span className="hidden group-open:inline">Hide table</span>
-        </summary>
-        <div className="mt-3 max-h-64 overflow-auto rounded-xl ring-1 ring-line">
-          <table className="w-full text-left">
-            <thead className="sticky top-0 bg-mist text-[12px] text-ink-2">
-              <tr>
-                {columns.map((c, i) => (
-                  <th key={c} className={`px-3 py-2 font-medium ${i ? "text-right" : ""}`}>
-                    {c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="num">
-              {table.map((row, r) => (
-                <tr key={r} className="border-t border-line">
-                  {row.map((cell, i) => (
-                    <td key={i} className={`px-3 py-1.5 ${i ? "text-right" : ""}`}>
-                      {cell}
-                    </td>
+      {table && columns && (
+        <details className="group text-[13px]">
+          <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-ink-2 hover:text-ink">
+            <span className="group-open:hidden">View as table</span>
+            <span className="hidden group-open:inline">Hide table</span>
+          </summary>
+          <div className="mt-3 max-h-64 overflow-auto rounded-xl ring-1 ring-line">
+            <table className="w-full text-left">
+              <thead className="sticky top-0 bg-mist text-[12px] text-ink-2">
+                <tr>
+                  {columns.map((c, i) => (
+                    <th key={c} className={`px-3 py-2 font-medium ${i ? "text-right" : ""}`}>
+                      {c}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+              </thead>
+              <tbody className="num">
+                {table.map((row, r) => (
+                  <tr key={r} className="border-t border-line">
+                    {row.map((cell, i) => (
+                      <td key={i} className={`px-3 py-1.5 ${i ? "text-right" : ""}`}>
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
     </Card>
   );
 }
@@ -324,27 +322,49 @@ function Meter({ used, cap }: { used: number | null; cap: number | null }) {
   );
 }
 
-/** One measure across four markets: one colour, value at the bar's tip. */
+/** A price as a market board shows it: cents under $1,000, whole cents above too, never more. */
+const price = (v: number | null) => (v == null ? "—" : usd(v, v < 1 ? 4 : 2));
+
+/** Each market: its last price, then value protected as one colour with the value at the bar's tip. */
 function MarketBars({ rows }: { rows: Metrics["byMarket"] }) {
   const max = Math.max(0, ...rows.map((r) => r.usd));
+  const grid = "grid grid-cols-[96px_84px_1fr] items-center gap-3 sm:grid-cols-[120px_104px_1fr]";
   return (
-    <ul className="flex flex-col gap-4 py-1">
-      {rows.map((r) => {
-        const w = max > 0 ? (r.usd / max) * 100 : 0;
-        return (
-          <li key={r.symbol} className="grid grid-cols-[92px_1fr] items-center gap-3 sm:grid-cols-[110px_1fr]">
-            <div className="min-w-0">
-              <div className="num text-[13px]">{r.symbol}</div>
-              <div className="truncate text-[11px] text-ink-3">{r.plans === 1 ? "1 plan" : `${count(r.plans)} plans`}</div>
-            </div>
-            <div className="flex items-center gap-2.5" title={`${r.symbol}: ${usd(r.usd, 0)}`}>
-              {w > 0 ? <span className="h-3 rounded-r-[4px] bg-cobalt" style={{ width: `calc(${w}% - 64px)`, minWidth: 4 }} /> : <span className="h-3 w-px bg-line" />}
-              <span className="num shrink-0 text-[13px] text-ink">{usd(r.usd, 0)}</span>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="py-1">
+      <div className={`${grid} border-b border-line pb-2 text-[11px] text-ink-3`} aria-hidden>
+        <span>Market</span>
+        <span className="text-right">Last price</span>
+        <span>Protected</span>
+      </div>
+      <ul className="flex flex-col">
+        {rows.map((r) => {
+          const w = max > 0 ? (r.usd / max) * 100 : 0;
+          return (
+            <li key={r.symbol} className={`${grid} border-b border-line/60 py-2.5 last:border-b-0`}>
+              <div className="min-w-0">
+                <div className="num text-[13px]">{r.symbol}</div>
+                <div className="truncate text-[11px] text-ink-3">{r.plans === 1 ? "1 plan" : `${count(r.plans)} plans`}</div>
+              </div>
+              <div className="num text-right text-[13px]" aria-label={`${r.symbol} last price ${price(r.price)}`}>
+                {price(r.price)}
+              </div>
+              <div className="flex min-w-0 items-center gap-2.5" title={`${r.symbol}: ${usd(r.usd, 0)} protected`}>
+                {w > 0 ? (
+                  <span className="h-3 rounded-r-[4px] bg-cobalt" style={{ width: `calc(${w}% - 64px)`, minWidth: 4 }} />
+                ) : (
+                  <span className="h-3 w-px bg-line" />
+                )}
+                <span className="num shrink-0 text-[13px] text-ink">{usd(r.usd, 0)}</span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-3 text-[11px] text-ink-3">
+        Prices from Veranta&apos;s feed, refreshed each minute. A stock&apos;s last price holds while its market is closed. Other stocks appear here once they
+        have a plan.
+      </p>
+    </div>
   );
 }
 
