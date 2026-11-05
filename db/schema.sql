@@ -125,6 +125,19 @@ create table if not exists monitor_heartbeat (
   result  jsonb
 );
 
+-- Alerts sent to whoever runs Locke (Telegram, email): one row per problem, so it is sent once,
+-- repeated on a schedule while it lasts, and resolved when it is gone.
+create table if not exists ops_alerts (
+  source        text not null,
+  key           text not null,
+  level         text not null,
+  title         text not null,
+  first_at      timestamptz not null default now(),
+  last_sent_at  timestamptz not null default now(),
+  resolved_at   timestamptz,
+  primary key (source, key)
+);
+
 -- Columns added after launch, for databases created before them (the create tables above have
 -- them), and row-level security. Each only when missing: even an ALTER TABLE that changes nothing
 -- waits for, then holds, a lock that stops every read of the table.
@@ -147,7 +160,7 @@ begin
       execute format('alter table %I add column %I %s', c[1], c[2], c[3]);
     end if;
   end loop;
-  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat'] loop
+  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat', 'ops_alerts'] loop
     if not (select relrowsecurity from pg_class where oid = t::regclass) then
       execute format('alter table %I enable row level security', t);
     end if;
@@ -162,7 +175,7 @@ create index if not exists base_vaults_agent_idx on base_vaults(created_at) wher
 do $$
 declare t text;
 begin
-  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat'] loop
+  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat', 'ops_alerts'] loop
     if exists (select 1 from pg_roles where rolname = 'anon') then
       execute format('revoke all on table public.%I from anon', t);
     end if;

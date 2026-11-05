@@ -51,6 +51,7 @@ import { decide, depositNeededUsd, openTerms, TOP_UP_COOLDOWN_S, withChainTrade,
 import type { BaseSizing } from "../src/lib/domain/basePlans";
 import type { RiskLevel } from "../src/lib/domain/types";
 import { basePublicClient } from "../src/lib/server/baseChain";
+import { syncAlerts, type Alert } from "../src/lib/server/alerts";
 import { activeAttestation, addVaultEvent } from "../src/lib/server/baseVaults";
 import { config } from "../src/lib/server/config";
 import { db } from "../src/lib/server/db";
@@ -955,6 +956,37 @@ async function loop() {
   // The app's /api/health reads this to know the keeper is alive and well.
   await db()`insert into monitor_heartbeat (id, at, result) values (2, now(), ${db().json({ source: "base-keeper", vaults: rows.length, failing, gasLow, keeperRevoked, problems } as never)})
              on conflict (id) do update set at = excluded.at, result = excluded.result`.catch((e) => log("heartbeat failed:", reason(e)));
+  if (!stopping) await alert(problems);
+}
+
+/** Margin levels at which the person running Locke hears about a plan, not only its owner. */
+const ALERT_RISK = ["margin_call", "reduce_only", "liquidation"];
+
+/** Tell whoever runs Locke (Telegram, email) what is wrong after this round, and what got better. */
+async function alert(problems: string[]) {
+  const active: Alert[] = problems.map((p) => ({ key: `problem:${p.split(":")[0]}`, level: "warn", title: `Keeper warning: ${p.split(":")[0]}`, detail: p }));
+  if (gasLow) active.push({ key: "gas-low", level: "urgent", title: "Keeper is out of gas", detail: `The keeper ${account.address} is below ${formatEther(MIN_GAS_ETH)} ETH on Base and can't send transactions. Top it up.` });
+  if (keeperRevoked) active.push({ key: "revoked", level: "urgent", title: "Keeper key is revoked", detail: `Locke's guardian revoked ${account.address} on the factory, so it can't act on any plan.` });
+  if (failing > 0) {
+    const stuck = [...failures.entries()].filter(([, n]) => n >= UNHEALTHY_AFTER).map(([a]) => a);
+    active.push({ key: "failing", level: "urgent", title: `${failing} plan${failing === 1 ? "" : "s"} failing in the keeper`, detail: `The keeper keeps failing on: ${stuck.join(", ")}. Check the plan notes and the keeper logs.` });
+  }
+  const risky = (await db()`select address, pair_index, risk_level, last_ratio from base_vaults where status = 'active' and risk_level = any(${ALERT_RISK})`.catch(() => [])) as unknown as {
+    address: string;
+    pair_index: number;
+    risk_level: string;
+    last_ratio: number | null;
+  }[];
+  for (const r of risky) {
+    const used = r.last_ratio == null ? "" : ` (${Math.round(Number(r.last_ratio) * 100)}% of margin used)`;
+    active.push({
+      key: `risk:${r.address}`,
+      level: "urgent",
+      title: `${baseMarket(Number(r.pair_index))?.symbol ?? "A"} hedge near liquidation`,
+      detail: `Plan ${r.address} is at ${r.risk_level.replace("_", " ")}${used}. The keeper tops it up from the vault's buffer; if the buffer is empty the owner must deposit.`,
+    });
+  }
+  await syncAlerts("keeper", active);
 }
 
 /**
