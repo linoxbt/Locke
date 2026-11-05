@@ -54,6 +54,12 @@ export default function Privacy() {
             <td>To take each payment once and settle it on Base</td>
           </tr>
           <tr>
+            <td>
+              If you turn on alerts: the email address you confirm, and the Telegram chat and username you link through Locke&apos;s bot
+            </td>
+            <td>To send you alerts about your plans. Removed when you turn that alert off in your account, or send /stop to the bot</td>
+          </tr>
+          <tr>
             <td>Your network (the first three parts of an IPv4 address, or an IPv6 /64), kept for about 10 minutes</td>
             <td>To limit sign-in attempts and stop abuse</td>
           </tr>
@@ -64,7 +70,8 @@ export default function Privacy() {
         </tbody>
       </table>
       <p>
-        We don&apos;t collect names, email addresses or identity documents, and we don&apos;t use analytics or advertising trackers. When you
+        We don&apos;t collect names or identity documents, we only have an email address or Telegram chat if you add one for alerts, and we
+        don&apos;t use analytics or advertising trackers. When you
         sign in, your wallet signs a one-time message; we check it and keep only the result.
       </p>
 
@@ -86,8 +93,8 @@ export default function Privacy() {
           Coinbase&apos;s Base Account service. They see your IP address.
         </li>
         <li>
-          <strong>Our providers:</strong> hosting (Netlify), database (Supabase), background workers (Railway), and blockchain data and price
-          services (such as Base RPC providers and Pyth through Veranta). They process data only to provide their service to us.
+          <strong>Our providers:</strong> hosting (Netlify), database (Supabase), background workers (Railway), alert delivery (Resend for email,
+          Telegram for Telegram messages), and blockchain data and price services (such as Base RPC providers and Pyth through Veranta). They process data only to provide their service to us.
         </li>
         <li>
           <strong>When the law requires it:</strong> to comply with a valid legal request, or to protect users and Locke from fraud or abuse.

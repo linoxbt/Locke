@@ -125,6 +125,25 @@ create table if not exists monitor_heartbeat (
   result  jsonb
 );
 
+-- Where each business gets alerts about its own plans: a Telegram chat linked through Locke's bot,
+-- and an email address it has confirmed. Link tokens are stored hashed and expire.
+create table if not exists base_user_alerts (
+  user_id                 uuid primary key references base_users(id) on delete cascade,
+  email                   text,
+  email_verified_at       timestamptz,
+  email_token             text,
+  email_token_expires     timestamptz,
+  email_sent_at           timestamptz,
+  telegram_chat_id        text,
+  telegram_username       text,
+  telegram_token          text,
+  telegram_token_expires  timestamptz,
+  updated_at              timestamptz not null default now()
+);
+create unique index if not exists base_user_alerts_email_token_idx on base_user_alerts(email_token) where email_token is not null;
+create unique index if not exists base_user_alerts_telegram_token_idx on base_user_alerts(telegram_token) where telegram_token is not null;
+create index if not exists base_user_alerts_chat_idx on base_user_alerts(telegram_chat_id) where telegram_chat_id is not null;
+
 -- Alerts sent to whoever runs Locke (Telegram, email): one row per problem, so it is sent once,
 -- repeated on a schedule while it lasts, and resolved when it is gone.
 create table if not exists ops_alerts (
@@ -160,7 +179,7 @@ begin
       execute format('alter table %I add column %I %s', c[1], c[2], c[3]);
     end if;
   end loop;
-  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat', 'ops_alerts'] loop
+  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat', 'ops_alerts', 'base_user_alerts'] loop
     if not (select relrowsecurity from pg_class where oid = t::regclass) then
       execute format('alter table %I enable row level security', t);
     end if;
@@ -175,7 +194,7 @@ create index if not exists base_vaults_agent_idx on base_vaults(created_at) wher
 do $$
 declare t text;
 begin
-  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat', 'ops_alerts'] loop
+  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat', 'ops_alerts', 'base_user_alerts'] loop
     if exists (select 1 from pg_roles where rolname = 'anon') then
       execute format('revoke all on table public.%I from anon', t);
     end if;

@@ -53,6 +53,7 @@ import type { RiskLevel } from "../src/lib/domain/types";
 import { basePublicClient } from "../src/lib/server/baseChain";
 import { syncAlerts, type Alert } from "../src/lib/server/alerts";
 import { activeAttestation, addVaultEvent } from "../src/lib/server/baseVaults";
+import { notifyVaultOwner } from "../src/lib/server/userAlerts";
 import { config } from "../src/lib/server/config";
 import { db } from "../src/lib/server/db";
 import { getMarket, getPositions, getSignedPrice, UnlistedMarketError } from "../src/lib/veranta/client";
@@ -450,7 +451,10 @@ async function note(vault: string, text: string | null, level = "info") {
   const prev = lastNotice.get(vault);
   if (prev && prev.note === text && Date.now() - prev.at < NOTICE_EVERY_MS) return;
   lastNotice.set(vault, { note: text, at: Date.now() });
-  if (level !== "info") await addVaultEvent(vault, level, text);
+  if (level !== "info") {
+    await addVaultEvent(vault, level, text);
+    await notifyVaultOwner(vault, "needs attention", text);
+  }
 }
 
 /** When each vault waiting for its deposit is next looked at. */
@@ -511,13 +515,23 @@ async function tend(row: Row) {
         updated_at = now()
       where address = ${row.address}`;
   }
-  if (row.status !== "active" && d.status === "active") await addVaultEvent(row.address, "info", "Hedge open on Veranta: the vault is protected");
+  if (row.status !== "active" && d.status === "active") {
+    await addVaultEvent(row.address, "info", "Hedge open on Veranta: the vault is protected");
+    await notifyVaultOwner(row.address, "protected", "Your hedge is open on Veranta. Locke watches its margin from here.");
+  }
+  if (row.status !== "closed" && d.status === "closed") {
+    await notifyVaultOwner(row.address, "closed", "This plan's hedge is closed on Veranta. Anything left in the vault is yours to withdraw.");
+  }
   // Locke's fee is owed from the open and paid once Base shows the trade (whatever the API says yet).
   // Never holds up the hedge; the next round retries.
   if (state.chainTrades > 0) await settleFee(row).catch((e) => log("settleFee", row.address, "failed:", reason(e)));
   // The public proof follows the hedge.
   if (d.status === "active") await attest(row, state.position).catch((e) => log("attest", row.address, "failed:", reason(e)));
-  if (d.level !== row.risk_level && d.level !== "ok") await addVaultEvent(row.address, "action", `Margin ${Math.round((d.ratio ?? 0) * 100)}% used`, { level: d.level });
+  if (d.level !== row.risk_level && d.level !== "ok") {
+    const used = `Margin ${Math.round((d.ratio ?? 0) * 100)}% used`;
+    await addVaultEvent(row.address, "action", used, { level: d.level });
+    await notifyVaultOwner(row.address, used.toLowerCase(), `${used} (${d.level.replace("_", " ")}). Locke tops the hedge up from the vault's buffer; if the buffer runs out, deposit more.`);
+  }
 
   const a = d.action;
   switch (a.kind) {
@@ -549,6 +563,7 @@ async function tend(row: Row) {
       );
       log("topped up", row.address, a, hash);
       await addVaultEvent(row.address, "action", `Added $${a.amountUsd.toFixed(2)} of margin from the vault's buffer`, undefined, hash);
+      await notifyVaultOwner(row.address, "margin topped up", `Locke added $${a.amountUsd.toFixed(2)} of margin to the hedge from the vault's buffer.`);
       return note(row.address, null);
     }
   }

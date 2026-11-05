@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AlertsCard } from "@/components/base/AlertsCard";
 import { BaseAccountBar } from "@/components/base/BaseAccountBar";
 import { Arrow, Card, Display, Eyebrow, LinkButton, Stat } from "@/components/ui";
 import { requireBasePage } from "@/lib/server/basePages";
@@ -8,7 +9,8 @@ import { shortAddr } from "@/lib/ui/format";
 export const metadata: Metadata = { title: "Account — Locke" };
 export const dynamic = "force-dynamic";
 
-export default async function AccountPage() {
+export default async function AccountPage({ searchParams }: { searchParams: Promise<{ email?: string }> }) {
+  const { email } = await searchParams;
   const s = await requireBasePage("/account");
   const plans = await listVaults(s.uid);
   const open = plans.filter((p) => p.status !== "closed").length;
@@ -39,6 +41,7 @@ export default async function AccountPage() {
             Portfolio <Arrow />
           </LinkButton>
         </Card>
+        <AlertsCard confirmed={email === "confirmed" || email === "expired" ? email : null} />
       </div>
     </div>
   );
