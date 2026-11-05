@@ -3,7 +3,21 @@
 // Channels are optional: with none set, alerts are only logged.
 
 import { db } from "./db";
-import { renderEmail, type EmailTone } from "./emailTemplate";
+import { renderEmail, siteUrl, type EmailTone } from "./emailTemplate";
+import { renderTelegram } from "./telegramTemplate";
+
+/** An operator alert as a branded Telegram message, with a button to the public metrics. */
+function telegramBody(subject: string, text: string, tone: EmailTone) {
+  const m = renderTelegram({
+    preheader: "",
+    eyebrow: "Operations",
+    title: subject.replace(/^\S+\s+Locke:\s*/u, ""),
+    paragraphs: text.split("\n\n"),
+    tone,
+    cta: { label: "Open metrics", url: `${siteUrl()}/metrics` }
+  });
+  return { text: m.text, ...(m.button ? { reply_markup: { inline_keyboard: [[{ text: m.button.label, url: m.button.url }]] } } : {}) };
+}
 
 export interface Alert {
   /** Stable id within its source, e.g. "gas" or "risk:0xabc…". */
@@ -45,7 +59,12 @@ export async function sendAlertMessage(subject: string, text: string, tone: Emai
   const to = env("ALERT_EMAIL_TO");
   await Promise.all([
     token && chat
-      ? post(`https://api.telegram.org/bot${token}/sendMessage`, { chat_id: chat, text: `${subject}\n\n${text}`, disable_web_page_preview: true })
+      ? post(`https://api.telegram.org/bot${token}/sendMessage`, {
+          chat_id: chat,
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+          ...telegramBody(subject, text, tone)
+        })
           .then(() => sent.push("telegram"))
           .catch((e) => console.warn(`[alerts] telegram: ${(e as Error).message}`))
       : null,
@@ -108,7 +127,7 @@ export async function syncAlerts(source: string, active: Alert[]): Promise<void>
     const still = new Set(active.map((a) => a.key));
     for (const r of rows) {
       if (r.resolved_at != null || still.has(r.key)) continue;
-      await sendAlertMessage(`✅ Locke: resolved: ${r.title}`, `This is no longer reported.\n\nSource: ${source} · ${new Date(now).toISOString()}`, "ok");
+      await sendAlertMessage(`✅ Locke: Resolved: ${r.title}`, `This is no longer reported.\n\nSource: ${source} · ${new Date(now).toISOString()}`, "ok");
       await sql`update ops_alerts set resolved_at = now() where source = ${source} and key = ${r.key}`;
     }
   } catch (e) {
