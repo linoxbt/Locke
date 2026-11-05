@@ -136,20 +136,23 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
       from generate_series(date_trunc(${bucket}, now() - make_interval(days => ${range - 1})), date_trunc(${bucket}, now()), ${bucket === "week" ? sql`interval '1 week'` : sql`interval '1 day'`}) as b(t)
       left join base_vaults v on date_trunc(${bucket}, v.created_at) = b.t
       group by b.t order by b.t`,
+    // Mined transactions only: a proof still being published, or one that never landed, carries a hash too.
     sql`
       select count(distinct tx) as n from (
         select created_tx as tx from base_vaults
-        union select tx_hash from base_vault_events where tx_hash is not null
+        union select tx_hash from base_vault_events
+        where tx_hash is not null and not (detail is not null and (detail ? 'attestTx' or detail->>'failed' = 'true'))
       ) t`,
+    // Live proofs: unrevoked, and their vault's hedge still open (a closed vault's may wait to be revoked).
     sql`
       select e.detail->>'attestation' as uid, v.pair_index, v.sizing, e.created_at
       from base_vault_events e join base_vaults v on v.address = e.vault
-      where e.detail ? 'attestation'
+      where e.detail ? 'attestation' and v.status = 'active'
         and not exists (select 1 from base_vault_events r where r.vault = e.vault and r.detail->>'revoked' = e.detail->>'attestation')
       order by e.id desc limit 6`,
     sql`
-      select count(*)::int as n from base_vault_events e
-      where e.detail ? 'attestation'
+      select count(*)::int as n from base_vault_events e join base_vaults v on v.address = e.vault
+      where e.detail ? 'attestation' and v.status = 'active'
         and not exists (select 1 from base_vault_events r where r.vault = e.vault and r.detail->>'revoked' = e.detail->>'attestation')`,
     sql`
       select e.message, e.level, e.created_at, v.pair_index, v.type

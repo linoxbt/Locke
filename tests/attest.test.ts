@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeProtection, easscanUrl, encodeProtection, PROTECTION_SCHEMA_UID, proofPath } from "@/lib/base/attest";
-import { proofStatus } from "@/lib/server/baseProof";
+import { checkedStatus, proofStatus } from "@/lib/server/baseProof";
 
 const KEEPER = "0x00000000000000000000000000000000000000aa";
 
@@ -23,6 +23,22 @@ describe("Protected by Locke attestations", () => {
     expect(proofStatus({ ...ours, attester: "0x00000000000000000000000000000000000000bb" }, [KEEPER])).toBe("unverified");
     expect(proofStatus(ours, [])).toBe("unverified");
     expect(proofStatus({ ...ours, schema: `0x${"1".repeat(64)}` }, [KEEPER])).toBe("other");
+  });
+
+  it("calls a proof Locke's only for a factory vault, and not protected once that vault closed or changed hands", () => {
+    const open = { factoryVault: true, ownerMatches: true, vaultClosed: false, issuerRetired: false };
+    expect(checkedStatus("protected", open)).toEqual({ status: "protected" });
+    expect(checkedStatus("protected", { ...open, factoryVault: false })).toEqual({ status: "unverified" });
+    expect(checkedStatus("ended", { ...open, factoryVault: false })).toEqual({ status: "unverified" });
+    expect(checkedStatus("protected", { ...open, ownerMatches: false })).toEqual({ status: "ended", endedBecause: "owner-changed" });
+    // Closed but not yet revoked, or never revocable (issued by an earlier keeper key).
+    expect(checkedStatus("protected", { ...open, vaultClosed: true })).toEqual({ status: "ended", endedBecause: "closed" });
+    expect(checkedStatus("protected", { ...open, vaultClosed: true, issuerRetired: true })).toEqual({ status: "ended", endedBecause: "issuer-retired" });
+    expect(checkedStatus("ended", { ...open, vaultClosed: true })).toEqual({ status: "ended" });
+    // Locke not live (no factory to ask): the attestation's own status.
+    expect(checkedStatus("protected", { factoryVault: null, ownerMatches: null, vaultClosed: false, issuerRetired: false })).toEqual({ status: "protected" });
+    expect(checkedStatus("unverified", open)).toEqual({ status: "unverified" });
+    expect(checkedStatus("other", open)).toEqual({ status: "other" });
   });
 
   it("links to the public page and to EAS Scan", () => {

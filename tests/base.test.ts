@@ -9,9 +9,9 @@ vi.mock("@/lib/server/baseChain", () => ({ basePublicClient: () => ({ verifyMess
 
 import { builderSuffix } from "@/lib/base/builderCode";
 import { factoryAbi, vaultAbi } from "@/lib/base/contracts";
-import { decide, OPEN_RETRY_S, TOP_UP_RETRY_S, type VaultState } from "@/lib/base/keeper";
+import { CLOSE_CONFIRM_S, decide, depositNeededUsd, OPEN_RETRY_S, openTerms, TOP_UP_RETRY_S, withChainTrade, type VaultState } from "@/lib/base/keeper";
 import { BasePlanError, parseBaseInputs, planLimits, planName, sizeBasePlan, type MarketTerms } from "@/lib/domain/basePlans";
-import { verantaMarginRatio, type VerantaPosition } from "@/lib/domain/veranta";
+import { verantaMarginRatio, type VerantaMarket, type VerantaPosition } from "@/lib/domain/veranta";
 import { HttpError } from "@/lib/server/errors";
 import { checkSiweMessage, signatureMatches } from "@/lib/server/siwe";
 
@@ -59,12 +59,14 @@ describe("Base keeper decisions", () => {
     mark: 2300,
     marketOpen: true,
     closeOnly: false,
+    terms: { minLeverage: 1, maxLeverage: 50, minPositionUsd: 100, openInterestRoomUsd: 1_000_000 },
     paused: false,
     keeperIsUs: true,
     cooldownLeftS: 0,
     openSentAgoS: null,
     chainTrades: 0,
     goneRounds: 1,
+    goneForS: 0,
     topUpSentAgoS: null,
     topUpCooldownLeftS: 0,
   };
@@ -142,9 +144,65 @@ describe("Base keeper decisions", () => {
     expect(d.action).toMatchObject({ kind: "wait", note: expect.stringContaining("incomplete") });
   });
 
-  it("marks the vault closed only when Base shows no trade on two looks in a row", () => {
-    expect(decide({ ...base, status: "active", goneRounds: 1 })).toMatchObject({ status: "active", action: { kind: "wait" } });
-    expect(decide({ ...base, status: "active", goneRounds: 2 })).toMatchObject({ status: "closed", action: { kind: "closed" } });
+  it("marks the vault closed only when Base shows no trade on looks at later blocks spanning two minutes", () => {
+    expect(decide({ ...base, status: "active", goneRounds: 1, goneForS: 0 })).toMatchObject({ status: "active", action: { kind: "wait" } });
+    // Two looks in a row aren't enough on their own: one RPC node can lag another.
+    expect(decide({ ...base, status: "active", goneRounds: 2, goneForS: 15 })).toMatchObject({ status: "active", action: { kind: "wait" } });
+    expect(decide({ ...base, status: "active", goneRounds: 1, goneForS: CLOSE_CONFIRM_S })).toMatchObject({ status: "active" });
+    expect(decide({ ...base, status: "active", goneRounds: 9, goneForS: CLOSE_CONFIRM_S })).toMatchObject({ status: "closed", action: { kind: "closed" } });
+  });
+
+  it("holds the open, with a note, when Veranta's terms no longer fit the plan", () => {
+    const terms = base.terms!;
+    expect(decide({ ...base, terms: { ...terms, maxLeverage: 1.5 } }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("not this plan's 2x") });
+    expect(decide({ ...base, terms: { ...terms, minLeverage: 3 } }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("3x to 50x") });
+    expect(decide({ ...base, terms: { ...terms, minPositionUsd: 600 } }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("smallest position") });
+    expect(decide({ ...base, terms: { ...terms, openInterestRoomUsd: 400 } }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("open interest") });
+    // Exactly at the limits still opens; no open-interest cap (null) is no limit.
+    expect(decide({ ...base, terms: { minLeverage: 2, maxLeverage: 2, minPositionUsd: 500, openInterestRoomUsd: 500 } }).action.kind).toBe("open");
+    expect(decide({ ...base, terms: { ...terms, openInterestRoomUsd: null } }).action.kind).toBe("open");
+    // A live hedge is still tended whatever the terms: margin can always be added.
+    const thin = { ...base, status: "active" as const, position: short, idleUsd: 125, mark: 3200, chainTrades: 1, goneRounds: 0 };
+    expect(decide({ ...thin, terms: { ...terms, maxLeverage: 1 } }).action.kind).toBe("topUp");
+  });
+
+  it("treats a pair Veranta no longer lists as close-only: no open, but the hedge is still tended", () => {
+    const gone = { ...base, terms: null, closeOnly: true };
+    expect(decide(gone).action).toMatchObject({ kind: "wait", note: expect.stringContaining("new positions") });
+    const thin = { ...gone, status: "active" as const, position: short, idleUsd: 125, mark: 3200, chainTrades: 1, goneRounds: 0 };
+    expect(decide(thin).action.kind).toBe("topUp");
+    expect(decide({ ...gone, status: "active", goneRounds: 9, goneForS: 600 }).status).toBe("closed");
+  });
+
+  it("reads a market's terms for the hedge's side", () => {
+    const m = {
+      listed: true, minLeverage: 1, maxLeverage: 25, minPositionUsd: 10, maxOpenInterestUsd: 1000, openInterestUsd: { long: 900, short: 100 },
+    } as VerantaMarket;
+    expect(openTerms(m, true)).toEqual({ minLeverage: 1, maxLeverage: 25, minPositionUsd: 10, openInterestRoomUsd: 100 });
+    expect(openTerms(m, false)?.openInterestRoomUsd).toBe(900);
+    expect(openTerms({ ...m, maxOpenInterestUsd: 0 }, true)?.openInterestRoomUsd).toBeNull();
+    expect(openTerms({ ...m, listed: false }, true)).toBeNull();
+    expect(openTerms(null, true)).toBeNull();
+  });
+
+  it("takes the hedge's margin, leverage, price and size from Base, not the lagging API", () => {
+    // A $50 top-up applied on Base; the API still shows $250 at 2x.
+    const t = { initialPosToken: 300_000_000n, leverage: 16_666_666_667n, openPrice: 23_000_000_000_000n, buy: false };
+    const p = withChainTrade(short, t);
+    expect(p.collateralUsd).toBe(300);
+    expect(p.collateralUsd * p.leverage).toBeCloseTo(500, 4);
+    expect(p.signedSize).toBeCloseTo(-500 / 2300, 8);
+    expect(p.liquidationPrice).toBe(0); // worked out again for the new margin
+    expect(verantaMarginRatio(p, 3200)).toBeLessThan(verantaMarginRatio(short, 3200));
+    // No such trade on Base (zeros): the API's position as it was.
+    expect(withChainTrade(short, { initialPosToken: 0n, leverage: 0n, openPrice: 0n, buy: false })).toBe(short);
+    expect(withChainTrade(short, { ...t, initialPosToken: 250_000_000n, leverage: 20_000_000_000n }).liquidationPrice).toBe(short.liquidationPrice);
+  });
+
+  it("waits for the whole deposit, the fee reserve included", () => {
+    expect(depositNeededUsd(sizing)).toBeCloseTo(sizing.collateralUsd + sizing.feesUsd / 2, 9);
+    expect(decide({ ...base, idleUsd: depositNeededUsd(sizing) - 0.01 }).action.kind).toBe("wait");
+    expect(decide({ ...base, idleUsd: depositNeededUsd(sizing) }).action.kind).toBe("open");
   });
 
   it("never closes a vault whose hedge is still on Base, whatever the API says", () => {

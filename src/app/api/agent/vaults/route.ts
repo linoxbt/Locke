@@ -8,6 +8,7 @@ import { ipBucket, rateLimit } from "@/lib/server/rateLimit";
 /**
  * Register a vault from its creation transaction. Free: the transaction itself proves who owns the
  * vault (the factory's VaultCreated event names the sender), and its limits must match the inputs.
+ * New registrations are limited per caller network and in all, per hour, in the database.
  */
 export const POST = route(async (req: Request) => {
   rateLimit(`${ipBucket(clientIp(req)) ?? "anon"}:agent-register`, 10);
@@ -16,6 +17,6 @@ export const POST = route(async (req: Request) => {
   const owner = await vaultCreator(txHash);
   const user = await signInBaseUser(owner.toLowerCase());
   const raw = typeof body.inputs === "object" && body.inputs ? (body.inputs as Record<string, unknown>) : body;
-  const { address } = await recordVault({ uid: user.id, addr: user.address }, txHash, agentInputs(raw), "agent");
+  const { address } = await recordVault({ uid: user.id, addr: user.address }, txHash, agentInputs(raw), "agent", ipBucket(clientIp(req)));
   return NextResponse.json({ address, status: new URL(`/api/agent/vaults/${address}`, req.url).toString() });
 });

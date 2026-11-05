@@ -1,8 +1,9 @@
 import { HttpError } from "./errors";
 
 /**
- * The network a client IP belongs to, for rate limiting: IPv4 /24, IPv6 /64 (one home or
- * phone gets a whole /64, so per-address limits on IPv6 are trivially dodged). null if unparseable.
+ * The network a client IP belongs to, for rate limiting: IPv4 /24, IPv6 /48 (one home or phone
+ * gets a whole /64, and a site often a /48, so per-address or per-/64 limits on IPv6 are trivially
+ * dodged). null if unparseable.
  */
 export function ipBucket(ip: string | null): string | null {
   if (!ip) return null;
@@ -22,7 +23,7 @@ export function ipBucket(ip: string | null): string | null {
   if ((halves.length === 2 && missing < 1) || (halves.length === 1 && missing !== 0)) return null;
   const groups = [...left, ...Array(halves.length === 2 ? missing : 0).fill("0"), ...right];
   if (groups.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return null;
-  return `${groups.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(":")}::/64`;
+  return `${groups.slice(0, 3).map((g) => parseInt(g, 16).toString(16)).join(":")}::/48`;
 }
 
 const buckets = new Map<string, { tokens: number; at: number; cap: number }>();
