@@ -329,6 +329,7 @@ const price = (v: number | null) => (v == null ? "—" : usd(v, v < 1 ? 4 : 2));
 function MarketBars({ rows }: { rows: Metrics["byMarket"] }) {
   const max = Math.max(0, ...rows.map((r) => r.usd));
   const grid = "grid grid-cols-[96px_84px_1fr] items-center gap-3 sm:grid-cols-[120px_104px_1fr]";
+  if (rows.length === 0) return <p className="py-8 text-center text-[13px] text-ink-3">Markets appear here as plans are made on them.</p>;
   return (
     <div className="py-1">
       <div className={`${grid} border-b border-line pb-2 text-[11px] text-ink-3`} aria-hidden>
@@ -361,8 +362,7 @@ function MarketBars({ rows }: { rows: Metrics["byMarket"] }) {
         })}
       </ul>
       <p className="mt-3 text-[11px] text-ink-3">
-        Prices from Veranta&apos;s feed, refreshed each minute. A stock&apos;s last price holds while its market is closed. Other stocks appear here once they
-        have a plan.
+        Prices from Veranta&apos;s feed, refreshed each minute. A stock&apos;s last price holds while its market is closed.
       </p>
     </div>
   );

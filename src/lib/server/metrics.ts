@@ -123,7 +123,7 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
              count(*) filter (where created_at > now() - make_interval(days => ${range})) as created_in_range
       from base_vaults`,
     sql`select status, count(*) as n from base_vaults group by status`,
-    sql`select pair_index, coalesce(sum(${notional}), 0) as usd, count(*) as n from base_vaults where status = 'active' group by pair_index`,
+    sql`select pair_index, coalesce(sum(${notional}) filter (where status = 'active'), 0) as usd, count(*) as n from base_vaults where status <> 'closed' group by pair_index`,
     sql`select type, coalesce(sum(${notional}), 0) as usd from base_vaults where status = 'active' group by type`,
     // Protected value at the end of each day: hedges opened by then and not yet closed.
     sql`
@@ -167,8 +167,10 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
   const byStatus: Record<string, number> = { funding: 0, opening: 0, active: 0, closed: 0 };
   for (const s of statuses) byStatus[String(s.status)] = num(s.n);
   const byPair = new Map(markets.map((m) => [Number(m.pair_index), m]));
-  // Crypto, oil, the two indexes and the largest stocks always; any other stock once it has a plan.
-  const shown = BASE_MARKETS.filter((m, i) => m.type !== "stocks" || i < FEATURED_UNTIL || num(byPair.get(m.pairIndex)?.n) > 0);
+  // A market appears once a plan is made on it, most protected first.
+  const shown = BASE_MARKETS.filter((m) => num(byPair.get(m.pairIndex)?.n) > 0).sort(
+    (a, b) => num(byPair.get(b.pairIndex)?.usd) - num(byPair.get(a.pairIndex)?.usd) || num(byPair.get(b.pairIndex)?.n) - num(byPair.get(a.pairIndex)?.n)
+  );
   const prices = await lastPrices(shown.map((m) => m.pairIndex));
   const byType = { holdings: 0, costs: 0, stocks: 0 };
   for (const t of types) byType[t.type === "costs" ? "costs" : t.type === "stocks" ? "stocks" : "holdings"] = num(t.usd);
@@ -218,9 +220,6 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
 /** The dashboard's figures, computed at most once a minute per server and range. */
 const TTL_MS = 60_000;
 const cached = new Map<RangeDays, { at: number; value: Promise<Metrics> }>();
-
-/** BASE_MARKETS up to here is crypto, oil, US500, US100 and the seven largest stocks. */
-const FEATURED_UNTIL = BASE_MARKETS.findIndex((m) => m.asset === "GOOG") + 1;
 
 /** Last prices for display, read together; a market that doesn't answer within 4 s shows none. */
 async function lastPrices(pairs: number[]): Promise<Map<number, number>> {
