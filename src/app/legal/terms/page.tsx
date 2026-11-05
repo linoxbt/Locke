@@ -154,13 +154,14 @@ export default function Terms() {
 
       <h2>14. Law and disputes</h2>
       <p>
-        These terms are governed by the laws of {governingLaw()}, and its courts hear any dispute, unless the law where you live gives you the
-        right to bring a claim there. Before going to court, please write to us at {contactEmail()} so we can try to resolve it.
+        These terms are governed by the laws of {governingLaw()}, and the courts of {governingLaw()} hear any dispute, unless the law where
+        you live gives you the right to bring a claim there. Before going to court, please write to us at {contactEmail()} so we can try to resolve it.
       </p>
 
       <h2>15. Contact</h2>
       <p>
         {operatorName()} · {contactEmail()}
+        {LEGAL.telegram && <> · Telegram {LEGAL.telegram}</>}
       </p>
     </LegalPage>
   );

@@ -172,8 +172,10 @@ purpose), the timestamp cooldowns, the low-level ETH sweep and the non-reverting
 
 ## v3: audit fixes (5 Nov 2026)
 
-v2 (`0xeAC1E6987d114dB6f09572226B796A73C94DbCa6`) has no vaults, so these ship as a fresh factory.
-The constructor is unchanged.
+v2 (`0xeAC1E6987d114dB6f09572226B796A73C94DbCa6`) has no vaults, so these ship as a fresh factory:
+`0x0c594a6d7f850fc07e2c797bfad2f087b2610be8` on Base (vault implementation
+`0xD321f8491237dDeff4C7b92bf7C4DA3B23354ffE`), both Sourcify exact matches. The constructor is
+unchanged; the caps are $10,000 per vault and $25,000 in all.
 
 - **Losses come off the launch caps.** `netDeposits` used to fall only on withdrawals, so a hedge
   that lost money left the owner's own top-ups blocked by the per-vault cap, and the money that was
