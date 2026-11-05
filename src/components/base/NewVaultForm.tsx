@@ -253,11 +253,13 @@ export function NewVaultForm({
         maxCollateral: usdcUnits(sizing.limits.maxCollateralUsd),
       };
       // Kept for the plan's inputs if this page never gets to save it (Locke finds the vault on Base later).
-      await fetch("/api/base/vaults/drafts", {
+      const draft = await fetch("/api/base/vaults/drafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputs }),
+        body: JSON.stringify({ inputs, eligibility: type === "stocks" ? "not-us-person" : undefined }),
       }).catch(() => null);
+      // A stock plan goes ahead only once Locke has the eligibility confirmation on record.
+      if (type === "stocks" && !draft?.ok) throw new Error((await draft?.json().catch(() => null))?.error ?? "Locke couldn't record your confirmation. Try again.");
       const receipts = await sendBaseCalls(
         wallet,
         [

@@ -9,6 +9,6 @@ export const POST = route(async (req: Request) => {
   const s = await requireBaseSession(req);
   rateLimit(`${s.uid}:base-draft`, 20);
   const body = await readJson(req);
-  await saveDraft(s.uid, body.inputs);
+  await saveDraft(s.uid, body.inputs, body.eligibility);
   return NextResponse.json({ ok: true });
 });

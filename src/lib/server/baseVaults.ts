@@ -156,7 +156,7 @@ export async function activeAttestation(vault: string): Promise<string | null> {
 }
 
 /** Save what a business asked for just before its wallet creates the vault (see recoverVaults). */
-export async function saveDraft(uid: string, rawInputs: unknown) {
+export async function saveDraft(uid: string, rawInputs: unknown, eligibility?: unknown) {
   let inputs;
   try {
     inputs = parseBaseInputs(rawInputs);
@@ -164,9 +164,17 @@ export async function saveDraft(uid: string, rawInputs: unknown) {
     if (e instanceof BasePlanError) throw new HttpError(400, e.message);
     throw e;
   }
-  await db()`insert into base_vault_drafts (user_id, inputs) values (${uid}, ${db().json(inputs as never)})`;
+  // Stock plans: the business confirms it isn't a US person, and the confirmation is kept.
+  const record = inputs.type === "stocks" ? { ...inputs, eligibility: stockEligibility(eligibility) } : inputs;
+  await db()`insert into base_vault_drafts (user_id, inputs) values (${uid}, ${db().json(record as never)})`;
   // Only the latest few are ever needed.
   await db()`delete from base_vault_drafts where user_id = ${uid} and id not in (select id from base_vault_drafts where user_id = ${uid} order by id desc limit 10)`;
+}
+
+/** The confirmation a stock plan needs; refuses without it. */
+export function stockEligibility(v: unknown): { confirmed: "not-us-person"; at: string } {
+  if (v !== "not-us-person") throw new HttpError(400, "Stock plans are not available to US persons. Confirm that neither you nor the business is one.");
+  return { confirmed: "not-us-person", at: new Date().toISOString() };
 }
 
 /**

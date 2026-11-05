@@ -21,6 +21,13 @@ const HEADLINE: Record<ProofStatus, { lead: string; rest: string; chip: string; 
   other: { lead: "Not a Locke proof.", rest: "This attestation exists on Base, but it isn't a Protected by Locke record.", chip: "Not Locke", cls: "bg-danger/10 text-danger-ink" },
 };
 
+/** Why a proof Locke hasn't revoked (yet) no longer counts. */
+const ENDED_BECAUSE = {
+  closed: "This plan has closed, so its hedge no longer protects anything.",
+  "issuer-retired": "This plan has closed. Its proof was signed by a keeper key Locke has since retired.",
+  "owner-changed": "The plan's vault has a new owner, so this proof no longer describes them."
+} as const;
+
 const day = (s: number) => new Date(s * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
 export default async function ProofPage({ params }: { params: Promise<{ uid: string }> }) {
@@ -40,7 +47,7 @@ export default async function ProofPage({ params }: { params: Promise<{ uid: str
     );
   }
   if (!proof) notFound();
-  const h = HEADLINE[proof.status];
+  const h = { ...HEADLINE[proof.status], ...(proof.endedBecause ? { rest: ENDED_BECAUSE[proof.endedBecause] } : {}) };
   const p = proof.protection;
 
   return (

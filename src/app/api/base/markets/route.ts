@@ -43,6 +43,7 @@ async function describe(b: (typeof BASE_MARKETS)[number], all: Awaited<ReturnTyp
     available: !!m && m.listed && !m.closeOnly,
     marketOpen: m?.marketOpen ?? false,
     price: price?.price ?? null,
+    priceAt: price?.publishedAt ? new Date(price.publishedAt).toISOString() : null,
     terms: m ? marketTerms(m) : null,
     carryPctPerHour: m ? (b.buy ? m.carryPctPerHour.long : m.carryPctPerHour.short) : null,
   };
