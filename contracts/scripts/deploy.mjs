@@ -9,7 +9,7 @@
  *
  * ADMIN and GUARDIAN must be contracts (Locke's multisig): the script refuses plain wallets unless
  * ALLOW_EOA_ROLES=1 (tests and forks only), and refuses a keeper equal to either or to the deployer.
- * The caps have no defaults. Before deploying it checks Veranta's router and storage point at each
+ * The caps have no defaults, and the per-vault cap must be below the total. Before deploying it checks Veranta's router and storage point at each
  * other; afterwards it reads every setting back. Prints the factory address for
  * BASE_FACTORY_ADDRESS. Run `npx hardhat compile` first, and verify the source on BaseScan after.
  */
@@ -70,6 +70,11 @@ const feeBps = Number(env("FEE_BPS"));
 if (!Number.isInteger(feeBps) || feeBps < 0 || feeBps > 20) throw new Error("FEE_BPS must be a whole number from 0 to 20");
 const feeCollector = feeBps ? addr("FEE_COLLECTOR") : (process.env.FEE_COLLECTOR ?? "0x0000000000000000000000000000000000000000");
 
+// The total cap is shared by every vault, and creating a vault is open to anyone: a per-vault cap
+// equal to the total lets one vault take all of it. Keep the per-vault cap well below the total.
+const [maxVault, maxTotal] = [usd("MAX_VAULT_USD"), usd("MAX_TOTAL_USD")];
+if (maxVault >= maxTotal) throw new Error("MAX_VAULT_USD must be below MAX_TOTAL_USD, so one vault can't take the whole launch cap");
+
 const args = [
   admin,
   guardian,
@@ -77,8 +82,8 @@ const args = [
   USDC, // USDC on Base
   ROUTER, // Veranta TradingRouter
   STORAGE, // Veranta TradingStorage
-  usd("MAX_VAULT_USD"),
-  usd("MAX_TOTAL_USD"),
+  maxVault,
+  maxTotal,
   feeBps,
   feeCollector,
 ];

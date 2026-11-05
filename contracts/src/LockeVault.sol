@@ -59,6 +59,9 @@ contract LockeVault is Initializable, ReentrancyGuard {
     uint256 public constant TOP_UP_COOLDOWN = 2 minutes;
     /// @notice Locke's fee is charged at most once per market in this period, however often a hedge is reopened.
     uint256 public constant FEE_PERIOD = 30 days;
+    /// @notice Most markets a vault may have plans on, so the walk over its hedges in the deposit
+    /// accounting stays cheap for the owner and the keeper.
+    uint256 public constant MAX_MARKETS = 16;
     /// @notice Base Account's SpendPermissionManager (the same address on Base and Base Sepolia).
     ISpendPermissionManager public constant SPEND_PERMISSIONS = ISpendPermissionManager(0xf85210B21cC50302F477BA56686d2019dC9b67Ad);
 
@@ -86,7 +89,9 @@ contract LockeVault is Initializable, ReentrancyGuard {
     bool public pausedByGuardian;
     /// @notice Locke's fee in basis points of notional, fixed when the vault was created.
     uint16 public feeBps;
-    /// @notice Deposits less withdrawals (never below zero); what the launch caps count.
+    /// @notice Deposits less withdrawals (never below zero), lowered to what the vault still holds
+    /// (idle USDC plus the collateral in its hedges) once losses or fees take it below; what the
+    /// launch caps count.
     uint256 public netDeposits;
 
     mapping(uint256 pairIndex => Plan) public plans;
@@ -96,6 +101,10 @@ contract LockeVault is Initializable, ReentrancyGuard {
     /// @notice When Locke's fee was last paid for this market.
     mapping(uint256 pairIndex => uint256) public lastFeeAt;
     mapping(uint256 pairIndex => uint256) public lastTopUpAt;
+    /// @dev Every market a plan was ever set on, oldest first. Never shortened: a disabled plan can
+    /// still hold a hedge.
+    uint256[] private markets;
+    mapping(uint256 pairIndex => bool) private isMarket;
 
     event Deposited(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
@@ -115,6 +124,7 @@ contract LockeVault is Initializable, ReentrancyGuard {
     event TokenRescued(address indexed token, address indexed to, uint256 amount);
     event EthSwept(address indexed to, uint256 amount);
     event OwnershipTransferCancelled(address indexed pendingOwner);
+    event NetDepositsLowered(uint256 from, uint256 to);
 
     error NotOwner();
     error NotPendingOwner();
@@ -137,6 +147,7 @@ contract LockeVault is Initializable, ReentrancyGuard {
     error SlippageOutOfRange();
     error LeverageTooLow();
     error ZeroPrice();
+    error TooManyMarkets();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -200,13 +211,16 @@ contract LockeVault is Initializable, ReentrancyGuard {
     function deposit(uint256 amount) external nonReentrant {
         if (paused() && msg.sender != owner) revert IsPaused();
         if (amount == 0) revert ZeroAmount();
+        uint256 released = _lowerNetDeposits();
         netDeposits += amount;
+        if (released != 0) factory.recordWithdraw(released);
         factory.recordDeposit(amount, netDeposits); // reverts above the launch caps
         usdc.safeTransferFrom(msg.sender, address(this), amount);
         emit Deposited(msg.sender, amount);
     }
 
-    /// @notice Take out idle USDC. Works while paused and whatever the keeper is doing.
+    /// @notice Take out idle USDC. Works while paused and whatever the keeper is doing, and never
+    /// calls Veranta (what it counts off is lowered at the next deposit or `syncDeposits`).
     function withdraw(address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
@@ -251,11 +265,18 @@ contract LockeVault is Initializable, ReentrancyGuard {
         pendingOwner = address(0);
     }
 
+    /// @notice Become the owner. A keeper the previous owner picked doesn't come along: the vault
+    /// goes back to following Locke's keeper, and the new owner may pick their own (or none).
     function acceptOwnership() external {
         if (msg.sender != pendingOwner) revert NotPendingOwner();
         owner = msg.sender;
         pendingOwner = address(0);
         emit OwnerSet(msg.sender);
+        if (!keeperFollowsFactory) {
+            ownKeeper = address(0);
+            keeperFollowsFactory = true;
+            emit KeeperFollowsFactory();
+        }
     }
 
     /// @notice Close all or part of a hedge directly on Veranta, without Locke.
@@ -309,6 +330,38 @@ contract LockeVault is Initializable, ReentrancyGuard {
      */
     function settleFee(uint256 pairIndex) external nonReentrant {
         _settleFee(pairIndex);
+    }
+
+    /**
+     * @notice Lower `netDeposits` (and the factory's total) to what the vault still holds, after a
+     * hedge lost money or fees were paid, so the launch caps stop counting money that is gone.
+     * Anyone may call it; deposits and collected income do it first. It never raises the count.
+     */
+    function syncDeposits() external nonReentrant {
+        uint256 released = _lowerNetDeposits();
+        if (released != 0) factory.recordWithdraw(released);
+    }
+
+    /**
+     * @notice What the vault holds: idle USDC plus the collateral in its hedges (Veranta's record
+     * of each position's collateral; unrealized P&L and accrued fees aren't counted). `known` is
+     * false while an open is still pending on any market (its collateral is at Veranta but in no
+     * trade yet) or a position isn't where the vault expects it, and `held` is then a lower bound.
+     */
+    function holdings() public view returns (uint256 held, bool known) {
+        held = usdc.balanceOf(address(this));
+        uint256 n = markets.length;
+        for (uint256 i; i < n; ++i) {
+            uint256 pairIndex = markets[i];
+            if (tradingStorage.pendingMarketOpenCount(address(this), pairIndex) != 0) return (held, false);
+            uint256 count = tradingStorage.openTradesCount(address(this), pairIndex);
+            if (count == 0) continue;
+            // One position per market (hedgeOpen), which Veranta stores at the first free index.
+            IVerantaTradingStorage.Trade memory t = tradingStorage.openTrades(address(this), pairIndex, 0);
+            if (count != 1 || t.leverage == 0) return (held, false);
+            held += t.initialPosToken;
+        }
+        return (held, true);
     }
 
     // ------------------------------------------------------------------ keeper
@@ -410,7 +463,9 @@ contract LockeVault is Initializable, ReentrancyGuard {
         if (paused()) revert IsPaused();
         if (amount == 0) revert ZeroAmount();
         if (permission.account != owner || permission.spender != address(this) || permission.token != address(usdc)) revert BadPermission();
+        uint256 released = _lowerNetDeposits();
         netDeposits += amount;
+        if (released != 0) factory.recordWithdraw(released);
         factory.recordDeposit(amount, netDeposits); // reverts above the launch caps
         if (signature.length != 0 && !SPEND_PERMISSIONS.isApproved(permission)) {
             if (!SPEND_PERMISSIONS.approveWithSignature(permission, signature)) revert BadPermission();
@@ -431,6 +486,23 @@ contract LockeVault is Initializable, ReentrancyGuard {
     }
 
     receive() external payable {}
+
+    /// @dev Lowers netDeposits to the vault's holdings when they are known and below it, and returns
+    /// by how much (the caller tells the factory). Veranta is read only when idle USDC alone doesn't
+    /// cover netDeposits, and through a call that can't make a deposit revert: if Veranta's views
+    /// fail, nothing is lowered.
+    function _lowerNetDeposits() private returns (uint256 released) {
+        uint256 net = netDeposits;
+        if (net == 0 || usdc.balanceOf(address(this)) >= net) return 0;
+        try this.holdings() returns (uint256 held, bool known) {
+            if (!known || held >= net) return 0;
+            netDeposits = held;
+            emit NetDepositsLowered(net, held);
+            return net - held;
+        } catch {
+            return 0;
+        }
+    }
 
     function _settleFee(uint256 pairIndex) private {
         uint256 owed = feeOwed[pairIndex];
@@ -466,6 +538,11 @@ contract LockeVault is Initializable, ReentrancyGuard {
 
     function _setPlan(uint256 pairIndex, bool enabled, bool buy, uint64 maxLeverage, uint128 maxNotional, uint128 maxCollateral) private {
         if (enabled && (maxLeverage < PRECISION || maxNotional == 0 || maxCollateral == 0)) revert BadPlan();
+        if (!isMarket[pairIndex]) {
+            if (markets.length >= MAX_MARKETS) revert TooManyMarkets();
+            isMarket[pairIndex] = true;
+            markets.push(pairIndex);
+        }
         plans[pairIndex] = Plan(enabled, buy, maxLeverage, maxNotional, maxCollateral);
         emit PlanSet(pairIndex, enabled, buy, maxLeverage, maxNotional, maxCollateral);
     }

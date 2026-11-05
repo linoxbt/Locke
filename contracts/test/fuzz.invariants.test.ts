@@ -4,7 +4,7 @@
  * Veranta. After every step the vault's safety rules must hold:
  *
  *  1. Money only moves between the owner, the vault, Veranta and Locke's fee collector:
- *     vault USDC + collateral at Veranta + fees paid = initial funding + deposits - withdrawals.
+ *     vault USDC + collateral at Veranta + fees paid + hedge losses = initial funding + deposits - withdrawals.
  *  2. Fees never exceed 0.20% of the notional the keeper opened.
  *  3. Only the current owner withdraws, changes limits, closes, moves margin directly or changes
  *     the keeper; only the admin rotates the factory's keeper, which following vaults then use.
@@ -14,7 +14,10 @@
  *     while paused.
  *  5. The owner can always exit: close every hedge and withdraw every dollar, even while paused
  *     and with no keeper. Checked on a snapshot after every step, then rolled back.
- *  6. The factory's total deposits equal the sum of every vault's net deposits.
+ *  6. The factory's total deposits equal the sum of every vault's net deposits, and after a
+ *     deposit or a sync the vault's net deposits never exceed what it holds (losses are counted off).
+ *  7. A new owner never inherits the previous owner's keeper: after a handover the vault follows
+ *     the factory's.
  *
  * FUZZ_RUNS sets the number of random sequences (default 150).
  */
@@ -59,8 +62,11 @@ const action = fc.oneof(
   w(1, fc.record({ kind: fc.constant("pauseVault" as const), by: mostly("guardian"), on: fc.boolean() })),
   w(1, fc.record({ kind: fc.constant("pauseAll" as const), by: mostly("guardian"), on: fc.boolean() })),
   w(1, fc.record({ kind: fc.constant("transferOwnership" as const), by: mostly("owner"), to: actor })),
-  w(1, fc.record({ kind: fc.constant("acceptOwnership" as const), by: mostly("stranger") })),
+  w(1, fc.record({ kind: fc.constant("acceptOwnership" as const), by: actor, asPending: fc.boolean() })),
   w(3, fc.record({ kind: fc.constant("warp" as const), seconds: fc.integer({ min: 1, max: 7200 }) })),
+  // Veranta, not a role: a hedge ends at a loss (a losing close or a liquidation), then anyone syncs.
+  w(1, fc.record({ kind: fc.constant("loss" as const), pair, part: fc.integer({ min: 1, max: 100 }) })),
+  w(1, fc.record({ kind: fc.constant("sync" as const), by: actor })),
 );
 
 describe("LockeVault invariants (property-based)", function () {
@@ -85,7 +91,7 @@ describe("LockeVault invariants (property-based)", function () {
         await testClient.revert({ id: base });
         base = await testClient.snapshot();
         const initial = USD(300);
-        let deposits = 0n, withdrawals = 0n, notionalOpened = 0n;
+        let deposits = 0n, withdrawals = 0n, notionalOpened = 0n, lost = 0n;
         const feesBefore = await usdc.read.balanceOf([collector.account.address]);
 
         for (const a of actions) {
@@ -93,6 +99,14 @@ describe("LockeVault invariants (property-based)", function () {
           if (a.kind === "warp") {
             await testClient.increaseTime({ seconds: a.seconds });
             await testClient.mine({ blocks: 1 });
+            continue;
+          }
+          if (a.kind === "loss") {
+            const coll = await veranta.read.collateralOf([vault.address, a.pair]);
+            if (coll === 0n) continue;
+            const loss = (coll * BigInt(a.part)) / 100n;
+            await veranta.write.closeAtLoss([vault.address, a.pair, loss]);
+            lost += loss;
             continue;
           }
           const by = wallets[a.by];
@@ -207,10 +221,20 @@ describe("LockeVault invariants (property-based)", function () {
               break;
             case "acceptOwnership": {
               const pending = await vault.read.pendingOwner();
-              await run(vault.write.acceptOwnership({ account: by.account }));
-              if (ok) expect(same(addr(a.by), pending), "only the named new owner accepts").to.equal(true);
+              // Half the time the named new owner accepts, so handovers happen often enough to check 7.
+              const caller = (a.asPending && Object.values(wallets).find((w) => same(w.account.address, pending))) || by;
+              await run(vault.write.acceptOwnership({ account: caller.account }));
+              if (ok) {
+                expect(same(caller.account.address, pending), "only the named new owner accepts").to.equal(true);
+                // 7: the previous owner's keeper doesn't come along.
+                expect(await vault.read.keeperFollowsFactory(), "new owner inherited a keeper").to.equal(true);
+              }
               break;
             }
+            case "sync":
+              await run(vault.write.syncDeposits({ account: by.account }));
+              expect(ok, "sync refused").to.equal(true);
+              break;
           }
           if (ok) {
             succeeded++;
@@ -221,10 +245,12 @@ describe("LockeVault invariants (property-based)", function () {
           const inVault = await usdc.read.balanceOf([vault.address]);
           const atVeranta = (await veranta.read.collateralOf([vault.address, WTI])) + (await veranta.read.collateralOf([vault.address, ETH]));
           const fees = (await usdc.read.balanceOf([collector.account.address])) - feesBefore;
-          expect(inVault + atVeranta + fees, "money left the owner/vault/Veranta/fee circle").to.equal(initial + deposits - withdrawals);
+          expect(inVault + atVeranta + fees + lost, "money left the owner/vault/Veranta/fee circle").to.equal(initial + deposits - withdrawals);
           expect(fees <= (notionalOpened * BigInt(FEE_BPS)) / 10_000n, "fee above 0.20% of notional").to.equal(true);
           // 6: launch-cap accounting.
-          expect(await factory.read.totalDeposits(), "factory total").to.equal(await vault.read.netDeposits());
+          const net = await vault.read.netDeposits();
+          expect(await factory.read.totalDeposits(), "factory total").to.equal(net);
+          if (ok && (a.kind === "deposit" || a.kind === "sync")) expect(net <= inVault + atVeranta, "net deposits above what the vault holds").to.equal(true);
         }
 
         // 5: the owner can always get everything out, paused or not, keeper or not.

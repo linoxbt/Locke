@@ -111,9 +111,14 @@ describe("LockeVault on Veranta (Base fork)", function () {
     const wti = await priceUpdate(PAIR.WTI);
     console.log(`      WTI ${Number(wti.price) / 1e10}`);
     const openHash = await vault.write.hedgeOpen([PAIR.WTI, USD(20), 2n * P10, wti.price, P10], { account: keeper.account });
+    // While the open is pending its collateral is in no trade yet: the vault's holdings aren't known.
+    expect((await vault.read.holdings())[1]).to.equal(false);
     await fill(openHash, PAIR.WTI);
     const t1 = await tradeAt(PAIR.WTI)();
     expect(t1, "WTI trade stored for the vault").to.not.equal(null);
+    // Veranta stores the vault's one position per market at index 0, as `holdings` reads it.
+    expect(t1!.index).to.equal(0n);
+    expect(await vault.read.holdings()).to.deep.equal([(await usdcOf(vault.address)) + t1!.initialPosToken, true]);
     expect(t1!.buy).to.equal(true);
     expect(t1!.leverage).to.equal(2n * P10);
     console.log(`      WTI hedge open: collateral ${Number(t1!.initialPosToken) / 1e6} USDC at ${Number(t1!.openPrice) / 1e10}`);
@@ -141,6 +146,9 @@ describe("LockeVault on Veranta (Base fork)", function () {
     await fill(ethHash, PAIR.ETH);
     const e1 = await tradeAt(PAIR.ETH)();
     expect(e1!.buy).to.equal(false);
+    expect(e1!.index).to.equal(0n);
+    const t3 = await tradeAt(PAIR.WTI)();
+    expect(await vault.read.holdings()).to.deep.equal([(await usdcOf(vault.address)) + t3!.initialPosToken + e1!.initialPosToken, true]);
     console.log(`      ETH short open: collateral ${Number(e1!.initialPosToken) / 1e6} USDC at ${Number(e1!.openPrice) / 1e10}`);
 
     // --- Guardian pause stops new hedges and others' deposits, never exits.
@@ -151,6 +159,8 @@ describe("LockeVault on Veranta (Base fork)", function () {
     // --- Owner closes WTI (the keeper never closes); the proceeds land in the vault.
     const idle1 = await usdcOf(vault.address);
     const closeHash = await vault.write.ownerClose([PAIR.WTI, t2!.index, t2!.initialPosToken, (await priceUpdate(PAIR.WTI)).price], { account: owner.account });
+    // A pending close leaves the trade (and its collateral) where holdings() reads it until it fills.
+    expect(await vault.read.holdings()).to.deep.equal([idle1 + t2!.initialPosToken + e1!.initialPosToken, true]);
     await fill(closeHash, PAIR.WTI);
     const idle2 = await usdcOf(vault.address);
     expect(await openCount(PAIR.WTI)).to.equal(0n);
@@ -164,8 +174,12 @@ describe("LockeVault on Veranta (Base fork)", function () {
     await fill(ownerClose, PAIR.ETH);
     expect(await openCount(PAIR.ETH)).to.equal(0n);
 
-    // --- Owner withdraws everything.
+    // --- What the round trips cost comes off the launch caps' count.
     const idle3 = await usdcOf(vault.address);
+    await vault.write.syncDeposits({ account: stranger.account });
+    expect(await vault.read.netDeposits()).to.equal(idle3 < USD(400) ? idle3 : USD(400));
+
+    // --- Owner withdraws everything.
     const ownerBefore = await usdcOf(owner.account.address);
     await vault.write.withdraw([owner.account.address, idle3], { account: owner.account });
     expect(await usdcOf(vault.address)).to.equal(0n);

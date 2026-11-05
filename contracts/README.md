@@ -32,8 +32,9 @@ hedge the keeper opens, at most 0.20% (`MAX_FEE_BPS = 20`), paid to the factory'
 It defaults to zero. Veranta's own builder-fee route needs an EIP-7702 account, which a contract
 trader cannot use, so the vault charges it itself.
 
-**Launch caps** count deposits less withdrawals, per vault and across all vaults. A withdrawal never
-reverts because of them, including withdrawals of profits above what was deposited.
+**Launch caps** count deposits less withdrawals, per vault and across all vaults, lowered to what a
+vault still holds once a hedge loses money or fees are paid (v3). A withdrawal never reverts because
+of them, including withdrawals of profits above what was deposited.
 
 ## Run
 
@@ -158,7 +159,7 @@ Known and accepted, documented here rather than fixed:
 - Exits depend on Veranta itself being unpaused (`closeTradeMarket` and `updateMargin` are gated by
   Veranta's own pause and position-roll state); Locke's own roles can't block them.
 - Launch caps count deposits made through the vault: a plain USDC transfer to a vault isn't counted,
-  trading losses don't lower `netDeposits`, and anyone can fill the total cap with their own vaults
+  trading losses don't lower `netDeposits` (fixed in v3), and anyone can fill the total cap with their own vaults
   (fully withdrawable). The admin raises caps with `setCaps`; they are a launch-time brake, not a limit
   on exposure.
 - The fee collector is read from the factory when a fee is paid, so the admin can redirect fees.
@@ -169,3 +170,41 @@ Slither: the remaining findings are the keeper zero-checks (removing the keeper 
 purpose), the timestamp cooldowns, the low-level ETH sweep and the non-reverting fee transfer, and
 "strict equality" on Veranta's trade counts (a count of zero is exactly what is checked).
 
+## v3: audit fixes (5 Nov 2026)
+
+v2 (`0xeAC1E6987d114dB6f09572226B796A73C94DbCa6`) has no vaults, so these ship as a fresh factory.
+The constructor is unchanged.
+
+- **Losses come off the launch caps.** `netDeposits` used to fall only on withdrawals, so a hedge
+  that lost money left the owner's own top-ups blocked by the per-vault cap, and the money that was
+  gone kept holding the shared total. Now a deposit (and `collectIncome`) first lowers `netDeposits`
+  to `holdings()`: idle USDC plus each hedge's collateral on Veranta (unrealized P&L isn't counted),
+  and tells the factory, so `totalDeposits` stays the sum of the vaults'. It only ever lowers, never
+  while an open is pending (its collateral is in no trade yet), and Veranta is read only when idle
+  USDC doesn't cover `netDeposits`, through a call that can't revert the deposit. `syncDeposits()`
+  (anyone) does the same on its own, so a vault that lost money frees the total cap without a
+  deposit. Withdrawals still never call Veranta. To keep that walk cheap a vault tracks the markets
+  it has plans on, at most 16 (`MAX_MARKETS`, `TooManyMarkets`).
+- **A handover doesn't carry a keeper.** `acceptOwnership` puts the vault back on Locke's keeper
+  if the previous owner had picked their own (or none); the new owner can pick again.
+- **Total cap griefing** (one vault filling the $25k total in v2, whose per-vault cap equalled it):
+  creating a vault is open to anyone, so whatever the per-vault cap, someone willing to park the
+  whole total in vaults (withdrawable at any time) can fill it; no on-chain rule tells that apart
+  from real demand without an allowlist. What the contracts now do is stop counting money that is
+  gone (above). The rest is configuration: `deploy.mjs` refuses `MAX_VAULT_USD >= MAX_TOTAL_USD`,
+  so no single vault can take it all, and the admin's `setCaps` raises the total at once if it is
+  filled.
+- **Unfillable opens:** slippage was already bounded (`0 < slippageP <= 3%`, Veranta's `1e10 = 1%`,
+  matching the keeper's 1%). The wanted price has no on-chain reference to check against (WTI and
+  the stock markets are priced by Pyth Lazer only, with no on-chain feed), so it stays as documented
+  above: a stolen keeper key can leave one pending open per market, at most the plan's collateral,
+  until Veranta's operator cancels it; `PositionExists` stops a second, and the guardian's
+  `setKeeperRevoked` stops the key everywhere. Now tested.
+
+Tests: 57 unit tests (losses with the mock's `closeAtLoss`, a pending open, Veranta views that
+revert, the handover reset, a stuck open), the property-based run with two new actions (a hedge
+ending at a loss, `syncDeposits` by anyone) and two new invariants (net deposits never above
+holdings after a deposit or sync; a new owner always follows the factory's keeper), and the fork
+tests, where `fork.veranta.test.ts` now checks `holdings()` against the real Veranta positions
+(index 0, pending orders unknown). Slither: the new findings are the calls in `holdings()`'s loop
+(at most 16 markets) and its `this.` call (the try/catch that keeps a deposit from reverting).

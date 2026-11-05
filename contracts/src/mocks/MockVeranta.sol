@@ -27,6 +27,7 @@ contract MockVeranta {
     uint256 public lastValue;
     /// @dev When set, opens wait as pending orders (like an unfilled market order) until filled or cancelled.
     bool public holdOpens;
+    bool public viewsBroken;
     mapping(address => mapping(uint256 => uint256)) public pendingCount;
     mapping(address => mapping(uint256 => uint256)) public pendingCollateral;
 
@@ -40,7 +41,13 @@ contract MockVeranta {
     }
 
     function pendingMarketOpenCount(address trader, uint256 pairIndex) external view returns (uint256) {
+        require(!viewsBroken, "views broken");
         return pendingCount[trader][pairIndex];
+    }
+
+    /// @dev Makes the pending-order view revert, as an upgraded or broken Veranta might.
+    function setViewsBroken(bool broken) external {
+        viewsBroken = broken;
     }
 
     function setHoldOpens(bool hold) external {
@@ -61,6 +68,15 @@ contract MockVeranta {
         pendingCount[trader][pairIndex] = 0;
         pendingCollateral[trader][pairIndex] = 0;
         usdc.transfer(trader, c);
+    }
+
+    /// @dev The position ends at a loss (a losing close fills, or it is liquidated): the trader gets
+    /// back its collateral less `loss`; the rest stays here.
+    function closeAtLoss(address trader, uint256 pairIndex, uint256 loss) external {
+        uint256 c = collateralOf[trader][pairIndex];
+        openCount[trader][pairIndex] = 0;
+        collateralOf[trader][pairIndex] = 0;
+        usdc.transfer(trader, c - loss);
     }
 
     function openTrades(address trader, uint256 pairIndex, uint256) external view returns (IVerantaTradingStorage.Trade memory t) {

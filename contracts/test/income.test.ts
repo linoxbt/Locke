@@ -6,8 +6,8 @@
 import hre from "hardhat";
 import { expect } from "chai";
 import { type Address, type Hex, toHex } from "viem";
-import { deployFixture } from "./fixture";
-import { expectRevert, USD } from "./helpers";
+import { deployFixture, WTI, PX } from "./fixture";
+import { expectRevert, P10, USD } from "./helpers";
 
 const MANAGER: Address = "0xf85210B21cC50302F477BA56686d2019dC9b67Ad";
 const SIGNED = toHex("owner-signed");
@@ -80,6 +80,16 @@ describe("LockeVault: protect as you get paid", () => {
     await expectRevert(vault.write.collectIncome([permission(), SIGNED, USD(21)], { account: keeper.account }), "VaultCapReached");
     await vault.write.setPaused([true], { account: guardian.account });
     await expectRevert(vault.write.collectIncome([permission(), SIGNED, USD(5)], { account: keeper.account }), "IsPaused");
+  });
+
+  it("counts a loss off the caps before collecting, like any deposit", async () => {
+    const { vault, keeper, veranta, permission, factory } = await setup({ maxVault: USD(300) });
+    await expectRevert(vault.write.collectIncome([permission(), SIGNED, USD(1)], { account: keeper.account }), "VaultCapReached");
+    await vault.write.hedgeOpen([WTI, USD(100), P10, PX, P10], { account: keeper.account });
+    await veranta.write.closeAtLoss([vault.address, WTI, USD(30)]);
+    await vault.write.collectIncome([permission(), SIGNED, USD(30)], { account: keeper.account });
+    expect(await vault.read.netDeposits()).to.equal(USD(300));
+    expect(await factory.read.totalDeposits()).to.equal(USD(300));
   });
 
   it("an unsigned permission is refused by the manager", async () => {
