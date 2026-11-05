@@ -3,6 +3,7 @@
 // against the compiled contracts in contracts/.
 
 import { parseAbi } from "viem";
+import { STOCK_MARKETS } from "./stockMarkets";
 
 export const BASE_CHAIN_ID = 8453;
 export const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
@@ -35,18 +36,8 @@ export const BASE_MARKETS = [
   { pairIndex: 1, symbol: "BTC/USD", asset: "BTC", type: "holdings", buy: false, label: "BTC or cbBTC treasury" },
   { pairIndex: 96, symbol: "WTI/USD", asset: "WTI", type: "costs", buy: true, label: "Fuel priced off WTI" },
   { pairIndex: 97, symbol: "BRENT/USD", asset: "BRENT", type: "costs", buy: true, label: "Fuel priced off Brent" },
-  // Stocks: a short on Veranta's equity market for the stock (or index) a business holds,
-  // tokenized on Base or anywhere else. token: Coinbase's tokenized-stock symbol on Base, if any.
-  { pairIndex: 81, symbol: "NVDA/USD", asset: "NVDA", type: "stocks", buy: false, label: "NVIDIA", token: "NVDAc" },
-  { pairIndex: 82, symbol: "AAPL/USD", asset: "AAPL", type: "stocks", buy: false, label: "Apple", token: "AAPLc" },
-  { pairIndex: 86, symbol: "TSLA/USD", asset: "TSLA", type: "stocks", buy: false, label: "Tesla", token: "TSLAc" },
-  { pairIndex: 84, symbol: "MSFT/USD", asset: "MSFT", type: "stocks", buy: false, label: "Microsoft", token: "MSFTc" },
-  { pairIndex: 83, symbol: "AMZN/USD", asset: "AMZN", type: "stocks", buy: false, label: "Amazon", token: "AMZNc" },
-  { pairIndex: 85, symbol: "META/USD", asset: "META", type: "stocks", buy: false, label: "Meta", token: "METAc" },
-  { pairIndex: 87, symbol: "GOOG/USD", asset: "GOOG", type: "stocks", buy: false, label: "Alphabet", token: "GOOGLc" },
-  { pairIndex: 80, symbol: "COIN/USD", asset: "COIN", type: "stocks", buy: false, label: "Coinbase" },
-  { pairIndex: 78, symbol: "US500/USD", asset: "US500", type: "stocks", buy: false, label: "S&P 500 portfolio" },
-  { pairIndex: 79, symbol: "US100/USD", asset: "US100", type: "stocks", buy: false, label: "Nasdaq 100 portfolio" },
+  // Stocks: a short on Veranta's market for the stock (or index) a business holds. See stockMarkets.ts.
+  ...STOCK_MARKETS,
 ] as const satisfies readonly { pairIndex: number; symbol: string; asset: string; type: BasePlanType; buy: boolean; label: string; token?: string }[];
 
 export type BaseMarket = (typeof BASE_MARKETS)[number];

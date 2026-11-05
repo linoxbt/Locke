@@ -256,3 +256,16 @@ describe("Stock plans", () => {
     expect(() => parseBaseInputs({ type: "stocks", pairIndex: 0, valueUsd: 1000, sharePct: 50, leverage: 2, bufferPct: 50 })).toThrow("Pick a market");
   });
 });
+
+describe("Stock catalogue", () => {
+  it("lists every tokenized stock Veranta can hedge, plus the two indices, with no duplicates", async () => {
+    const { BASE_MARKETS } = await import("@/lib/base/contracts");
+    const stocks = BASE_MARKETS.filter((m) => m.type === "stocks");
+    expect(stocks.length).toBe(59);
+    expect(new Set(BASE_MARKETS.map((m) => m.pairIndex)).size).toBe(BASE_MARKETS.length);
+    const tokens = stocks.flatMap((m) => ("token" in m && m.token ? [m.token] : []));
+    expect(tokens.length).toBe(57);
+    expect(new Set(tokens).size).toBe(57);
+    expect(stocks.every((m) => m.buy === false && m.symbol === `${m.asset}/USD`)).toBe(true);
+  });
+});

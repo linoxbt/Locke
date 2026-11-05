@@ -125,6 +125,23 @@ export function NewVaultForm({
   }, []);
 
   const choices = BASE_MARKETS.filter((m) => m.type === type);
+  // Stock prices come one market at a time (there are dozens): the one picked, refreshed every 15 s.
+  useEffect(() => {
+    if (type !== "stocks" || !markets) return;
+    let live = true;
+    const get = () =>
+      fetch(`/api/base/markets?pair=${pairIndex}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d?.market && live && setMarkets((ms) => ms && ms.map((m) => (m.pairIndex === d.market.pairIndex ? d.market : m))))
+        .catch(() => null);
+    void get();
+    const t = setInterval(get, 15_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, pairIndex, markets == null]);
   const market = markets?.find((m) => m.pairIndex === pairIndex);
   const inputs: BasePlanInputs =
     type !== "costs"
@@ -371,15 +388,16 @@ export function NewVaultForm({
         )}
 
         <Field label="Market" group hint={market?.carryPctPerHour != null ? carryHint(market) : undefined}>
-          <Segmented<number>
-            label="Market"
-            value={pairIndex}
-            onChange={setPairIndex}
-            options={choices.map((m) => ({
-              value: m.pairIndex as number,
-              label: type === "stocks" ? m.asset : m.label,
-            }))}
-          />
+          {type === "stocks" ? (
+            <StockPicker value={pairIndex} onChange={setPairIndex} />
+          ) : (
+            <Segmented<number>
+              label="Market"
+              value={pairIndex}
+              onChange={setPairIndex}
+              options={choices.map((m) => ({ value: m.pairIndex as number, label: m.label }))}
+            />
+          )}
         </Field>
         {type === "stocks" && (
           <p className="-mt-3 text-[13px] leading-relaxed text-ink-2">
@@ -624,5 +642,40 @@ function MoneyInput({ label, value, onChange }: { label: string; value: number; 
       />
       {bad && <span className="mt-1 block text-[12px] text-danger-ink">Enter an amount in dollars, like 25,000.</span>}
     </>
+  );
+}
+
+/** Every stock and index a stock plan can protect, searchable by ticker or company. */
+function StockPicker({ value, onChange }: { value: number; onChange: (pairIndex: number) => void }) {
+  const [q, setQ] = useState("");
+  const all = BASE_MARKETS.filter((m) => m.type === "stocks");
+  const needle = q.trim().toLowerCase();
+  const list = needle ? all.filter((m) => m.asset.toLowerCase().includes(needle) || m.label.toLowerCase().includes(needle)) : all;
+  return (
+    <div className="flex flex-col gap-2">
+      <input
+        className={inputCls}
+        aria-label="Search stocks"
+        placeholder={`Search ${all.length} stocks and indices: NVDA, Apple, S&P 500…`}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      <div role="radiogroup" aria-label="Stock" className="grid max-h-[272px] grid-cols-2 gap-1 overflow-y-auto rounded-[18px] bg-mist p-1 sm:grid-cols-3">
+        {list.map((m) => (
+          <button
+            key={m.pairIndex}
+            type="button"
+            role="radio"
+            aria-checked={value === m.pairIndex}
+            onClick={() => onChange(m.pairIndex)}
+            className={`flex min-w-0 flex-col items-start rounded-[14px] px-3 py-2 text-left transition ${value === m.pairIndex ? "bg-ink text-paper" : "text-ink hover:bg-paper"}`}
+          >
+            <span className="num text-[13px]">{m.asset}</span>
+            <span className={`w-full truncate text-[12px] ${value === m.pairIndex ? "text-paper/70" : "text-ink-3"}`}>{m.label}</span>
+          </button>
+        ))}
+        {list.length === 0 && <p className="col-span-full px-3 py-4 text-[13px] text-ink-3">No stock matches &ldquo;{q}&rdquo;. Try a ticker like NVDA.</p>}
+      </div>
+    </div>
   );
 }

@@ -29,7 +29,7 @@ export interface Metrics {
   plansCreatedInRange: number;
   /** Plans by status (funding, opening, active, closed). */
   byStatus: Record<string, number>;
-  /** Active hedges by market: USD and count, in BASE_MARKETS order. */
+  /** Active hedges by market: USD and count, in BASE_MARKETS order (stocks only when they have a plan). */
   byMarket: { symbol: string; label: string; usd: number; plans: number }[];
   /** Active hedge value by plan type. */
   byType: { holdings: number; costs: number; stocks: number };
@@ -177,7 +177,10 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
     plansCreated: num(totals.created),
     plansCreatedInRange: num(totals.created_in_range),
     byStatus,
-    byMarket: BASE_MARKETS.map((m) => ({ symbol: m.symbol, label: m.label, usd: num(byPair.get(m.pairIndex)?.usd), plans: num(byPair.get(m.pairIndex)?.n) })),
+    // The crypto and oil markets always; a stock only once it has a live plan (there are dozens).
+    byMarket: BASE_MARKETS.map((m) => ({ symbol: m.symbol, label: m.label, type: m.type, usd: num(byPair.get(m.pairIndex)?.usd), plans: num(byPair.get(m.pairIndex)?.n) }))
+      .filter((m) => m.type !== "stocks" || m.plans > 0)
+      .map(({ type: _type, ...m }) => m),
     byType,
     protectedSeries: protectedRows.map((r) => ({ t: new Date(r.day).toISOString(), v: num(r.usd) })),
     createdSeries: createdRows.map((r) => ({ t: new Date(r.t).toISOString(), v: num(r.n) })),
