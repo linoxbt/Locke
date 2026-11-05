@@ -6,10 +6,12 @@ import { easscanUrl } from "@/lib/base/attest";
 import { readProof, type ProofStatus } from "@/lib/server/baseProof";
 import { shortAddr, usd } from "@/lib/ui/format";
 
+// No loading.tsx for this route on purpose: a loading state streams a 200 before the page runs, so
+// a malformed or unknown attestation couldn't answer 404.
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Protected by Locke",
-  description: "A public, on-chain proof that a business's holdings or fuel budget are protected by a Locke hedge on Base.",
+  description: "A public, on-chain proof that a business's holdings, stocks or fuel budget are protected by a Locke hedge on Base."
 };
 
 const HEADLINE: Record<ProofStatus, { lead: string; rest: string; chip: string; cls: string }> = {
@@ -57,7 +59,7 @@ export default async function ProofPage({ params }: { params: Promise<{ uid: str
       {p && proof.status !== "other" && (
         <Card className="grid grid-cols-2 gap-6 sm:grid-cols-4">
           <Stat label="Amount protected" value={usd(p.protectedUsd)} />
-          <Stat label="Market" value={p.market} sub={p.long ? "Long: holds a cost down" : "Short: holds a value up"} />
+          <Stat label="Market" value={p.market} sub={p.long ? "Long: offsets a rise in a cost" : "Short: offsets a fall in a value"} />
           <Stat label="Since" value={day(p.startedAt)} />
           <Stat label={proof.endedAt ? "Ended" : "Status"} value={proof.endedAt ? day(proof.endedAt) : "Open"} />
         </Card>

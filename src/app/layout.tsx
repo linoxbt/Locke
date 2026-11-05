@@ -3,6 +3,7 @@ import { Inter, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import { CookieConsent } from "@/components/CookieConsent";
 import { Header } from "@/components/Header";
 import { baseSessionHint } from "@/lib/server/baseSession";
+import { siteUrl } from "@/lib/ui/site";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -10,11 +11,12 @@ const interTight = Inter_Tight({ subsets: ["latin"], weight: ["400", "500"], var
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
-  // Netlify sets URL at build time; social images need an absolute base.
-  metadataBase: new URL(process.env.URL ?? process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  // Social images need an absolute base: the configured public URL, or the one Netlify sets at build time.
+  metadataBase: siteUrl(),
   title: "Locke — Protection plans on Base",
-  description: "Protect what your business holds. Manage what it buys. Hedges on Base from a vault you own, sized and watched for you.",
-  openGraph: { title: "Locke", description: "Protect what your business holds. Manage what it buys, with hedges and from a vault you own." },
+  description:
+    "Protect the crypto and tokenized stocks your business holds, and manage the fuel it buys. Hedges on Base from a vault you own, sized and watched for you.",
+  openGraph: { title: "Locke", description: "Protect the crypto and stocks your business holds. Manage the fuel it buys, with hedges from a vault you own." },
 };
 
 export const viewport: Viewport = { themeColor: "#f2f1ee", width: "device-width", initialScale: 1 };

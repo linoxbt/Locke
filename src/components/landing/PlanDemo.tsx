@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { usd } from "@/lib/ui/format";
 
-/** The demo treasury: 20 ETH, fully hedged with a short of the same size. */
+/** The demo treasury: 20 ETH, all of it protected with a short of the same size. */
 const ETH_HELD = 20;
-/** The demo fuel bill: $40,000 a month, half of it moving with crude, fully hedged with a long. */
+/** The demo fuel bill: $40,000 a month, half of it moving with crude, that half protected with a long. */
 const FUEL = { monthlyUsd: 40_000, crudeShare: 0.5 };
 
 type PlanKind = "eth" | "costs";
@@ -189,6 +189,7 @@ export function PlanDemo(prices: Prices) {
           // "any" so autoplay can glide the thumb smoothly; your own input snaps to whole percents.
           step="any"
           value={move}
+          aria-valuetext={`${type === "eth" ? "ETH" : "Crude"} ${shownMove >= 0 ? "up" : "down"} ${Math.abs(shownMove)}%`}
           onChange={(e) => {
             setMove(Math.round(Number(e.target.value)));
             setIdleUntil(Date.now() + RESUME_MS);
@@ -205,7 +206,11 @@ export function PlanDemo(prices: Prices) {
         <span>+50%</span>
       </div>
       <p className="mt-4 text-[13px] text-ink-3">
-        Illustration at today&apos;s ETH price on Veranta, fully hedged, before funding and fees. Your own plan shows these numbers for your amounts.
+        {type === "eth"
+          ? "An illustration at today's ETH price on Veranta, with all 20 ETH protected."
+          : "An illustration with half the bill following crude, and that half protected."}{" "}
+        The hedge offsets the price move on the share it covers; a real plan also pays trading fees and funding, so it won&apos;t match exactly.
+        Your own plan shows these numbers for your amounts.
       </p>
     </div>
   );

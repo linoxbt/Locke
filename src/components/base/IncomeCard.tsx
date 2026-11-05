@@ -128,7 +128,15 @@ export function IncomeCard({
             never more than your weekly cap. You sign once; you can turn it off or revoke it in your wallet at any time.
           </p>
           <Field label={`Share of incoming USDC: ${share}%`} group>
-            <Slider label="Share of incoming USDC" value={share} min={SHARE_RANGE.min} max={SHARE_RANGE.max} step={5} onChange={setShare} />
+            <Slider
+              label="Share of incoming USDC"
+              value={share}
+              min={SHARE_RANGE.min}
+              max={SHARE_RANGE.max}
+              step={5}
+              onChange={setShare}
+              valueText={`${share}% of each payment`}
+            />
           </Field>
           <Field label="Weekly cap (USDC)" hint="Base Account enforces this: the vault can never take more in a week.">
             <input className={inputCls} inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} />

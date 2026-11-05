@@ -50,14 +50,25 @@ export function Segmented<T extends string | number>({
   onChange(v: T): void;
   label: string;
 }) {
+  // One tab stop for the group, on the picked option; arrow keys move the pick, as radio buttons do.
+  const at = Math.max(0, options.findIndex((o) => o.value === value));
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    if (step == null || options.length === 0) return;
+    e.preventDefault();
+    const to = (at + step + options.length) % options.length;
+    onChange(options[to].value);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>("[role=radio]")[to]?.focus();
+  }
   return (
-    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1 rounded-[22px] bg-mist p-1">
-      {options.map((o) => (
+    <div role="radiogroup" aria-label={label} onKeyDown={onKeyDown} className="flex flex-wrap gap-1 rounded-[22px] bg-mist p-1">
+      {options.map((o, i) => (
         <button
           key={String(o.value)}
           type="button"
           role="radio"
           aria-checked={value === o.value}
+          tabIndex={i === at ? 0 : -1}
           onClick={() => onChange(o.value)}
           className={`h-10 flex-1 whitespace-nowrap rounded-full px-3 text-[13px] transition ${value === o.value ? "bg-ink text-paper" : "text-ink-2 hover:text-ink"}`}
         >
@@ -75,6 +86,7 @@ export function Slider({
   step = 1,
   onChange,
   label,
+  valueText,
   className = "text-cobalt",
 }: {
   value: number;
@@ -83,6 +95,8 @@ export function Slider({
   step?: number;
   onChange(n: number): void;
   label: string;
+  /** What a screen reader says for the value, e.g. "3 months" rather than "3". */
+  valueText?: string;
   className?: string;
 }) {
   const fill = ((value - min) / (max - min)) * 100;
@@ -90,6 +104,7 @@ export function Slider({
     <input
       type="range"
       aria-label={label}
+      aria-valuetext={valueText}
       min={min}
       max={max}
       step={step}

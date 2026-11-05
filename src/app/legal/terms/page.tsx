@@ -32,8 +32,8 @@ export default function Terms() {
       <h2>2. Your money stays yours</h2>
       <p>
         Your USDC sits in a vault contract that your wallet owns. Locke&apos;s keeper can trade it only within the limits written into the
-        vault (market, side, leverage and size), and can never withdraw. You can withdraw, close the hedge or remove Locke&apos;s keeper
-        from your wallet at any time, without Locke.
+        vault (market, side, leverage and size), and can never withdraw. You can withdraw or remove Locke&apos;s keeper from your wallet at
+        any time, without Locke, and close the hedge whenever its market is open.
       </p>
       <p>We never hold your private keys or seed phrase, and we will never ask for them.</p>
 
@@ -47,14 +47,39 @@ export default function Terms() {
         <li>You must not use Locke to break the law, to move the proceeds of crime, or to interfere with Locke, Veranta or any network.</li>
       </ul>
 
-      <h2>4. Risk</h2>
+      <h2 id="stocks" className="scroll-mt-24">4. Stock plans</h2>
+      <ul>
+        <li>
+          Stock plans are not available to US persons (US citizens and residents, and businesses set up or based in the US), or to anyone
+          in a country where tokenized stocks or derivatives on stocks are restricted. When you create a stock plan, you confirm that neither
+          you nor the business you act for is one of them.
+        </li>
+        <li>
+          A stock plan hedges the price only. It holds a perpetual future on Veranta that follows a stock or index; it is not a share and
+          carries no voting or dividend rights. Locke never buys, sells, holds or moves stocks or stock tokens for you.
+        </li>
+        <li>
+          Tokenized stocks, such as Coinbase&apos;s on Base, stay in your own account. Locke only reads them to size a plan. Whether you may
+          hold them is a matter between you and their issuer.
+        </li>
+        <li>
+          Locke is not affiliated with, endorsed or sponsored by Coinbase, or by any company whose stock or index a plan follows. Their names
+          and tickers are used only to say which market a plan follows.
+        </li>
+        <li>
+          Stock markets on Veranta follow US trading hours. While a market is closed, Locke&apos;s keeper can&apos;t add margin and you
+          can&apos;t close the hedge, and prices can open far from where they closed.
+        </li>
+      </ul>
+
+      <h2>5. Risk</h2>
       <p>
         Hedging with leveraged perpetual futures carries real risk, including losing the margin you put in. Read the{" "}
         <Link href="/legal/risk">Risk Disclosure</Link> before you create a plan. Locke asks you to confirm that you understand the
         risks before it opens protection.
       </p>
 
-      <h2>5. What Locke does and doesn&apos;t do for you</h2>
+      <h2>6. What Locke does and doesn&apos;t do for you</h2>
       <ul>
         <li>
           Locke calculates sizes, margin and alert levels from the numbers you give it and from market data. Check your inputs: a wrong amount
@@ -68,7 +93,7 @@ export default function Terms() {
         <li>Locke does not guarantee any outcome, price, fill, or that a hedge will offset a loss elsewhere.</li>
       </ul>
 
-      <h2>6. Fees</h2>
+      <h2>7. Fees</h2>
       <ul>
         <li>
           A vault can carry a Locke fee of at most 0.20% of the value of a hedge the keeper opens. It is owed
@@ -82,7 +107,7 @@ export default function Terms() {
         </li>
       </ul>
 
-      <h2>7. Third-party services</h2>
+      <h2>8. Third-party services</h2>
       <p>
         Locke works on top of services we don&apos;t control, including Veranta, the Base network, price oracles
         (Pyth), wallets (including Base Account by Coinbase), and our hosting and data providers. Your use of them is governed by their own
@@ -90,21 +115,21 @@ export default function Terms() {
         losses they cause.
       </p>
 
-      <h2>8. Smart contracts and software</h2>
+      <h2>9. Smart contracts and software</h2>
       <p>
         Locke&apos;s vault contracts on Base are tested extensively but have not yet been audited by an outside firm, and vaults launch with
         deposit limits. Software, including ours and the venues&apos;, can contain bugs. Blockchain transactions are final: we cannot reverse
         them.
       </p>
 
-      <h2>9. Your responsibilities</h2>
+      <h2>10. Your responsibilities</h2>
       <ul>
         <li>Keep your wallet, devices and recovery phrase secure. Anyone with access to your wallet can act as you.</li>
         <li>Check what your wallet asks you to sign before you sign it.</li>
         <li>Keep records and pay any taxes that apply to your hedges and your business.</li>
       </ul>
 
-      <h2>10. Availability and changes</h2>
+      <h2>11. Availability and changes</h2>
       <p>
         We may change, pause or stop any part of Locke, including pausing new plans, deposits or hedges to protect users. A pause never stops
         you from withdrawing or closing: both work from your own wallet. We may update these terms;
@@ -112,7 +137,7 @@ export default function Terms() {
         means you accept it.
       </p>
 
-      <h2>11. Liability</h2>
+      <h2>12. Liability</h2>
       <p>
         Locke is provided &ldquo;as is&rdquo; and &ldquo;as available&rdquo;. To the fullest extent the law allows, we make no warranties,
         and we are not liable for indirect or consequential losses, lost profits, trading losses, liquidations, or losses caused by third-party
@@ -121,19 +146,19 @@ export default function Terms() {
         limited by law.
       </p>
 
-      <h2>12. Ending use</h2>
+      <h2>13. Ending use</h2>
       <p>
         You can stop using Locke at any time: close your hedges and withdraw. We may suspend or end your access if you break these terms or
         the law. Your funds remain yours and reachable as described in section 2.
       </p>
 
-      <h2>13. Law and disputes</h2>
+      <h2>14. Law and disputes</h2>
       <p>
         These terms are governed by the laws of {governingLaw()}, and its courts hear any dispute, unless the law where you live gives you the
         right to bring a claim there. Before going to court, please write to us at {contactEmail()} so we can try to resolve it.
       </p>
 
-      <h2>14. Contact</h2>
+      <h2>15. Contact</h2>
       <p>
         {operatorName()} · {contactEmail()}
       </p>

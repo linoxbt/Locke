@@ -37,7 +37,7 @@ export default async function HomePage() {
         <div className="pointer-events-none relative z-10 flex h-full items-center justify-center px-4">
           <div className="pointer-events-auto w-full max-w-[520px] animate-rise rounded-[14px] bg-paper p-5 shadow-[0_30px_80px_-30px_rgb(0_0_0/0.35)] sm:p-6">
             <h1 className="display text-[24px] leading-[1.04] sm:text-[32px]">
-              Protect what your business holds. <span className="text-ink-3">Manage what it buys, with hedges and from a vault you own.</span>
+              Protect the crypto and stocks your business holds. <span className="text-ink-3">Manage the fuel it buys, with hedges from a vault you own.</span>
             </h1>
             <Link
               href={start.href}
@@ -60,7 +60,7 @@ export default async function HomePage() {
       {/* Black interlude with a live demo */}
       <section className="bg-ink px-4 py-14 text-paper sm:py-20">
         <h2 className="display mx-auto max-w-[22ch] text-center text-[22px] leading-[1.05] sm:text-[32px]">
-          Describe it, preview it, fund it. <span className="text-paper/50">Then move the price and watch the plan hold.</span>
+          Describe it, preview it, fund it. <span className="text-paper/50">Then move the price and watch the hedge offset it.</span>
         </h2>
         <div className="mt-8 sm:mt-10">
           <PlanDemo eth={eth?.price ?? null} />

@@ -65,7 +65,10 @@ export default async function AgentsPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         {[
-          ["1. Quote", "Ask for a plan: a treasury in ETH or BTC, or a fuel budget priced off WTI or Brent. Locke sizes the hedge from live Veranta prices and says what it costs to hold."],
+          [
+            "1. Quote",
+            "Ask for a plan: a treasury in ETH or BTC, stocks or an index (NVDA, US500 and more), or a fuel budget priced off WTI or Brent. Locke sizes the hedge from live Veranta prices and says what it costs to hold."
+          ],
           ["2. Open", "Locke returns the wallet calls that create the owner's own vault with the plan's limits and deposit. The owner's wallet sends them; Locke never holds the funds."],
           ["3. Register", "Send the creation transaction hash. Locke's keeper opens the hedge, adds margin when needed, and publishes a Protected by Locke proof on Base."],
         ].map(([t, d]) => (
@@ -84,7 +87,7 @@ export default async function AgentsPage() {
       <p className="text-[13px] leading-relaxed text-ink-3">
         A call is charged only when it succeeds: a bad request returns an error and the payment is never settled. Payments are USDC
         transfer authorizations (EIP-3009) on Base, settled to Locke after the response. Hedges can lose money; read the Risk Disclosure
-        before opening one.
+        before opening one. Stock plans aren&apos;t available to US persons.
       </p>
     </div>
   );

@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { encodeFunctionData, zeroAddress, type Address, type Hex } from "viem";
+import { encodeFunctionData, publicActions, zeroAddress, type Address, type Hex } from "viem";
 import { proofPath } from "@/lib/base/attest";
 import { erc20Abi, USDC, usdcUnits, vaultAbi } from "@/lib/base/contracts";
-import { sendBaseCalls, walletErrorMessage, walletFor } from "@/lib/base/wallet";
+import { sendBaseCalls, SentFailedError, StillPendingError, waitForSent, walletErrorMessage, walletFor, type SentRef } from "@/lib/base/wallet";
 import { LOCKE_THRESHOLDS } from "@/lib/domain/risk";
 import type { VaultView as Detail } from "@/lib/server/baseVaults";
+import { readFactoryRoom, roomProblem, type FactoryRoom } from "@/lib/ui/factoryRoom";
 import { pct, price, shortAddr, signedUsd, usd } from "@/lib/ui/format";
 import { Ago } from "../Time";
 import { Button, Card, Display, ErrorNote, inputCls, Notice, Stat, StateChip } from "../ui";
@@ -17,6 +18,10 @@ import { IncomeCard } from "./IncomeCard";
 const POLL_MS = 10_000;
 
 type Action = "deposit" | "withdraw" | "close" | "keeper";
+
+const ACTION_NOUN: Record<Action, string> = { deposit: "deposit", withdraw: "withdrawal", close: "close", keeper: "keeper change" };
+
+type Wallet = Awaited<ReturnType<typeof walletFor>>;
 
 /** Whose keeper the vault has, as Base says; "unknown" while Base can't be read. */
 type KeeperState = "locke" | "none" | "other" | "unknown";
@@ -29,9 +34,27 @@ function keeperState(d: Detail, factoryKeeper: string | null): KeeperState {
 }
 
 /** A Locke vault on Base for its owner: the hedge, its risk, and every exit, live. */
-export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { initial: Detail; viewer: string; dataSuffix?: Hex; factoryKeeper: string | null }) {
+export function VaultView({
+  initial,
+  viewer,
+  dataSuffix,
+  factoryKeeper,
+  factory = null,
+  room = null
+}: {
+  initial: Detail;
+  viewer: string;
+  dataSuffix?: Hex;
+  factoryKeeper: string | null;
+  /** Locke's factory, to check its launch caps again just before a deposit is sent. */
+  factory?: Address | null;
+  /** The factory's launch caps as read when the page loaded. */
+  room?: FactoryRoom | null;
+}) {
   const [d, setD] = useState(initial);
   const [busy, setBusy] = useState<Action | null>(null);
+  // Sent, but Base hadn't confirmed it in time: it may still land, so the buttons stay off until it's checked.
+  const [pending, setPending] = useState<{ action: Action; ref: SentRef; message: string } | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -63,23 +86,56 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
   // Actions go from the owner's wallet: off while Base can't be read, and for an account that
   // isn't (or no longer is) the vault's owner on Base.
   const isOwner = !!d.chain && owner === viewer.toLowerCase();
-  const canAct = isOwner && busy === null;
+  const canAct = isOwner && busy === null && !pending;
 
-  async function run(action: Action, build: (from: Address) => { to: Address; data: Hex }[], message: string) {
-    if (!isOwner) return;
+  async function run(
+    action: Action,
+    build: (from: Address) => { to: Address; data: Hex }[],
+    message: string,
+    precheck?: (wallet: Wallet) => Promise<string | null>
+  ) {
+    if (!isOwner || pending) return;
     setBusy(action);
     setConfirmClose(false);
     setError(null);
     setDone(null);
     try {
       const wallet = await walletFor(owner, dataSuffix);
+      const refusal = await precheck?.(wallet);
+      if (refusal) throw new Error(refusal);
       await sendBaseCalls(wallet, build(wallet.account.address));
       // Show the new balances before saying it worked.
       await refresh();
       setAmount("");
       setDone(message);
     } catch (e) {
-      setError(walletErrorMessage(e));
+      // Sent, and Base hasn't confirmed it: never offer to send it again until it's checked.
+      if (e instanceof StillPendingError) setPending({ action, ref: e.ref, message });
+      else setError(walletErrorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Look again for an action Base hadn't confirmed. */
+  async function checkPending() {
+    if (!pending) return;
+    setBusy(pending.action);
+    setError(null);
+    try {
+      const wallet = await walletFor(owner, dataSuffix);
+      await waitForSent(wallet, pending.ref, 60_000);
+      setPending(null);
+      await refresh();
+      setAmount("");
+      setDone(pending.message);
+    } catch (e) {
+      if (e instanceof SentFailedError) {
+        setPending(null);
+        setError(walletErrorMessage(e));
+      } else if (!(e instanceof StillPendingError)) {
+        setError(walletErrorMessage(e));
+      }
     } finally {
       setBusy(null);
     }
@@ -87,6 +143,8 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
 
   const amt = Number(amount);
   const amountOk = Number.isFinite(amt) && amt > 0;
+  // A deposit the factory's launch caps would refuse. Owners may still add to a vault while Locke is paused.
+  const depositRefusal = room && amountOk ? roomProblem(room, amt, { newPlan: false, vaultUsd: d.chain?.netDepositsUsd ?? 0 }) : null;
 
   const deposit = () =>
     run(
@@ -95,7 +153,14 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
         { to: USDC, data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [vault, usdcUnits(amt)] }) },
         { to: vault, data: encodeFunctionData({ abi: vaultAbi, functionName: "deposit", args: [usdcUnits(amt)] }) },
       ],
-      `Deposited ${usd(amt)}.`
+      `Deposited ${usd(amt)}.`,
+      // The caps as they are now; if they can't be read, the vault still enforces them.
+      async (wallet) =>
+        factory
+          ? readFactoryRoom(wallet.extend(publicActions), factory)
+              .then((r) => roomProblem(r, amt, { newPlan: false, vaultUsd: d.chain?.netDepositsUsd ?? 0 }))
+              .catch(() => null)
+          : null
     );
   const withdraw = () =>
     run(
@@ -117,7 +182,7 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
           }),
         },
       ],
-      "Close sent. Veranta fills it within a few seconds and the USDC comes back to the vault."
+      "Close sent. Veranta usually fills it within a few seconds, and the USDC comes back to the vault."
     );
   const toggleKeeper = () =>
     run(
@@ -133,6 +198,10 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
   const p = d.position;
   const ratio = p?.ratio ?? null;
   const level = ratio == null ? "ok" : ratio >= LOCKE_THRESHOLDS.action ? "action" : ratio >= LOCKE_THRESHOLDS.watch ? "watch" : "ok";
+  // How far the price can move against the hedge before liquidation, as a share of the mark.
+  const liqMove = p && d.mark && p.liquidationPrice > 0 ? Math.abs(p.liquidationPrice - d.mark) / d.mark : null;
+  // Veranta fills no orders while the market is closed (stocks outside US hours, oil at night and weekends).
+  const marketClosed = d.marketOpen === false;
 
   return (
     <div className="flex flex-col gap-6">
@@ -173,7 +242,7 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
       )}
       {stale && <Notice>Live updates paused: Locke couldn&apos;t refresh this plan. The figures below may be out of date; it keeps trying.</Notice>}
       {d.partial.some((x) => x !== "Base" || d.chain) && <Notice>Some live data didn&apos;t load ({d.partial.join(", ")}). Showing what&apos;s available; it retries every few seconds.</Notice>}
-      {d.chain?.paused && <Notice>Locke has paused new deposits and new hedges. Withdrawals and closes still work.</Notice>}
+      {d.chain?.paused && <Notice>Locke has paused new hedges and income moves into vaults. Your own deposits, withdrawals and closes still work.</Notice>}
       {d.statusNote && <Notice tone={urgent(d) ? "danger" : "info"}>{d.statusNote}</Notice>}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
@@ -187,7 +256,11 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
                 <Stat label="Hedge P&L (after fees)" value={signedUsd(p.pnlUsd)} tone={p.pnlUsd == null ? undefined : p.pnlUsd >= 0 ? "ok" : "bad"} sub="Offsets the move in what you protect" />
                 <Stat label="Liquidation price" value={price(p.liquidationPrice)} />
                 <Stat label="Funding" value={signedUsd(-p.fundingFeeUsd)} sub={p.fundingFeeUsd <= 0 ? "Paid to this hedge" : "Paid by this hedge"} />
-                <Stat label="Margin used" value={pct(ratio)} sub="Liquidation at 100%" />
+                <Stat
+                  label="Margin used"
+                  value={pct(ratio)}
+                  sub={liqMove != null && ratio != null && ratio < 1 ? `Liquidation at 100%, a ${pct(liqMove, 1)} price move away` : "Liquidation at 100%"}
+                />
               </div>
               <RatioBar ratio={ratio} />
             </>
@@ -248,7 +321,7 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
             <input className={inputCls} inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
           <div className="grid grid-cols-2 gap-2">
-            <Button onClick={deposit} busy={busy === "deposit"} disabled={!amountOk || !canAct}>
+            <Button onClick={deposit} busy={busy === "deposit"} disabled={!amountOk || !canAct || !!depositRefusal}>
               Deposit
             </Button>
             <Button variant="ghost" onClick={withdraw} busy={busy === "withdraw"} disabled={!amountOk || !canAct || amt > (d.chain?.idleUsd ?? 0)}>
@@ -256,12 +329,19 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
             </Button>
           </div>
           {amountOk && d.chain && amt > d.chain.idleUsd && <p className="text-[12px] text-ink-2">You can withdraw up to {usd(d.chain?.idleUsd)} now. Close the hedge to free the rest.</p>}
+          {depositRefusal && <p className="text-[12px] text-ink-2">{depositRefusal}</p>}
 
           <div className="flex flex-col gap-2 border-t border-line pt-5">
             {p && !confirmClose && (
-              <Button variant="danger" onClick={() => setConfirmClose(true)} busy={busy === "close"} disabled={!canAct || d.mark == null}>
-                {d.mark == null ? "Waiting for a price to close" : "Close the hedge now"}
+              <Button variant="danger" onClick={() => setConfirmClose(true)} busy={busy === "close"} disabled={!canAct || d.mark == null || marketClosed}>
+                {d.mark == null ? "Waiting for a price to close" : marketClosed ? "Market closed: close when it reopens" : "Close the hedge now"}
               </Button>
+            )}
+            {p && marketClosed && (
+              <p className="text-[12px] leading-relaxed text-ink-2">
+                The {d.symbol} market is closed right now, so Veranta can&apos;t fill a close until it reopens. You can still withdraw the vault&apos;s idle
+                USDC.
+              </p>
             )}
             {p && confirmClose && (
               <div className="flex flex-col gap-2 rounded-xl bg-paper p-3">
@@ -270,7 +350,7 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
                   vault. Locke&apos;s keeper won&apos;t reopen it on its own.
                 </p>
                 <div className="grid grid-cols-2 gap-2">
-                  <Button variant="danger" onClick={close} busy={busy === "close"} disabled={!canAct || d.mark == null}>
+                  <Button variant="danger" onClick={close} busy={busy === "close"} disabled={!canAct || d.mark == null || marketClosed}>
                     Yes, close it
                   </Button>
                   <Button variant="ghost" onClick={() => setConfirmClose(false)} disabled={busy !== null}>
@@ -288,6 +368,30 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
               These go straight from your wallet to the vault. Locke can&apos;t block them, and they work even if Locke is offline.
             </p>
           </div>
+          {pending && (
+            <div className="flex flex-col gap-2 rounded-xl bg-paper p-3">
+              <p className="text-[13px] leading-relaxed text-ink-2">
+                Your {ACTION_NOUN[pending.action]} was sent and Base hasn&apos;t confirmed it yet. Don&apos;t send it again: it may still go through.
+                Check your wallet&apos;s activity, then check again here.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={checkPending} busy={busy !== null}>
+                  Check again
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={busy !== null}
+                  onClick={() => {
+                    // Only once the owner has seen in their wallet that it didn't go through.
+                    const ask = `Only do this if your wallet shows the ${ACTION_NOUN[pending.action]} never went through. Unlock the buttons?`;
+                    if (window.confirm(ask)) setPending(null);
+                  }}
+                >
+                  It didn&apos;t go through
+                </Button>
+              </div>
+            </div>
+          )}
           {done && <Notice tone="info">{done}</Notice>}
           <ErrorNote error={error} />
         </Card>
@@ -311,14 +415,26 @@ function RatioBar({ ratio }: { ratio: number | null }) {
   const fill = r >= LOCKE_THRESHOLDS.action ? "bg-danger" : r >= LOCKE_THRESHOLDS.watch ? "bg-watch" : "bg-ink";
   return (
     <div>
-      <div className="relative h-3 w-full overflow-hidden rounded-full bg-mist" role="meter" aria-label="Margin used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(r * 100)}>
+      <div
+        className="relative h-3 w-full overflow-hidden rounded-full bg-mist"
+        role="meter"
+        aria-label="Margin used"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(r * 100)}
+        aria-valuetext={
+          ratio == null
+            ? "Not known yet"
+            : `${Math.round(r * 100)}%; the keeper adds margin at ${Math.round(LOCKE_THRESHOLDS.action * 100)}%, liquidation at 100%`
+        }
+      >
         <div className={`h-full rounded-full ${fill} transition-[width] duration-700`} style={{ width: `${Math.max(2, r * 100)}%` }} />
         {[LOCKE_THRESHOLDS.watch, LOCKE_THRESHOLDS.action].map((t) => (
           <span key={t} className="absolute top-0 h-full w-0.5 bg-paper" style={{ left: `${t * 100}%` }} />
         ))}
       </div>
       <div className="num mt-1 flex justify-between text-[11px] text-ink-3">
-        <span>Healthy</span>
+        <span>About 15% when opened</span>
         <span>
           Keeper adds margin at {Math.round(LOCKE_THRESHOLDS.action * 100)}% · Liquidation 100%
         </span>

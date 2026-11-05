@@ -1,8 +1,10 @@
 import type { MetadataRoute } from "next";
+import { siteUrl } from "@/lib/ui/site";
 
 /** Public pages may be indexed; signed-in areas and the API may not. */
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: { userAgent: "*", allow: "/", disallow: ["/api/", "/portfolio", "/protect", "/plans/", "/account"] },
+    sitemap: new URL("/sitemap.xml", siteUrl()).toString(),
   };
 }

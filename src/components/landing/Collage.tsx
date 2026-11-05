@@ -55,7 +55,7 @@ function tiles(wti: number | null, eth: number | null): Tile[][] {
         <div className="flex h-full flex-col bg-lime p-4 text-ink">
           <span className="eyebrow text-ink/60">Fuel bill</span>
           <span className="num mt-auto text-[26px] leading-none">$40,000</span>
-          <span className="mt-2 text-[13px] text-ink/60">a month, held flat</span>
+          <span className="mt-2 text-[13px] text-ink/60">a month, partly hedged</span>
         </div>
       )),
       t("h-48", (
@@ -125,7 +125,7 @@ function tiles(wti: number | null, eth: number | null): Tile[][] {
       t("h-48", (
         <div className="relative h-full overflow-hidden bg-ink">
           <span className="display absolute left-3 top-3 text-[44px] leading-none text-paper">+25%</span>
-          <span className="eyebrow absolute bottom-4 left-4 text-lime">Crude rises · bill holds</span>
+          <span className="eyebrow absolute bottom-4 left-4 text-lime">Crude rises · hedge gains</span>
         </div>
       )),
       t("h-56", (

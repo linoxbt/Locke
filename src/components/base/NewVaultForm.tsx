@@ -8,6 +8,7 @@ import { base } from "viem/chains";
 import { BASE_MARKETS, erc20Abi, factoryAbi, USDC, usdcUnits, type BasePlanType } from "@/lib/base/contracts";
 import { providerFor, rememberedKind, sendBaseCalls, SentFailedError, StillPendingError, waitForSent, walletErrorMessage, walletFor, type SentRef } from "@/lib/base/wallet";
 import { BasePlanError, parseBaseInputs, sizeBasePlan, type BasePlanInputs, type BaseSizing, type MarketTerms } from "@/lib/domain/basePlans";
+import { readFactoryRoom, roomProblem, type FactoryRoom } from "@/lib/ui/factoryRoom";
 import { usd } from "@/lib/ui/format";
 import { CREATE_STEPS, Crumbs } from "../Crumbs";
 import { Field, Segmented, Slider } from "../form";
@@ -78,6 +79,7 @@ export function NewVaultForm({
   factory,
   dataSuffix,
   feeBps,
+  room = null
 }: {
   /** Show the Protect · Describe · Preview · Fund trail (and the way back) above the form, following its state. */
   trail?: boolean;
@@ -87,6 +89,8 @@ export function NewVaultForm({
   factory: Address | null;
   dataSuffix?: Hex;
   feeBps: number | null;
+  /** Whether the factory is paused and its launch caps, as read when the page loaded (checked again before sending). */
+  room?: FactoryRoom | null;
 }) {
   const router = useRouter();
   const [markets, setMarkets] = useState<MarketInfo[] | null>(null);
@@ -111,18 +115,27 @@ export function NewVaultForm({
       .catch(() => setHeld([]));
   }, [fixedType]);
   const [agreed, setAgreed] = useState(false);
+  // Stock plans only: the owner confirms they may use them (tokenized stocks aren't offered to US persons).
+  const [eligible, setEligible] = useState(false);
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   // Once the vault exists on Base the form never offers to create another: it only retries saving.
   const [created, setCreated] = useState<Created | null>(null);
   useEffect(() => setCreated(loadCreated(address)), [address]);
 
-  useEffect(() => {
+  const [loading, setLoading] = useState(false);
+  function loadMarkets() {
+    setLoading(true);
     fetch("/api/base/markets", { cache: "no-store" })
       .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error((await r.json().catch(() => ({})))?.error ?? "Veranta is unavailable"))))
-      .then((d) => setMarkets(d.markets))
-      .catch((e) => setLoadError(String(e.message ?? e)));
-  }, []);
+      .then((d) => {
+        setMarkets(d.markets);
+        setLoadError(null);
+      })
+      .catch((e) => setLoadError(String(e.message ?? e)))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => loadMarkets(), []);
 
   const choices = BASE_MARKETS.filter((m) => m.type === type);
   // Stock prices come one market at a time (there are dozens): the one picked, refreshed every 15 s.
@@ -201,7 +214,7 @@ export function NewVaultForm({
 
   async function create() {
     const sizing = sized.sizing;
-    if (!sizing || created || !factory || feeBps == null) return;
+    if (!sizing || created || !factory || feeBps == null || (type === "stocks" && !eligible)) return;
     const depositUsd = totalDeposit(sizing);
     setError(null);
     // The server records only inputs it accepts; check them before anything is sent on chain.
@@ -228,6 +241,9 @@ export function NewVaultForm({
         args: [wallet.account.address],
       });
       if (balance < deposit) throw new Error(`This account holds ${usd(Number(balance) / 1e6)} of USDC on Base; the plan needs ${usd(depositUsd)}.`);
+      // The factory as it is now (paused, launch caps), so a plan it would refuse is never sent.
+      const refusal = roomProblem(await readFactoryRoom(reader, factory), depositUsd, { newPlan: true });
+      if (refusal) throw new Error(refusal);
 
       const plan = {
         enabled: true,
@@ -344,12 +360,26 @@ export function NewVaultForm({
     }
   }
 
-  if (loadError && !created) return <Notice tone="danger">Veranta&apos;s market data didn&apos;t load ({loadError}). Try again shortly.</Notice>;
+  if (loadError && !created) {
+    return (
+      <Notice tone="danger">
+        <span className="flex flex-wrap items-center justify-between gap-3">
+          <span>Veranta&apos;s market data didn&apos;t load ({loadError}).</span>
+          <Button variant="ghost" onClick={loadMarkets} busy={loading}>
+            Try again
+          </Button>
+        </span>
+      </Notice>
+    );
+  }
 
   const busy = step !== "idle";
   const sizing = sized.sizing;
+  const stocks = type === "stocks";
+  // The factory would refuse this plan (paused, or over a launch cap): say why rather than let it be sent.
+  const refusal = room && sizing && factory && !created ? roomProblem(room, totalDeposit(sizing), { newPlan: true }) : null;
   const hint = {
-    wallet: "Approve in your wallet: the USDC approval and the plan's vault (one request in Base Account, two in other wallets).",
+    wallet: "Approve in your wallet: the USDC approval and the plan's vault (one request in Base Account; two in other wallets, one after the other).",
     confirming: "Waiting for Base to confirm…",
     pending: "",
     recording: "Saving your plan…",
@@ -357,7 +387,7 @@ export function NewVaultForm({
   }[step];
 
   // Describing until the plan sizes, previewing once it does, funding once the wallet is involved.
-  const trailStep = created || step !== "idle" ? 3 : sized.sizing && agreed ? 2 : 1;
+  const trailStep = created || step !== "idle" ? 3 : sized.sizing && agreed && (!stocks || eligible) ? 2 : 1;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
@@ -401,8 +431,9 @@ export function NewVaultForm({
         </Field>
         {type === "stocks" && (
           <p className="-mt-3 text-[13px] leading-relaxed text-ink-2">
-            Stock markets follow US trading hours. While they&apos;re closed, Locke&apos;s keeper can&apos;t add margin, so stock plans keep a bigger buffer, and
-            prices can gap at the open.
+            Stock markets follow US trading hours. While they&apos;re closed, Locke&apos;s keeper can&apos;t add margin and a hedge can&apos;t be closed, so
+            stock plans start with a bigger buffer, and prices can gap at the open. Locke isn&apos;t affiliated with or endorsed by Coinbase or the
+            companies behind these stocks.
           </p>
         )}
         {type === "stocks" && held && held.length > 0 && (
@@ -431,11 +462,19 @@ export function NewVaultForm({
 
         {type !== "costs" ? (
           <>
-            <Field label={type === "stocks" ? "Value of the shares held (USD)" : "Value held (USD)"} hint={market?.price ? `${market.asset} is ${usd(market.price)} on Veranta now.` : undefined}>
+            <Field label={type === "stocks" ? "Value of the shares held (USD)" : "Value held (USD)"} hint={market?.price ? priceHint(market) : undefined}>
               <MoneyInput label={type === "stocks" ? "Value of the shares held (USD)" : "Value held (USD)"} value={valueUsd} onChange={setValueUsd} />
             </Field>
             <Field label={`Share to protect: ${sharePct}%`} group>
-              <Slider label="Share to protect" value={sharePct} min={10} max={100} step={5} onChange={setSharePct} />
+              <Slider
+                label="Share to protect"
+                value={sharePct}
+                min={10}
+                max={100}
+                step={5}
+                onChange={setSharePct}
+                valueText={Number.isFinite(valueUsd) ? `${sharePct}%, ${usd((valueUsd * sharePct) / 100, 0)}` : `${sharePct}%`}
+              />
             </Field>
           </>
         ) : (
@@ -444,19 +483,35 @@ export function NewVaultForm({
               <MoneyInput label="Fuel bought each month (USD)" value={monthlySpendUsd} onChange={setMonthlySpendUsd} />
             </Field>
             <Field label={`Months to cover: ${months}`} group>
-              <Slider label="Months" value={months} min={1} max={6} onChange={setMonths} />
+              <Slider label="Months" value={months} min={1} max={6} onChange={setMonths} valueText={months === 1 ? "1 month" : `${months} months`} />
             </Field>
             <Field label={`Share of the fuel price that follows crude: ${crudeSharePct}%`} group hint="Pump prices move with crude for part of their cost; taxes, margins and transport don't.">
-              <Slider label="Crude share" value={crudeSharePct} min={10} max={100} step={5} onChange={setCrudeSharePct} />
+              <Slider
+                label="Crude share"
+                value={crudeSharePct}
+                min={10}
+                max={100}
+                step={5}
+                onChange={setCrudeSharePct}
+                valueText={`${crudeSharePct}% follows crude`}
+              />
             </Field>
           </>
         )}
 
         <Field label={`Leverage: ${leverage}x`} group hint="Lower leverage needs a bigger deposit and sits further from liquidation.">
-          <Slider label="Leverage" value={leverage} min={1} max={3} step={0.5} onChange={setLeverage} />
+          <Slider label="Leverage" value={leverage} min={1} max={3} step={0.5} onChange={setLeverage} valueText={`${leverage} times`} />
         </Field>
-        <Field label={`Buffer kept in the vault: ${bufferPct}%`} group hint="Idle USDC the keeper uses to add margin if prices move against the hedge.">
-          <Slider label="Buffer" value={bufferPct} min={10} max={100} step={5} onChange={setBufferPct} />
+        <Field
+          label={`Buffer kept in the vault: ${bufferPct}%`}
+          group
+          hint={
+            stocks
+              ? "Idle USDC the keeper uses to add margin if prices move against the hedge. Stock plans start at 75%, but that's only a default: a big gap at the open can need more."
+              : "Idle USDC the keeper uses to add margin if prices move against the hedge."
+          }
+        >
+          <Slider label="Buffer" value={bufferPct} min={10} max={100} step={5} onChange={setBufferPct} valueText={`${bufferPct}% of the margin`} />
         </Field>
       </Card>
 
@@ -491,7 +546,12 @@ export function NewVaultForm({
             </div>
             <p className="text-[12px] leading-relaxed text-paper/55">
               On-chain limits: Locke&apos;s keeper can never go above {sizing.limits.maxLeverage}x, {usd(sizing.limits.maxNotionalUsd)} of hedge or{" "}
-              {usd(sizing.limits.maxCollateralUsd)} of margin, and can never withdraw. You can withdraw or close at any time.
+              {usd(sizing.limits.maxCollateralUsd)} of margin, and can never withdraw.{" "}
+              {type === "holdings"
+                ? "You can withdraw or close at any time."
+                : stocks
+                  ? "You can withdraw at any time, and close while the market is open (US trading hours)."
+                  : "You can withdraw at any time, and close while the market is open (it closes at night and at weekends)."}
             </p>
             <label className="flex items-start gap-3 text-[13px] text-paper/85">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#d6f36b]" />
@@ -508,6 +568,20 @@ export function NewVaultForm({
                 .
               </span>
             </label>
+            {stocks && (
+              <label className="flex items-start gap-3 text-[13px] text-paper/85">
+                <input type="checkbox" checked={eligible} onChange={(e) => setEligible(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#d6f36b]" />
+                <span>
+                  Neither I nor the business is a US person, and we aren&apos;t in a country where these products are restricted. Stock plans aren&apos;t
+                  available to US persons (see the{" "}
+                  <Link href="/legal/terms#stocks" target="_blank" className="underline underline-offset-2">
+                    Terms
+                  </Link>
+                  ).
+                </span>
+              </label>
+            )}
+            {refusal && <p className="text-[13px] text-paper/80">{refusal}</p>}
             {!created && factory && market && !market.available && (
               <p className="text-[13px] text-paper/80">
                 Veranta isn&apos;t taking new positions on this market right now, so plans for it can&apos;t be created.
@@ -520,7 +594,7 @@ export function NewVaultForm({
               </p>
             )}
             {!created && factory && (
-              <Button size="lg" variant="paper" onClick={create} busy={busy} disabled={!agreed || !market?.available}>
+              <Button size="lg" variant="paper" onClick={create} busy={busy} disabled={!agreed || (stocks && !eligible) || !market?.available || !!refusal}>
                 Create plan and deposit {usd(totalDeposit(sizing))}
               </Button>
             )}
@@ -605,6 +679,11 @@ export function NewVaultForm({
   );
 }
 
+/** The market's price; while it's closed that is the last price, not a live one. */
+function priceHint(m: MarketInfo): string {
+  return m.marketOpen ? `${m.asset} is ${usd(m.price)} on Veranta now.` : `The ${m.asset} market is closed. Its last price on Veranta was ${usd(m.price)}.`;
+}
+
 function carryHint(m: MarketInfo): string {
   const yearly = (m.carryPctPerHour ?? 0) * 24 * 365;
   if (Math.abs(yearly) < 0.05) return `${m.symbol} on Veranta. Holding costs almost nothing right now.`;
@@ -645,12 +724,25 @@ function MoneyInput({ label, value, onChange }: { label: string; value: number; 
   );
 }
 
-/** Every stock and index a stock plan can protect, searchable by ticker or company. */
+/**
+ * Every stock and index a stock plan can protect, searchable by ticker or company. One tab stop for
+ * the whole grid (the picked stock, or the first match); arrow keys, Home and End move the pick.
+ */
 function StockPicker({ value, onChange }: { value: number; onChange: (pairIndex: number) => void }) {
   const [q, setQ] = useState("");
   const all = BASE_MARKETS.filter((m) => m.type === "stocks");
   const needle = q.trim().toLowerCase();
   const list = needle ? all.filter((m) => m.asset.toLowerCase().includes(needle) || m.label.toLowerCase().includes(needle)) : all;
+  const focusIndex = Math.max(0, list.findIndex((m) => m.pairIndex === value));
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const cols = window.matchMedia("(min-width: 640px)").matches ? 3 : 2;
+    const step = { ArrowRight: 1, ArrowDown: cols, ArrowLeft: -1, ArrowUp: -cols }[e.key];
+    const to = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : step != null ? Math.min(list.length - 1, Math.max(0, focusIndex + step)) : null;
+    if (to == null || list.length === 0) return;
+    e.preventDefault();
+    onChange(list[to].pairIndex);
+    e.currentTarget.querySelectorAll<HTMLButtonElement>("[role=radio]")[to]?.focus();
+  }
   return (
     <div className="flex flex-col gap-2">
       <input
@@ -660,13 +752,19 @@ function StockPicker({ value, onChange }: { value: number; onChange: (pairIndex:
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
-      <div role="radiogroup" aria-label="Stock" className="grid max-h-[272px] grid-cols-2 gap-1 overflow-y-auto rounded-[18px] bg-mist p-1 sm:grid-cols-3">
-        {list.map((m) => (
+      <div
+        role="radiogroup"
+        aria-label="Stock"
+        onKeyDown={onKeyDown}
+        className="grid max-h-[272px] grid-cols-2 gap-1 overflow-y-auto rounded-[18px] bg-mist p-1 sm:grid-cols-3"
+      >
+        {list.map((m, i) => (
           <button
             key={m.pairIndex}
             type="button"
             role="radio"
             aria-checked={value === m.pairIndex}
+            tabIndex={i === focusIndex ? 0 : -1}
             onClick={() => onChange(m.pairIndex)}
             className={`flex min-w-0 flex-col items-start rounded-[14px] px-3 py-2 text-left transition ${value === m.pairIndex ? "bg-ink text-paper" : "text-ink hover:bg-paper"}`}
           >

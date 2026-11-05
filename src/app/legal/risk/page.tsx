@@ -33,9 +33,11 @@ export default function Risk() {
         A stock plan sells a perpetual future on Veranta that follows a stock or index price. It is a contract on the price only: it is not a
         share, carries no voting or dividend rights, and Locke never buys, sells or holds stocks for you. Veranta&apos;s stock markets follow
         US trading hours. While they are closed, Locke&apos;s keeper cannot add margin, and prices can open far from where they closed after a
-        weekend, a holiday or company news, which can use up the margin before the keeper can act. Stock plans therefore keep a larger
-        buffer. Where Locke shows tokenized stocks from your account on Base, it only reads them to size the plan; whether you may hold
-        them is a matter between you and their issuer.
+        weekend, a holiday or company news, which can use up the margin before the keeper can act. Stock plans therefore start with a larger
+        buffer, but that is a default, not a guarantee: no buffer covers every gap. You also can&apos;t close the hedge until the market
+        reopens. Where Locke shows tokenized stocks from your account on Base, it only reads them to size the plan; whether you may hold
+        them is a matter between you and their issuer. Stock plans aren&apos;t available to US persons, and Locke isn&apos;t affiliated with
+        Coinbase or the companies behind the stocks.
       </p>
 
       <h2>A hedge is not a perfect match</h2>
@@ -62,8 +64,9 @@ export default function Risk() {
 
       <h2>Markets close and roll</h2>
       <p>
-        Crypto markets trade around the clock, but oil markets close at night and at weekends. While a market is closed, nobody can add
-        margin, resize or close the hedge, and prices can gap when it reopens. Oil hedges on Veranta follow a futures contract that is rolled
+        Crypto markets trade around the clock, but oil markets close at night and at weekends, and stock markets follow US trading hours
+        (closed overnight, at weekends and on US holidays). While a market is closed, nobody can add margin, resize or close the hedge, and
+        prices can gap when it reopens. Oil hedges on Veranta follow a futures contract that is rolled
         each month: the entry price shifts at the roll and trading pauses briefly.
       </p>
 
