@@ -1,14 +1,14 @@
 # Locke
 
-**Protect what your business holds. Manage what it buys, with hedges and from a vault you own.**
+**Protect the crypto and stocks your business holds. Manage the fuel it buys, with hedges from a vault you own.**
 
-Locke helps businesses on Base manage price risk with perpetual futures on [Veranta](https://www.veranta.xyz) (now operating as Veranta). A business tells Locke what it wants to protect — crypto it holds, or the fuel it buys every month — and Locke sizes the hedge, opens it from a vault contract the business owns, and keeps its margin topped up.
+Locke helps businesses on Base manage price risk with perpetual futures on [Veranta](https://www.veranta.xyz). A business tells Locke what it wants to protect — crypto it holds, stocks it holds (tokenized on Base or not), or the fuel it buys every month — and Locke sizes the hedge, opens it from a vault contract the business owns, and keeps its margin topped up.
 
 | Plan | Protects against | Veranta market | Side | Hedge quality |
 |---|---|---|---|---|
 | **Holdings** | A fall in the value of ETH or BTC held | `ETH/USD`, `BTC/USD` | Short | Direct: the hedge tracks the same asset |
 | **Operating costs** | A rise in fuel costs | `WTI/USD`, `BRENT/USD` | Long | Partial: crude explains only part of local fuel prices |
-| **Stocks** | A fall in shares or an index held (Coinbase tokenized stocks on Base are read from the account) | `NVDA/USD`, `AAPL/USD`, `TSLA/USD`, `MSFT/USD`, `AMZN/USD`, `META/USD`, `GOOG/USD`, `COIN/USD`, `US500/USD`, `US100/USD` | Short | Direct; US market hours, so a 75% default buffer |
+| **Stocks** | A fall in shares or an index held (Coinbase tokenized stocks on Base are read from the account) | `NVDA/USD`, `AAPL/USD`, `TSLA/USD`, `MSFT/USD` and every other stock in `src/lib/base/stockMarkets.ts`, plus `US500/USD`, `US100/USD` | Short | Direct; US market hours, so a 75% default buffer. Not offered to US persons |
 
 Every vault follows the same path: **describe exposure → preview the hedge and its costs → create and fund the vault → the keeper opens and watches the hedge → withdraw or close from your own wallet.**
 
@@ -20,7 +20,7 @@ Locke is not a trading terminal. Every screen is about an exposure the business 
 - **A vault per plan.** The business's wallet approves USDC and calls `createVault` in one batch. The `LockeVault` contract (see `contracts/`) holds the USDC and is the trader on Veranta, so every payout comes back to it. Only the owner can withdraw.
 - **Limits on chain.** The vault caps market, side, leverage, hedge size, margin and slippage. Locke's keeper can open and add margin only within them (one open an hour, one top-up every two minutes), can never close a hedge and can never withdraw.
 - **Margin kept topped up.** The keeper opens the hedge once the deposit is in and adds margin from the vault's buffer when margin use reaches 60%, back to about 35%.
-- **Exit any time.** Deposit, withdraw, close the hedge and remove the keeper all go straight from the owner's wallet to the vault, even if Locke is offline.
+- **Exit from your own wallet.** Deposit, withdraw, close the hedge and remove the keeper all go straight from the owner's wallet to the vault, even if Locke is offline. Withdrawing works at any time; a close fills only while the market is open (crypto around the clock, oil and stocks in market hours).
 - **Protected by Locke.** While a hedge is open, an [EAS](https://attest.org) attestation on Base says so; `/proof/[uid]` reads it straight from EAS.
 - **Protect as you get paid.** Optionally, the owner's Base Account signs one spend permission so a share of incoming USDC moves into the vault, never more per week than the cap.
 - **Agent API (x402).** AI agents and on-chain treasuries can quote and open vaults, paid per call in USDC on Base.
@@ -154,7 +154,7 @@ cd contracts && npx hardhat test   # contract tests (FORK=1 with a Base RPC for 
 
 - **Not audited yet.** The vault contracts have unit, fuzz, invariant and Base-fork tests and a Slither scan, but no outside audit; vaults launch with deposit caps.
 - **Basis risk on fuel.** Crude explains only part of local fuel prices. The costs plan is a partial hedge, and the crude share is the business's own assumption.
-- **Market hours.** Oil markets on Veranta close at night and at weekends; the keeper can't add margin while a market is closed.
+- **Market hours.** Oil markets on Veranta close at night and at weekends, and stock markets follow US trading hours; while a market is closed the keeper can't add margin and the owner can't close the hedge.
 - **No alerts outside the app.** The vault page shows what needs attention; there's no email or push channel yet.
 - **Dependencies.** `npm audit` still reports postcss inside Next 15 (build-time only); the fix is a Next 16 upgrade.
 

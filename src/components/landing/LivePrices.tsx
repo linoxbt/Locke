@@ -6,7 +6,7 @@ import { pct } from "@/lib/ui/format";
 /** An Veranta market on Base: its price and what holding Locke's side costs per day (%). */
 export type Quote = { price: number; carryPctPerDay: number | null } | null;
 
-const POLL_MS = 5_000;
+const POLL_MS = 15_000;
 const COUNT_MS = 1_400;
 const TWEEN_MS = 900;
 const ease = (t: number) => 1 - Math.pow(1 - t, 5);
@@ -95,7 +95,7 @@ const PAIRS = { eth: 0, btc: 1, wti: 96, brent: 97 } as const;
 
 /**
  * Live prices from Veranta on Base for the markets Locke hedges on. They count up when scrolled
- * into view, then poll while visible.
+ * into view, then poll while on screen and the tab is in view: just the four markets shown.
  */
 export function LivePrices(initial: Prices) {
   const ref = useRef<HTMLDListElement>(null);
@@ -117,19 +117,19 @@ export function LivePrices(initial: Prices) {
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
+    const one = async (pair: number): Promise<Quote> => {
+      const r = await fetch(`/api/base/markets?pair=${pair}`, { cache: "no-store" });
+      if (!r.ok) return null;
+      const { market: m } = (await r.json()) as { market?: { price: number | null; carryPctPerHour: number | null } };
+      return m?.price ? { price: m.price, carryPctPerDay: m.carryPctPerHour == null ? null : m.carryPctPerHour * 24 } : null;
+    };
     const poll = async () => {
-      const r = await fetch("/api/base/markets", { cache: "no-store" });
-      if (!r.ok) return;
-      const { markets } = (await r.json()) as { markets: { pairIndex: number; price: number | null; carryPctPerHour: number | null }[] };
-      const pick = (i: number): Quote => {
-        const m = markets.find((x) => x.pairIndex === i);
-        return m?.price ? { price: m.price, carryPctPerDay: m.carryPctPerHour == null ? null : m.carryPctPerHour * 24 } : null;
-      };
+      const [eth, btc, wti, brent] = await Promise.all([one(PAIRS.eth), one(PAIRS.btc), one(PAIRS.wti), one(PAIRS.brent)].map((q) => q.catch(() => null)));
       // A market that didn't answer this time (or is closed) keeps its last price; the next poll retries.
-      if (!cancelled) setP((prev) => ({ eth: pick(PAIRS.eth) ?? prev.eth, btc: pick(PAIRS.btc) ?? prev.btc, wti: pick(PAIRS.wti) ?? prev.wti, brent: pick(PAIRS.brent) ?? prev.brent }));
+      if (!cancelled) setP((prev) => ({ eth: eth ?? prev.eth, btc: btc ?? prev.btc, wti: wti ?? prev.wti, brent: brent ?? prev.brent }));
     };
     const tick = () => {
-      if (!document.hidden) poll().catch(() => {});
+      if (!document.hidden) void poll();
     };
     const id = setInterval(tick, POLL_MS);
     return () => {

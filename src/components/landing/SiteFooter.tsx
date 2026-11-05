@@ -4,8 +4,27 @@ import { CookieSettingsLink } from "../CookieConsent";
 import { LockeLogoReverse } from "../Logo";
 
 const COLUMNS: { title: string; links: [string, string][] }[] = [
-  { title: "Plans", links: [["Sign in with Base", "/connect"], ["Portfolio", "/portfolio"], ["Protect your holdings", "/protect/holdings"], ["Manage fuel costs", "/protect/costs"]] },
-  { title: "Product", links: [["How it works", "/how-it-works"], ["Holdings plan", "/how-it-works#holdings"], ["Operating costs plan", "/how-it-works#costs"], ["Metrics", "/metrics"], ["For agents", "/agents"]] },
+  {
+    title: "Plans",
+    links: [
+      ["Sign in with Base", "/connect"],
+      ["Portfolio", "/portfolio"],
+      ["Protect your holdings", "/protect/holdings"],
+      ["Protect your stocks", "/protect/stocks"],
+      ["Manage fuel costs", "/protect/costs"]
+    ]
+  },
+  {
+    title: "Product",
+    links: [
+      ["How it works", "/how-it-works"],
+      ["Holdings plan", "/how-it-works#holdings"],
+      ["Stocks plan", "/how-it-works#stocks"],
+      ["Operating costs plan", "/how-it-works#costs"],
+      ["Metrics", "/metrics"],
+      ["For agents", "/agents"]
+    ]
+  },
   { title: "Legal", links: LEGAL_DOCS.map((d) => [d.label, d.href] as [string, string]) },
 ];
 
@@ -38,13 +57,14 @@ export function SiteFooter() {
         <div className="col-span-2 md:col-span-1">
           <h2 className="text-[15px]">Locke</h2>
           <p className="mt-3 text-[15px] leading-relaxed text-paper/50">
-            Protection plans for businesses on Base, hedged on Veranta from a vault each business owns. A tool, not financial advice.
+            Protection plans for businesses on Base, for the crypto and tokenized stocks they hold and the fuel they buy, hedged on Veranta from a
+            vault each business owns. A tool, not financial advice.
           </p>
         </div>
       </div>
       <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-5 pb-10 text-[13px] text-paper/55 sm:flex-row sm:justify-between sm:px-14">
         <span>Hedges can lose money on their own, and positions can be liquidated if margin runs out.</span>
-        <span>Check Veranta&apos;s eligibility rules before you use it.</span>
+        <span>Check Veranta&apos;s eligibility rules before you use it. Stock plans aren&apos;t available to US persons.</span>
       </div>
     </footer>
   );

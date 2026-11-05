@@ -111,6 +111,7 @@ async function resolveKind(sessionAddress: string): Promise<WalletKind> {
 export function walletErrorMessage(e: unknown): string {
   const err = e as { code?: number; shortMessage?: string; message?: string; details?: string };
   const text = `${err?.shortMessage ?? ""} ${err?.message ?? ""} ${err?.details ?? ""}`;
+  if (e instanceof StoppedEarlyError) return e.message;
   if (err?.code === 4001 || /reject|denied|cancel/i.test(text)) return "You cancelled in your wallet.";
   if (/insufficient funds|exceeds balance/i.test(text)) return "Your wallet doesn't hold enough USDC or ETH for this.";
   return err?.shortMessage || err?.message || "The wallet couldn't complete this.";
@@ -255,16 +256,35 @@ export class SentFailedError extends Error {
     super("The transaction didn't go through. Nothing was moved; check your wallet and try again.");
   }
 }
+
+/**
+ * A wallet without batching sends the calls one at a time, and it stopped before the last one (the
+ * action itself): that one was rejected or never sent, or an earlier one (a USDC approval) hasn't
+ * confirmed. Only earlier calls can have gone through and they move no money, so trying again is safe.
+ */
+export class StoppedEarlyError extends Error {
+  constructor(
+    readonly reason: unknown,
+    readonly earlierPending = false
+  ) {
+    super(
+      earlierPending
+        ? "Your wallet sent the USDC approval, but Base hasn't confirmed it yet, so nothing else was sent and no money moved. Try again in a minute."
+        : `${walletErrorMessage(reason)} Only the USDC approval went through, and it moves no money. Nothing else was sent, so you can try again.`
+    );
+  }
+}
 const sentFailed = () => new SentFailedError();
 const timedOut = (e: unknown) => /timeout|timed out/i.test(`${(e as Error)?.name ?? ""} ${(e as Error)?.message ?? ""}`);
 
 /**
  * Send calls as one batch (EIP-5792 wallet_sendCalls: one approval in Base Account, atomic where
  * the wallet supports it). Wallets without batching get one transaction per call instead, each
- * confirmed before the next, since an approval must land before the call that spends it.
+ * confirmed before the next, since an approval must land before the call that spends it; if they
+ * stop before the last call, StoppedEarlyError says so (the action itself was never sent).
  * Resolves with the receipts once they are on chain; throws if any call failed, and
- * StillPendingError if Base hasn't confirmed them in time. `onSent` gets the lookup reference as
- * soon as it exists, so a caller can keep it across a reload.
+ * StillPendingError if Base hasn't confirmed the action in time. `onSent` gets the action's lookup
+ * reference (the batch, or the last transaction) as soon as it exists, so a caller can keep it across a reload.
  */
 export async function sendBaseCalls(
   wallet: WalletClient & { account: { address: Address } },
@@ -283,14 +303,21 @@ export async function sendBaseCalls(
   }
   const reader = wallet.extend(publicActions);
   const receipts: TransactionReceipt[] = [];
-  for (const c of calls) {
-    const hash = await wallet.sendTransaction({ account: wallet.account, chain: base, to: c.to, data: c.data, value: c.value });
-    onSent?.({ txHash: hash });
+  for (const [i, c] of calls.entries()) {
+    const last = i === calls.length - 1;
+    let hash: Hex;
+    try {
+      hash = await wallet.sendTransaction({ account: wallet.account, chain: base, to: c.to, data: c.data, value: c.value });
+    } catch (e) {
+      // The calls before this one landed; this one (the action) was never sent.
+      throw i > 0 ? new StoppedEarlyError(e) : e;
+    }
+    if (last) onSent?.({ txHash: hash });
     let receipt: TransactionReceipt;
     try {
       receipt = await reader.waitForTransactionReceipt({ hash, timeout: 180_000 });
     } catch (e) {
-      if (timedOut(e)) throw new StillPendingError({ txHash: hash });
+      if (timedOut(e)) throw last ? new StillPendingError({ txHash: hash }) : new StoppedEarlyError(e, true);
       throw e;
     }
     if (receipt.status !== "success") throw sentFailed();

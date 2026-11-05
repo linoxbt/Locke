@@ -9,7 +9,7 @@ const STEPS = [
   ["Describe", "ETH or BTC you hold, stocks you hold, or the fuel you buy each month. Pick how much to protect and the leverage."],
   ["Preview", "Hedge size, margin, buffer, trading fees, Locke's fee, the vault's limits and what holding the hedge costs on Veranta right now."],
   ["Fund", "Sign in with Base and approve: one request in Base Account (two in other wallets) creates your vault and deposits the USDC. Locke's keeper opens the hedge on Veranta."],
-  ["Watch", "The keeper watches margin around the clock and tops it up from the vault's buffer, within the limits your vault enforces."],
+  ["Watch", "The keeper watches margin around the clock and, while the market is open, tops it up from the buffer within your vault's limits."],
 ];
 
 const LADDER = [
@@ -22,7 +22,7 @@ const LADDER = [
 const VAULT_POINTS = [
   ["Your own contract", "Your wallet approves the USDC and creates the vault, owned by you. Nobody else can withdraw from it."],
   ["Limits on Base", "The vault itself caps leverage, hedge size, margin and slippage. Locke's keeper can open and add margin within them; it can never close your hedge or withdraw."],
-  ["Exit any time", "Withdraw, close the hedge or remove Locke's keeper from your own wallet, even if Locke is offline."],
+  ["Exit from your wallet", "Withdraw or remove Locke's keeper at any time, even if Locke is offline, and close the hedge while its market is open."],
   ["Public proof", "While the hedge is open, a Protected by Locke attestation on Base shows it, so a lender or client can check it."],
   ["Protect as you get paid", "Optionally, sign once to move a share of incoming USDC into the vault, never more than your weekly cap."],
   ["One vault per plan", "Each hedge has its own vault and its own margin, so trouble in one never touches another."],
@@ -76,7 +76,8 @@ export default function HowItWorksPage() {
           <p className={`mt-4 text-[14px] leading-relaxed ${SUBTLE.ink}`}>
             Locke sells the stock (NVIDIA, Apple, Tesla and more) or an S&amp;P 500 or Nasdaq 100 index on Veranta against the share you choose
             to protect. If the shares fall, the hedge gains. Holding Coinbase&apos;s tokenized stocks on Base? Locke reads them from your
-            account and sizes the plan for you. Stock markets follow US trading hours, so these plans keep a bigger buffer.
+            account and sizes the plan for you. Stock markets follow US trading hours: these plans start with a bigger buffer, and the hedge can
+            only be closed while the market is open. Stock plans aren&apos;t available to US persons.
           </p>
         </Card>
       </section>
@@ -85,9 +86,9 @@ export default function HowItWorksPage() {
         <div className="lg:col-span-5">
           <Display as="h2" size="lg" lead="Margin kept topped up." rest="Before Veranta steps in." />
           <p className="mt-6 max-w-[44ch] text-[15px] leading-relaxed text-ink-2">
-            Each vault keeps a buffer of USDC beside the hedge. Locke&apos;s keeper watches margin use around the clock and adds from the
-            buffer well before liquidation, only within the limits your vault sets. When the buffer runs out, your plan&apos;s page says how much
-            to add.
+            Each vault keeps a buffer of USDC beside the hedge. Locke&apos;s keeper watches margin use around the clock and, while the market is
+            open, adds from the buffer well before liquidation, only within the limits your vault sets. When the buffer runs out, your
+            plan&apos;s page says how much to add.
           </p>
         </div>
         <DropIn className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-7">

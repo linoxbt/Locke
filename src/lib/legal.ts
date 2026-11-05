@@ -1,10 +1,13 @@
 // Facts the legal pages need about who runs Locke. Fill these in before the pages go live: a
 // missing value renders as a visible [placeholder] so it can't slip through unnoticed.
 
+import { configuredSiteUrl } from "./ui/site";
+
 export const LEGAL = {
   /** Date the current versions took effect. */
-  updated: "29 October 2026",
-  site: "trylocke.online",
+  updated: "5 November 2026",
+  /** The site the terms cover: the configured public address (a preview has its own), else Locke's main domain. */
+  site: configuredSiteUrl()?.host ?? "trylocke.online",
   /** Legal name of the person or company that runs Locke, e.g. "Locke Technologies Ltd". */
   operator: null as string | null,
   /** Where people write about their data, the terms or a complaint. */

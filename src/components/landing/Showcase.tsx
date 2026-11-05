@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { DropIn } from "@/components/DropIn";
 
-// Heartbeat across the 24/7 card: flat, a spike, flat again. Drawn in a 0–200 × 0–100 box.
+// Heartbeat across the outage card: flat, a spike, flat again. Drawn in a 0–200 × 0–100 box.
 const PULSE = "M0 55 L60 55 L72 55 L80 30 L88 78 L96 44 L102 55 L200 55";
 // Bars of a fuel price that keeps moving, each on its own rhythm (height %, low point, seconds).
 const BARS: [number, number, number][] = [
@@ -48,7 +48,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
           className="loop display absolute -bottom-3 left-3 text-[72px] leading-none text-lime transition-all duration-500 group-hover:bottom-3"
           style={{ animation: "float-up 5s ease-in-out infinite" }}
         >
-          24/7
+          Outage
         </span>
         <span className="num absolute right-4 top-4 flex items-center gap-2 rounded-full bg-paper/10 px-3 py-1 text-[12px] text-paper">
           <span className="loop h-1.5 w-1.5 rounded-full bg-lime" style={{ animation: "blink 1.2s ease-in-out infinite" }} />
@@ -59,7 +59,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
   },
   {
     lead: "Treasuries in ETH or BTC",
-    rest: "that hold their value when the market falls",
+    rest: "that keep more of their value when the market falls",
     href: "/how-it-works#holdings",
     visual: (
       <div className="relative h-full bg-cobalt">
@@ -68,7 +68,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
           <br />
           BTC
         </span>
-        <span className="num absolute bottom-4 right-4 text-[26px] text-paper">−30% → 0%</span>
+        <span className="num absolute bottom-4 right-4 text-[26px] text-paper">−30% → hedged</span>
       </div>
     ),
   },
@@ -132,7 +132,7 @@ const ITEMS: { lead: string; rest: string; href: string; visual: React.ReactNode
           />
           <path d="M0 80 L200 80" stroke="white" strokeWidth="3" strokeDasharray="4 4" opacity="0.6" className="animate-dash-march" />
         </svg>
-        <span className="eyebrow absolute bottom-4 left-4 text-paper/80">crude rises · cost holds</span>
+        <span className="eyebrow absolute bottom-4 left-4 text-paper/80">crude rises · hedge gains</span>
       </div>
     ),
   },
