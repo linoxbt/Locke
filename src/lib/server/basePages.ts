@@ -4,6 +4,7 @@ import { builderSuffix } from "../base/builderCode";
 import { basePublicClient } from "./baseChain";
 import { currentBaseSession } from "./baseSession";
 import { config, ConfigError } from "./config";
+import { shortError } from "./errors";
 import type { Session } from "./session";
 
 /** The Base session for a page, or null when signed out (or the database isn't configured). */
@@ -24,7 +25,7 @@ export async function publicBaseSession(): Promise<Session | null> {
   try {
     return await optionalBaseSession();
   } catch (e) {
-    console.warn("[session] couldn't check the session; showing the page signed out:", (e as Error).message);
+    console.warn("[session] couldn't check the session; showing the page signed out:", shortError(e));
     return null;
   }
 }

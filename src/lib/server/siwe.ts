@@ -9,9 +9,12 @@ import { HttpError } from "./errors";
 const MAX_AGE_MS = 10 * 60_000;
 /** Allowed clock skew for a wallet's issuedAt in the future. */
 const SKEW_MS = 60_000;
+/**
+ * Sign-ins started per caller network (IPv4 /24, IPv6 /48) in the nonces' 10 minutes. There is no
+ * ceiling on all sign-ins together: one attacker with enough networks could fill it and lock
+ * everyone out. A network past its limit only locks out itself.
+ */
 const PER_NETWORK = 30;
-/** A ceiling on all sign-ins, high enough that one attacker's handful of networks can't lock everyone out. */
-const GLOBAL_PER_MINUTE = 3000;
 
 /** A single-use nonce for one sign-in, counted against the caller's network. */
 export async function issueNonce(network: string | null): Promise<string> {
@@ -19,12 +22,12 @@ export async function issueNonce(network: string | null): Promise<string> {
   const nonce = randomBytes(16).toString("hex");
   await sql`delete from base_auth_nonces where created_at < now() - interval '10 minutes'`;
   await sql.begin(async (tx) => {
-    await tx`select pg_advisory_xact_lock(hashtext('locke:base-nonce'))`;
-    const [c] = await tx`
-      select count(*) filter (where created_at > now() - interval '1 minute')::int as global,
-             count(*) filter (where ${network}::text is not null and network = ${network})::int as by_network
-      from base_auth_nonces`;
-    if (c.global >= GLOBAL_PER_MINUTE || c.by_network >= PER_NETWORK) throw new HttpError(429, "Too many sign-in attempts. Wait a few minutes and try again.");
+    if (network) {
+      // One count-and-insert at a time per network, so a burst can't all pass the count together.
+      await tx`select pg_advisory_xact_lock(hashtext(${`locke:base-nonce:${network}`}))`;
+      const [c] = await tx`select count(*)::int as n from base_auth_nonces where network = ${network} and created_at > now() - interval '10 minutes'`;
+      if (c.n >= PER_NETWORK) throw new HttpError(429, "Too many sign-in attempts. Wait a few minutes and try again.");
+    }
     await tx`insert into base_auth_nonces (nonce, network) values (${nonce}, ${network})`;
   });
   return nonce;

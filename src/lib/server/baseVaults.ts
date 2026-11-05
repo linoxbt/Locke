@@ -2,7 +2,8 @@
 // Base (vault contract) and Veranta (the hedge position).
 
 import { decodeEventLog, getAddress, isAddressEqual, parseAbiItem, type Address, type Hex } from "viem";
-import { baseMarket, erc20Abi, factoryAbi, fromUsdcUnits, P10, USDC, usdcUnits, vaultAbi } from "../base/contracts";
+import { baseMarket, erc20Abi, factoryAbi, fromUsdcUnits, P10, tradingStorageAbi, USDC, usdcUnits, vaultAbi } from "../base/contracts";
+import { depositNeededUsd, withChainTrade } from "../base/keeper";
 import { BasePlanError, parseBaseInputs, planLimits, planName, sizeBasePlan, type BaseSizing } from "../domain/basePlans";
 import { verantaLiquidationPrice, verantaMarginRatio, verantaPnl, type VerantaMarket, type VerantaPosition } from "../domain/veranta";
 import { getMarket, getPositions, getSignedPrice } from "../veranta/client";
@@ -10,7 +11,7 @@ import { basePublicClient } from "./baseChain";
 import { incomeFor, type IncomeView } from "./baseIncome";
 import { config } from "./config";
 import { db } from "./db";
-import { HttpError } from "./errors";
+import { HttpError, shortError } from "./errors";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const VAULT_CREATED = parseAbiItem("event VaultCreated(address indexed owner, address indexed vault, uint256 indexed pairIndex, bool buy, uint128 maxNotional, uint16 feeBps)");
@@ -41,12 +42,23 @@ export async function vaultCreator(txHash: string): Promise<Address> {
   throw new HttpError(400, "That transaction didn't create a Locke vault");
 }
 
+/** New vaults recorded per caller network an hour, and through the agent API (no session) an hour in all: each is one more the keeper watches. */
+const REGISTER_PER_NETWORK_HOUR = 20;
+const REGISTER_AGENT_PER_HOUR = 200;
+
 /**
  * Record a vault from the transaction that created it. The VaultCreated event must come from
  * Locke's factory, name this user as owner, and carry exactly the limits these inputs give,
  * so the record can't claim someone else's vault or a plan that differs from what is on chain.
+ * `network` is the caller's IP bucket, for the hourly limits (none for Locke's own recovery).
  */
-export async function recordVault(user: { uid: string; addr: string }, txHash: string, rawInputs: unknown, via: "app" | "agent" = "app") {
+export async function recordVault(
+  user: { uid: string; addr: string },
+  txHash: string,
+  rawInputs: unknown,
+  via: "app" | "agent" = "app",
+  network: string | null = null
+) {
   if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) throw new HttpError(400, "Invalid transaction hash");
   const factory = requireFactory();
   let inputs;
@@ -90,19 +102,34 @@ export async function recordVault(user: { uid: string; addr: string }, txHash: s
   }
 
   // The vault exists on Base whatever Veranta's terms are now, so a changed minimum size or
-  // leverage cap must not stop it being recorded: size it with those limits relaxed (the keeper's
-  // open is still checked by Veranta). Veranta being unreachable is a 503 the page retries.
+  // leverage cap must not stop it being recorded: size it with those limits relaxed. The keeper
+  // checks Veranta's terms again before it opens, and holds the hedge with a note if they no longer
+  // fit (src/lib/base/keeper.ts). Veranta being unreachable is a 503 the page retries.
   const terms = marketTerms(await getMarket(inputs.pairIndex));
   const sizing: BaseSizing = sizeBasePlan(inputs, { ...terms, minPositionUsd: 0, maxLeverage: Math.max(terms.maxLeverage, inputs.leverage) });
   const vault = created.vault.toLowerCase();
-  // The agent API registers without a session, so anyone who sees the transaction could register
-  // it first with other inputs that give the same limits. The owner's own signed-in save wins.
-  const inserted = await db()`
-    insert into base_vaults (address, user_id, pair_index, type, name, inputs, sizing, created_tx, created_via)
-    values (${vault}, ${user.uid}, ${inputs.pairIndex}, ${inputs.type}, ${planName(inputs)}, ${db().json(inputs as never)}, ${db().json(sizing as never)}, ${txHash.toLowerCase()}, ${via})
-    on conflict (address) do update set inputs = excluded.inputs, sizing = excluded.sizing, name = excluded.name, created_via = 'app', updated_at = now()
-      where base_vaults.created_via = 'agent' and excluded.created_via = 'app' and base_vaults.status in ('funding', 'opening')
-    returning address, (xmax = 0) as fresh`;
+  const inserted = await db().begin(async (tx) => {
+    if (network || via === "agent") {
+      await tx`select pg_advisory_xact_lock(hashtext('locke:base-register'))`;
+      const [known] = await tx`select 1 from base_vaults where address = ${vault}`;
+      if (!known) {
+        const [c] = await tx`
+          select count(*) filter (where ${network}::text is not null and created_network = ${network})::int as by_network,
+                 count(*) filter (where created_via = 'agent')::int as agent
+          from base_vaults where created_at > now() - interval '1 hour'`;
+        if (c.by_network >= REGISTER_PER_NETWORK_HOUR) throw new HttpError(429, "Too many vaults registered from your network in the last hour. Try again later.");
+        if (via === "agent" && c.agent >= REGISTER_AGENT_PER_HOUR) throw new HttpError(429, "Locke is registering a lot of vaults right now. Try again in a while.");
+      }
+    }
+    // The agent API registers without a session, so anyone who sees the transaction could register
+    // it first with other inputs that give the same limits. The owner's own signed-in save wins.
+    return tx`
+      insert into base_vaults (address, user_id, pair_index, type, name, inputs, sizing, created_tx, created_via, created_network)
+      values (${vault}, ${user.uid}, ${inputs.pairIndex}, ${inputs.type}, ${planName(inputs)}, ${tx.json(inputs as never)}, ${tx.json(sizing as never)}, ${txHash.toLowerCase()}, ${via}, ${network})
+      on conflict (address) do update set inputs = excluded.inputs, sizing = excluded.sizing, name = excluded.name, created_via = 'app', updated_at = now()
+        where base_vaults.created_via = 'agent' and excluded.created_via = 'app' and base_vaults.status in ('funding', 'opening')
+      returning address, (xmax = 0) as fresh`;
+  });
   // Recording again (a retry, or the same hash sent twice) adds nothing.
   const fresh = inserted.length > 0 && inserted[0].fresh;
   if (fresh) await addVaultEvent(vault, "info", "Vault created on Base", { tx: txHash });
@@ -186,7 +213,7 @@ export async function recoverVaults(user: { uid: string; addr: string }): Promis
       console.log("[recover] recorded", vault, "for", user.addr);
     }
   } catch (e) {
-    console.warn("[recover] couldn't check Base for unsaved vaults:", (e as Error).message);
+    console.warn("[recover] couldn't check Base for unsaved vaults:", shortError(e));
   }
 }
 
@@ -257,6 +284,7 @@ export async function vaultDetail(uid: string, address: string): Promise<VaultVi
       read<readonly [boolean, boolean, bigint, bigint, bigint]>("plans", [BigInt(market.pairIndex)]),
       read<boolean>("keeperFollowsFactory"),
       read<string>("pendingOwner"),
+      read<Address>("tradingStorage"),
     ]).catch(() => {
       partial.push("Base");
       return null;
@@ -269,8 +297,22 @@ export async function vaultDetail(uid: string, address: string): Promise<VaultVi
     getMarket(market.pairIndex).catch(() => null),
   ]);
 
-  const pos = positions?.find((p) => p.pairIndex === market.pairIndex) ?? null;
+  // The hedge as Base holds it: the API can lag a top-up, and closing with its smaller margin would
+  // leave the rest of the hedge open. The close uses this collateral (position.collateralUsd).
+  let pos = positions?.find((p) => p.pairIndex === market.pairIndex) ?? null;
+  if (pos && chain) {
+    const trade = await client
+      .readContract({ address: chain[9], abi: tradingStorageAbi, functionName: "openTrades", args: [v, BigInt(market.pairIndex), BigInt(pos.index)] })
+      .catch(() => null);
+    if (trade) pos = withChainTrade(pos, trade);
+    else partial.push("Base");
+  }
   const mark = price?.price ?? null;
+  // Set aside by the keeper for want of a deposit: tended again as soon as the owner sees it funded.
+  if (row.dormant_at && chain && row.status === "funding" && fromUsdcUnits(chain[4]) + 1e-9 >= depositNeededUsd(row.sizing)) {
+    await db()`update base_vaults set dormant_at = null, status_note = null, updated_at = now() where address = ${vault} and dormant_at is not null`;
+    row.status_note = null;
+  }
   const [events, attestation, income] = await Promise.all([
     db()`select id, level, message, tx_hash, created_at from base_vault_events where vault = ${vault} order by id desc limit 30`,
     activeAttestation(vault),

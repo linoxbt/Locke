@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { BasePlanError } from "../domain/basePlans";
 import { VerantaError } from "../veranta/client";
 import { ConfigError } from "./config";
-import { HttpError } from "./errors";
+import { HttpError, shortError } from "./errors";
 
 /** Largest JSON body any route accepts . */
 const MAX_BODY_BYTES = 256 * 1024;
@@ -29,7 +29,9 @@ export function route<A extends unknown[]>(fn: (...args: A) => Promise<Response>
         console.error("[avantis]", e.status, e.message);
         return NextResponse.json({ error: "Veranta isn't answering right now. Try again shortly.", code: "avantis_unavailable" }, { status: e.status === 404 ? 404 : 503 });
       }
-      console.error(e);
+      // Never the whole error: a viem error quotes its request, and the RPC URL can carry a key.
+      const frames = ((e as Error)?.stack ?? "").split("\n").filter((l) => /^\s+at /.test(l)).slice(0, 6).join("\n");
+      console.error(`[route] ${(e as Error)?.name ?? "Error"}: ${shortError(e)}${frames ? `\n${frames}` : ""}`);
       return NextResponse.json({ error: "Something went wrong. Try again." }, { status: 500 });
     }
   };

@@ -82,11 +82,21 @@ export async function enableIncome(uid: string, address: string, body: Record<st
     }
   }
   const block = await client.getBlockNumber();
-  await db()`
-    insert into base_income (vault, permission, signature, share_pct, status, last_block)
-    values (${vault}, ${db().json(permission as never)}, ${signature}, ${sharePct}, 'on', ${block.toString()})
-    on conflict (vault) do update set permission = excluded.permission, signature = excluded.signature, share_pct = excluded.share_pct,
-      status = 'on', last_block = excluded.last_block, pending_usd = 0, updated_at = now()`;
+  const account = owner.toLowerCase();
+  await db().begin(async (tx) => {
+    // Each vault would take its share of the same incoming USDC: it is on for one of an owner's vaults at a time.
+    await tx`select pg_advisory_xact_lock(hashtext(${`locke:base-income:${account}`}))`;
+    const [other] = await tx`
+      select i.vault from base_income i join base_vaults v on v.address = i.vault
+      where i.status = 'on' and i.vault <> ${vault} and v.status <> 'closed' and (v.user_id = ${uid} or lower(i.permission->>'account') = ${account})
+      limit 1`;
+    if (other) throw new HttpError(409, "Protect as you get paid is already on for another of your vaults. Turn it off there first.");
+    await tx`
+      insert into base_income (vault, permission, signature, share_pct, status, last_block)
+      values (${vault}, ${tx.json(permission as never)}, ${signature}, ${sharePct}, 'on', ${block.toString()})
+      on conflict (vault) do update set permission = excluded.permission, signature = excluded.signature, share_pct = excluded.share_pct,
+        status = 'on', last_block = excluded.last_block, pending_usd = 0, updated_at = now()`;
+  });
   const capUsd = Number(BigInt(permission.allowance)) / 1e6;
   await addVaultEvent(vault, "info", `Protect as you get paid is on: ${sharePct}% of incoming USDC, up to $${capUsd.toLocaleString("en-US")} a week`);
   return (await incomeFor(vault))!;

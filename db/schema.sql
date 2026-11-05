@@ -36,6 +36,8 @@ create table if not exists base_vaults (
   status_note text,
   created_tx  text not null,
   created_via text not null default 'app',      -- 'agent': registered through the agent API, without a session
+  created_network text,                        -- the registering caller's IP bucket, for hourly limits
+  dormant_at  timestamptz,                     -- set aside by the keeper: no deposit within a week; cleared once one arrives
   open_sent_at timestamptz,                    -- the keeper sent hedgeOpen; cleared once Veranta fills it
   topup_sent_at timestamptz,                   -- the keeper sent topUpMargin; cleared once Base shows the new margin
   topup_from_usd numeric,                      -- the hedge's margin on Base when that top-up was sent
@@ -44,15 +46,15 @@ create table if not exists base_vaults (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
--- Added after launch: columns the create table above has for new databases.
-alter table base_vaults add column if not exists topup_sent_at timestamptz;
-alter table base_vaults add column if not exists topup_from_usd numeric;
-alter table base_vaults add column if not exists created_via text not null default 'app';
--- Stock plans: widen the plan-type check on databases created before them.
+-- Stock plans: widen the plan-type check on databases created before them. Only when it differs:
+-- altering it locks the table against every read.
 do $$
 begin
-  alter table base_vaults drop constraint if exists base_vaults_type_check;
-  alter table base_vaults add constraint base_vaults_type_check check (type in ('holdings', 'costs', 'stocks'));
+  if not exists (select 1 from pg_constraint where conrelid = 'base_vaults'::regclass and conname = 'base_vaults_type_check'
+                 and pg_get_constraintdef(oid) = $c$CHECK ((type = ANY (ARRAY['holdings'::text, 'costs'::text, 'stocks'::text])))$c$) then
+    alter table base_vaults drop constraint if exists base_vaults_type_check;
+    alter table base_vaults add constraint base_vaults_type_check check (type in ('holdings', 'costs', 'stocks'));
+  end if;
 end $$;
 create index if not exists base_vaults_user_idx on base_vaults(user_id, created_at desc);
 
@@ -70,10 +72,6 @@ create index if not exists base_vault_events_vault_idx on base_vault_events(vaul
 create index if not exists base_vault_events_attestation_idx on base_vault_events(vault) where detail ? 'attestation';
 create index if not exists base_vault_events_revoked_idx on base_vault_events((detail->>'revoked')) where detail ? 'revoked';
 
-alter table base_users        enable row level security;
-alter table base_auth_nonces  enable row level security;
-alter table base_vaults       enable row level security;
-alter table base_vault_events enable row level security;
 
 -- What a business asked for, saved just before its wallet creates the vault: if the page never
 -- gets to record the vault, Locke finds it on Base and records it with these inputs.
@@ -84,7 +82,6 @@ create table if not exists base_vault_drafts (
   created_at timestamptz not null default now()
 );
 create index if not exists base_vault_drafts_user_idx on base_vault_drafts(user_id, id desc);
-alter table base_vault_drafts enable row level security;
 
 -- "Protect as you get paid": a vault owner's spend permission (signed by their Base Account, the
 -- vault as spender) and what the keeper has counted and moved under it. One per vault.
@@ -103,12 +100,12 @@ create table if not exists base_income (
   inflight_tx    text,
   inflight_usd   numeric,
   inflight_at    timestamptz,
+  inflight_nonce bigint,                        -- the signed collection's nonce and bytes,
+  inflight_raw   text,                          -- to resend it or know it can't land
+  inflight_prev  text[],                        -- earlier hashes at that nonce, replaced with higher fees (any may land)
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
-alter table base_income add column if not exists inflight_nonce bigint;   -- the signed collection's nonce and bytes,
-alter table base_income add column if not exists inflight_raw text;       -- to resend it or know it can't land
-alter table base_income enable row level security;
 
 -- Agent API payments (x402) already used: one EIP-3009 authorization pays for one call, even when
 -- the same signed payment is sent several times at once.
@@ -120,8 +117,6 @@ create table if not exists x402_payments (
   settled    boolean not null default false,
   primary key (payer, nonce)
 );
-alter table x402_payments add column if not exists settled boolean not null default false;
-alter table x402_payments enable row level security;
 
 -- The Base keeper's last round (one row, id 2), for checking that it's alive.
 create table if not exists monitor_heartbeat (
@@ -129,7 +124,38 @@ create table if not exists monitor_heartbeat (
   at      timestamptz not null,
   result  jsonb
 );
-alter table monitor_heartbeat enable row level security;
+
+-- Columns added after launch, for databases created before them (the create tables above have
+-- them), and row-level security. Each only when missing: even an ALTER TABLE that changes nothing
+-- waits for, then holds, a lock that stops every read of the table.
+do $$
+declare c text[];
+declare t text;
+begin
+  foreach c slice 1 in array array[
+    ['base_vaults', 'topup_sent_at', 'timestamptz'],
+    ['base_vaults', 'topup_from_usd', 'numeric'],
+    ['base_vaults', 'created_via', 'text not null default ''app'''],
+    ['base_vaults', 'created_network', 'text'],
+    ['base_vaults', 'dormant_at', 'timestamptz'],
+    ['base_income', 'inflight_nonce', 'bigint'],
+    ['base_income', 'inflight_raw', 'text'],
+    ['base_income', 'inflight_prev', 'text[]'],
+    ['x402_payments', 'settled', 'boolean not null default false']
+  ] loop
+    if not exists (select 1 from information_schema.columns where table_schema = current_schema() and table_name = c[1] and column_name = c[2]) then
+      execute format('alter table %I add column %I %s', c[1], c[2], c[3]);
+    end if;
+  end loop;
+  foreach t in array array['base_users', 'base_auth_nonces', 'base_vaults', 'base_vault_events', 'base_vault_drafts', 'base_income', 'x402_payments', 'monitor_heartbeat'] loop
+    if not (select relrowsecurity from pg_class where oid = t::regclass) then
+      execute format('alter table %I enable row level security', t);
+    end if;
+  end loop;
+end $$;
+-- Hourly registration limits: by caller network, and through the agent API in all.
+create index if not exists base_vaults_network_idx on base_vaults(created_network, created_at) where created_network is not null;
+create index if not exists base_vaults_agent_idx on base_vaults(created_at) where created_via = 'agent';
 
 -- Defense in depth: the app connects as a server role; the public API roles get nothing on
 -- Locke's own tables. Only these tables: the database may hold other apps' tables too.

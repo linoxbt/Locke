@@ -23,6 +23,9 @@ export class VerantaError extends Error {
   }
 }
 
+/** Veranta's catalogue answered, without this market: it was delisted (or never listed). */
+export class UnlistedMarketError extends VerantaError {}
+
 /** Every Veranta call gives up after this long, so one hung request can't stall a route or the keeper. */
 const TIMEOUT_MS = 10_000;
 /** The catalogue (fees, funding, open interest, market hours) is re-read at most this often. */
@@ -66,7 +69,7 @@ export async function getMarket(symbolOrIndex: string | number): Promise<Veranta
     typeof symbolOrIndex === "number"
       ? markets.find((x) => x.index === symbolOrIndex)
       : markets.find((x) => x.symbol.toUpperCase() === symbolOrIndex.toUpperCase());
-  if (!m) throw new VerantaError(`Veranta has no market ${symbolOrIndex}`, 404, null);
+  if (!m) throw new UnlistedMarketError(`Veranta has no market ${symbolOrIndex}`, 404, null);
   return m;
 }
 
