@@ -25,9 +25,9 @@ export function route<A extends unknown[]>(fn: (...args: A) => Promise<Response>
       }
       if (e instanceof BasePlanError) return NextResponse.json({ error: e.message }, { status: 400 });
       if (e instanceof VerantaError) {
-        // Avantis down or answering oddly: say so, and let the page retry.
+        // Veranta down or answering oddly: say so, and let the page retry.
         console.error("[avantis]", e.status, e.message);
-        return NextResponse.json({ error: "Avantis isn't answering right now. Try again shortly.", code: "avantis_unavailable" }, { status: e.status === 404 ? 404 : 503 });
+        return NextResponse.json({ error: "Veranta isn't answering right now. Try again shortly.", code: "avantis_unavailable" }, { status: e.status === 404 ? 404 : 503 });
       }
       console.error(e);
       return NextResponse.json({ error: "Something went wrong. Try again." }, { status: 500 });

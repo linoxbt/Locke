@@ -5,7 +5,7 @@ import { getMarkets } from "@/lib/veranta/client";
 
 export const dynamic = "force-dynamic";
 
-/** Unauthenticated, so the answer is reused for a few seconds: hammering it can't fan out to the database and Avantis. */
+/** Unauthenticated, so the answer is reused for a few seconds: hammering it can't fan out to the database and Veranta. */
 const TTL_MS = 15_000;
 let last: { at: number; ok: Promise<boolean> } | null = null;
 

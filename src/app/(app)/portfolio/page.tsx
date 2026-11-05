@@ -30,7 +30,7 @@ export default async function PortfolioPage() {
           <Eyebrow className="text-ink-2">Total value protected</Eyebrow>
           <div className="num mt-4 text-[32px] leading-none tracking-tight sm:text-[44px]">{usd(protectedUsd, 0)}</div>
           <p className="mt-4 text-[14px] text-ink-2">
-            Hedge value across {active.length} active plan{active.length === 1 ? "" : "s"}, on Avantis.
+            Hedge value across {active.length} active plan{active.length === 1 ? "" : "s"}, on Veranta.
             {attention > 0 && <span className="text-danger-ink"> {attention} need{attention === 1 ? "s" : ""} attention.</span>}
           </p>
         </div>

@@ -1,4 +1,4 @@
-// Veranta (formerly Avantis) read client for the server and the keeper: the market catalogue, a
+// Veranta read client for the server and the keeper: the market catalogue, a
 // vault's positions and the signed price a keeper posts with a margin top-up. Writes go through
 // the vault contract, never straight to Veranta.
 
@@ -34,7 +34,7 @@ async function getJson(url: string, what: string): Promise<any> {
     res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) });
   } catch (e) {
     const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
-    throw new VerantaError(timedOut ? "Avantis didn't answer in time" : "Avantis is unreachable", timedOut ? 504 : 503, null);
+    throw new VerantaError(timedOut ? "Veranta didn't answer in time" : "Veranta is unreachable", timedOut ? 504 : 503, null);
   }
   const text = await res.text();
   let body: any = text;
@@ -52,9 +52,9 @@ let marketsCache: { at: number; markets: VerantaMarket[] } | null = null;
 /** Every Veranta market with its fees, carry, limits and whether it is open now. */
 export async function getMarkets(): Promise<VerantaMarket[]> {
   if (marketsCache && Date.now() - marketsCache.at < MARKETS_TTL_MS) return marketsCache.markets;
-  const body = await getJson(`${config.verantaApiUrl}/data/v2/trading`, "Avantis markets");
+  const body = await getJson(`${config.verantaApiUrl}/data/v2/trading`, "Veranta markets");
   const snapshot = (body?.data ?? body) as RawTradingSnapshot;
-  if (!snapshot?.pairInfos) throw new VerantaError("Avantis markets: unexpected response", 502, body);
+  if (!snapshot?.pairInfos) throw new VerantaError("Veranta markets: unexpected response", 502, body);
   const markets = parseMarkets(snapshot);
   marketsCache = { at: Date.now(), markets };
   return markets;
@@ -66,7 +66,7 @@ export async function getMarket(symbolOrIndex: string | number): Promise<Veranta
     typeof symbolOrIndex === "number"
       ? markets.find((x) => x.index === symbolOrIndex)
       : markets.find((x) => x.symbol.toUpperCase() === symbolOrIndex.toUpperCase());
-  if (!m) throw new VerantaError(`Avantis has no market ${symbolOrIndex}`, 404, null);
+  if (!m) throw new VerantaError(`Veranta has no market ${symbolOrIndex}`, 404, null);
   return m;
 }
 
@@ -77,11 +77,11 @@ export async function getMarket(symbolOrIndex: string | number): Promise<Veranta
  */
 export async function getPositions(trader: string, opts: { pairIndex?: number } = {}): Promise<VerantaPosition[]> {
   if (!/^0x[0-9a-fA-F]{40}$/.test(trader)) throw new VerantaError("Not an address", 400, null);
-  const body = await getJson(`${config.verantaApiUrl}/core/user-data?trader=${trader}`, "Avantis positions");
+  const body = await getJson(`${config.verantaApiUrl}/core/user-data?trader=${trader}`, "Veranta positions");
   // An answer without a positions list is an error, never "no positions": reading it as empty
   // would let a glitch look like a closed hedge.
   const raw = body?.positions ?? body?.data?.positions;
-  if (!Array.isArray(raw)) throw new VerantaError("Avantis positions: unexpected response", 502, body);
+  if (!Array.isArray(raw)) throw new VerantaError("Veranta positions: unexpected response", 502, body);
   const out: VerantaPosition[] = [];
   for (const r of raw as RawPosition[]) {
     try {
@@ -110,7 +110,7 @@ export const PRICE_MAX_AGE_MS = 60_000;
  * the answer has no usable price or a stale one, so nothing is sized or sent on it.
  */
 export async function getSignedPrice(pairIndex: number, opts: { forDisplay?: boolean } = {}): Promise<SignedPrice | null> {
-  const body = await getJson(`${config.verantaFeedUrl}/v2/pairs/${pairIndex}/price-update-data`, "Avantis price");
+  const body = await getJson(`${config.verantaFeedUrl}/v2/pairs/${pairIndex}/price-update-data`, "Veranta price");
   const pro = body?.pro ?? body?.data?.pro;
   return readSignedPrice(pro, Date.now(), opts.forDisplay ? Infinity : PRICE_MAX_AGE_MS);
 }

@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 /** Chart colours for plan types, validated together on the light surface (cobalt, orange). */
-const TYPE_COLOR = { holdings: "#2343ff", costs: "#eb6834" } as const;
+const TYPE_COLOR = { holdings: "#2343ff", costs: "#eb6834", stocks: "#0c0c0d" } as const;
 /** The keeper's gas floor (worker/base-keeper.ts MIN_GAS_ETH): below it, it reports itself unhealthy. */
 const KEEPER_GAS_FLOOR_ETH = 0.0002;
 
@@ -130,7 +130,7 @@ export default async function MetricsPage({ searchParams }: { searchParams: Prom
 
         <ChartCard
           title="Protected by market"
-          sub="Open hedges on Avantis, by the market they hedge on"
+          sub="Open hedges on Veranta, by the market they hedge on"
           table={m.byMarket.map((r) => [r.symbol, usd(r.usd, 0), count(r.plans)])}
           columns={["Market", "Protected", "Plans"]}
         >
@@ -144,7 +144,7 @@ export default async function MetricsPage({ searchParams }: { searchParams: Prom
             <h2 className="display text-[18px]">What&apos;s protected</h2>
             <p className="mt-1 text-[13px] text-ink-2">Open hedge value by plan type</p>
           </div>
-          <TypeSplit holdings={m.byType.holdings} costs={m.byType.costs} />
+          <TypeSplit holdings={m.byType.holdings} costs={m.byType.costs} stocks={m.byType.stocks} />
           <div className="border-t border-line pt-5">
             <h3 className="text-[13px] text-ink-2">Plans by stage</h3>
             <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -180,7 +180,7 @@ export default async function MetricsPage({ searchParams }: { searchParams: Prom
                   <span className="flex min-w-0 items-baseline gap-2.5">
                     <span
                       className="inline-block h-2 w-2 shrink-0 translate-y-[-1px] rounded-full"
-                      style={{ background: a.type === "costs" ? TYPE_COLOR.costs : TYPE_COLOR.holdings }}
+                      style={{ background: a.type === "costs" ? TYPE_COLOR.costs : a.type === "stocks" ? TYPE_COLOR.stocks : TYPE_COLOR.holdings }}
                       aria-hidden
                     />
                     <span className="truncate">{a.message}</span>
@@ -349,15 +349,16 @@ function MarketBars({ rows }: { rows: Metrics["byMarket"] }) {
 }
 
 /** Holdings against operating costs: one whole, split in two, with a legend and values. */
-function TypeSplit({ holdings, costs }: { holdings: number; costs: number }) {
-  const total = holdings + costs;
+function TypeSplit({ holdings, costs, stocks }: { holdings: number; costs: number; stocks: number }) {
+  const total = holdings + costs + stocks;
   const parts = [
     { key: "holdings" as const, label: "Holdings · ETH, BTC", v: holdings },
     { key: "costs" as const, label: "Operating costs · WTI, Brent", v: costs },
+    { key: "stocks" as const, label: "Stocks · shares and indices", v: stocks },
   ];
   return (
     <div>
-      <div className="flex h-3 gap-[2px] overflow-hidden rounded-[4px] bg-mist" role="img" aria-label={`Holdings ${usd(holdings, 0)}, operating costs ${usd(costs, 0)}`}>
+      <div className="flex h-3 gap-[2px] overflow-hidden rounded-[4px] bg-mist" role="img" aria-label={`Holdings ${usd(holdings, 0)}, operating costs ${usd(costs, 0)}, stocks ${usd(stocks, 0)}`}>
         {total > 0 && parts.map((p) => (p.v > 0 ? <span key={p.key} className="h-full" style={{ width: `${(p.v / total) * 100}%`, background: TYPE_COLOR[p.key] }} /> : null))}
       </div>
       <ul className="mt-4 flex flex-col gap-2.5">

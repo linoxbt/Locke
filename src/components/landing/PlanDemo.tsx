@@ -205,7 +205,7 @@ export function PlanDemo(prices: Prices) {
         <span>+50%</span>
       </div>
       <p className="mt-4 text-[13px] text-ink-3">
-        Illustration at today&apos;s ETH price on Avantis, fully hedged, before funding and fees. Your own plan shows these numbers for your amounts.
+        Illustration at today&apos;s ETH price on Veranta, fully hedged, before funding and fees. Your own plan shows these numbers for your amounts.
       </p>
     </div>
   );

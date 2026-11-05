@@ -70,7 +70,7 @@ export default function Privacy() {
 
       <h2>Blockchains are public</h2>
       <p>
-        Your wallet address, deposits, vault and trades are recorded on the Base blockchain and in Avantis&apos;s public data.
+        Your wallet address, deposits, vault and trades are recorded on the Base blockchain and in Veranta&apos;s public data.
         Anyone can see them, and nobody, including us, can delete them. While a hedge is open, its Protected by Locke attestation on Base
         is public too.
       </p>
@@ -78,7 +78,7 @@ export default function Privacy() {
       <h2>Who else sees data</h2>
       <ul>
         <li>
-          <strong>Trading venue:</strong> Avantis sees your vault&apos;s trades on Base, and uses data under its
+          <strong>Trading venue:</strong> Veranta sees your vault&apos;s trades on Base, and uses data under its
           own privacy policy.
         </li>
         <li>
@@ -87,7 +87,7 @@ export default function Privacy() {
         </li>
         <li>
           <strong>Our providers:</strong> hosting (Netlify), database (Supabase), background workers (Railway), and blockchain data and price
-          services (such as Base RPC providers and Pyth through Avantis). They process data only to provide their service to us.
+          services (such as Base RPC providers and Pyth through Veranta). They process data only to provide their service to us.
         </li>
         <li>
           <strong>When the law requires it:</strong> to comply with a valid legal request, or to protect users and Locke from fraud or abuse.

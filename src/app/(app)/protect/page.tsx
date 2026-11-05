@@ -12,16 +12,17 @@ export default async function ProtectPage() {
   return (
     <div className="animate-rise">
       <Crumbs steps={CREATE_STEPS} current={0} />
-      <Display lead="What do you want to protect?" rest="Pick one. You can add the other later." className="max-w-[16ch]" />
-      <DropIn className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2">
+      <Display lead="What do you want to protect?" rest="Pick one. You can add the others later." className="max-w-[16ch]" />
+      <DropIn className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         <Choice href="/protect/holdings" tone="cobalt" n="01" title="Holdings" line="Protect what your business holds" body="A fall in the value of ETH or BTC in your treasury. Direct hedge on ETH/USD or BTC/USD." />
         <Choice href="/protect/costs" tone="lime" n="02" title="Operating costs" line="Manage what it needs to buy" body="A rise in what you pay for diesel or petrol. Partial hedge on WTI or Brent crude." />
+        <Choice href="/protect/stocks" tone="ink" n="03" title="Stocks" line="Protect the stocks it holds" body="A fall in shares your business holds, tokenized on Base or not: NVIDIA, Apple, Tesla and more, or an S&P 500 or Nasdaq 100 portfolio." />
       </DropIn>
     </div>
   );
 }
 
-function Choice({ href, tone, n, title, line, body }: { href: string; tone: "cobalt" | "lime"; n: string; title: string; line: string; body: string }) {
+function Choice({ href, tone, n, title, line, body }: { href: string; tone: "cobalt" | "lime" | "ink"; n: string; title: string; line: string; body: string }) {
   return (
     <Link href={href} className="group">
       <Card tone={tone} className="flex min-h-[188px] flex-col transition-transform duration-300 group-hover:-translate-y-1 sm:min-h-[202px]">
@@ -29,7 +30,7 @@ function Choice({ href, tone, n, title, line, body }: { href: string; tone: "cob
           <Eyebrow className={SUBTLE[tone]}>
             {n} · {title}
           </Eyebrow>
-          <span className={`grid h-12 w-12 place-items-center rounded-full transition-transform duration-300 group-hover:rotate-[-45deg] ${tone === "cobalt" ? "bg-paper text-cobalt" : "bg-ink text-lime"}`}>
+          <span className={`grid h-12 w-12 place-items-center rounded-full transition-transform duration-300 group-hover:rotate-[-45deg] ${tone === "cobalt" ? "bg-paper text-cobalt" : tone === "ink" ? "bg-lime text-ink" : "bg-ink text-lime"}`}>
             <Arrow />
           </span>
         </div>

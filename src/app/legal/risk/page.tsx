@@ -21,12 +21,22 @@ export default function Risk() {
         margin is gone. That can happen fast in a sharp move.
       </p>
       <p>
-        On Avantis, a position is liquidated when its losses and fees reach 85% of its margin. Your plan page shows this as
+        On Veranta, a position is liquidated when its losses and fees reach 85% of its margin. Your plan page shows this as
         &ldquo;margin used&rdquo;, where 100% is liquidation. Locke&apos;s keeper adds margin from your vault&apos;s buffer when it reaches
         60% (by then losses and fees have taken about three quarters of the margin), but only while there is buffer left, the plan&apos;s
         limit has room and the market is open.
       </p>
       <p>Higher leverage needs less money up front and puts liquidation closer. Locke caps leverage at 3x, and lower is safer.</p>
+
+      <h2>Stock plans</h2>
+      <p>
+        A stock plan sells a perpetual future on Veranta that follows a stock or index price. It is a contract on the price only: it is not a
+        share, carries no voting or dividend rights, and Locke never buys, sells or holds stocks for you. Veranta&apos;s stock markets follow
+        US trading hours. While they are closed, Locke&apos;s keeper cannot add margin, and prices can open far from where they closed after a
+        weekend, a holiday or company news, which can use up the margin before the keeper can act. Stock plans therefore keep a larger
+        buffer. Where Locke shows tokenized stocks from your account on Base, it only reads them to size the plan; whether you may hold
+        them is a matter between you and their issuer.
+      </p>
 
       <h2>A hedge is not a perfect match</h2>
       <ul>
@@ -53,15 +63,15 @@ export default function Risk() {
       <h2>Markets close and roll</h2>
       <p>
         Crypto markets trade around the clock, but oil markets close at night and at weekends. While a market is closed, nobody can add
-        margin, resize or close the hedge, and prices can gap when it reopens. Oil hedges on Avantis follow a futures contract that is rolled
+        margin, resize or close the hedge, and prices can gap when it reopens. Oil hedges on Veranta follow a futures contract that is rolled
         each month: the entry price shifts at the roll and trading pauses briefly.
       </p>
 
       <h2>Venue and counterparty risk</h2>
       <ul>
         <li>
-          Avantis is an independent platform. It can change its rules, fees, margin levels or markets, pause trading, delist a market, or
-          fail. Avantis pays winning positions from a liquidity vault, and its contracts can be upgraded by its operators.
+          Veranta is an independent platform. It can change its rules, fees, margin levels or markets, pause trading, delist a market, or
+          fail. Veranta pays winning positions from a liquidity vault, and its contracts can be upgraded by its operators.
         </li>
         <li>Venues depend on price oracles. A wrong or late price can cause a liquidation or a bad fill.</li>
       </ul>

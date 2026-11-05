@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { pct } from "@/lib/ui/format";
 
-/** An Avantis market on Base: its price and what holding Locke's side costs per day (%). */
+/** An Veranta market on Base: its price and what holding Locke's side costs per day (%). */
 export type Quote = { price: number; carryPctPerDay: number | null } | null;
 
 const POLL_MS = 5_000;
@@ -94,7 +94,7 @@ type Prices = { eth: Quote; btc: Quote; wti: Quote; brent: Quote };
 const PAIRS = { eth: 0, btc: 1, wti: 96, brent: 97 } as const;
 
 /**
- * Live prices from Avantis on Base for the markets Locke hedges on. They count up when scrolled
+ * Live prices from Veranta on Base for the markets Locke hedges on. They count up when scrolled
  * into view, then poll while visible.
  */
 export function LivePrices(initial: Prices) {
@@ -140,10 +140,10 @@ export function LivePrices(initial: Prices) {
 
   return (
     <dl ref={ref} className="mt-auto grid grid-cols-2 gap-x-4 gap-y-5 pt-6">
-      <Price symbol="ETH/USD" venue="Avantis" value={p.eth?.price ?? null} note={carry(p.eth?.carryPctPerDay)} started={started} />
-      <Price symbol="BTC/USD" venue="Avantis" value={p.btc?.price ?? null} note={carry(p.btc?.carryPctPerDay)} started={started} />
-      <Price symbol="WTI/USD" venue="Avantis" value={p.wti?.price ?? null} note={carry(p.wti?.carryPctPerDay)} started={started} />
-      <Price symbol="BRENT/USD" venue="Avantis" value={p.brent?.price ?? null} note={carry(p.brent?.carryPctPerDay)} started={started} />
+      <Price symbol="ETH/USD" venue="Veranta" value={p.eth?.price ?? null} note={carry(p.eth?.carryPctPerDay)} started={started} />
+      <Price symbol="BTC/USD" venue="Veranta" value={p.btc?.price ?? null} note={carry(p.btc?.carryPctPerDay)} started={started} />
+      <Price symbol="WTI/USD" venue="Veranta" value={p.wti?.price ?? null} note={carry(p.wti?.carryPctPerDay)} started={started} />
+      <Price symbol="BRENT/USD" venue="Veranta" value={p.brent?.price ?? null} note={carry(p.brent?.carryPctPerDay)} started={started} />
     </dl>
   );
 }

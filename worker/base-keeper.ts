@@ -2,7 +2,7 @@
 //
 // Every 15 seconds, for each vault not closed:
 // - reads the vault on Base (idle USDC, plan limits, pause, keeper, cooldown) and its hedge on
-//   Avantis (position, signed price, market hours);
+//   Veranta (position, signed price, market hours);
 // - decides with src/lib/base/keeper.ts: open the hedge once the deposit is in, add margin when it
 //   runs thin, mark the vault closed when the owner closed the hedge;
 // - sends the transaction from the keeper key, with Locke's Builder Code appended, and records
@@ -126,7 +126,7 @@ async function txState(hash: Hex, signed?: Partial<Signed> | null): Promise<"min
   if (signed.raw) await client.sendRawTransaction({ serializedTransaction: signed.raw }).catch(() => null);
   return "pending";
 }
-/** Each vault's Avantis TradingStorage (fixed at creation) and how many looks in a row it showed no trade. */
+/** Each vault's Veranta TradingStorage (fixed at creation) and how many looks in a row it showed no trade. */
 const storageOf = new Map<string, Address>();
 const goneRounds = new Map<string, number>();
 
@@ -228,7 +228,7 @@ async function send(
   return hash;
 }
 
-/** Why an action failed, in words an owner can read: a contract's own error, or Base/Avantis being unreachable. */
+/** Why an action failed, in words an owner can read: a contract's own error, or Base/Veranta being unreachable. */
 function reason(e: unknown): string {
   const err = e as { shortMessage?: string; message?: string; cause?: { data?: { errorName?: string } } };
   const name = err.cause?.data?.errorName ?? /reverted with the following reason:\s*\n?\s*(\w+)|Error: (\w+)\(/.exec(err.shortMessage ?? err.message ?? "")?.slice(1).find(Boolean);
@@ -240,8 +240,8 @@ function reason(e: unknown): string {
     CollateralTooHigh: "it would pass the vault's limit",
     LeverageTooHigh: "it would pass the vault's leverage limit",
     TooSoon: "the vault allows one open per hour and one top-up every two minutes",
-    ZeroPrice: "Avantis gave no price",
-    PositionExists: "an order is already pending on Avantis",
+    ZeroPrice: "Veranta gave no price",
+    PositionExists: "an order is already pending on Veranta",
   };
   if (name && known[name]) return known[name];
   const text = err.shortMessage ?? err.message ?? String(e);
@@ -288,7 +288,7 @@ async function tend(row: Row) {
         updated_at = now()
       where address = ${row.address}`;
   }
-  if (row.status !== "active" && d.status === "active") await addVaultEvent(row.address, "info", "Hedge open on Avantis: the vault is protected");
+  if (row.status !== "active" && d.status === "active") await addVaultEvent(row.address, "info", "Hedge open on Veranta: the vault is protected");
   // Locke's fee is owed from the open and paid once Base shows the trade (whatever the API says yet).
   // Never holds up the hedge; the next round retries.
   if (state.chainTrades > 0) await settleFee(row).catch((e) => log("settleFee", row.address, "failed:", reason(e)));
@@ -307,18 +307,18 @@ async function tend(row: Row) {
       return note(row.address, `Margin is getting thin. Deposit about $${a.amountUsd.toFixed(2)} so Locke can add it to the hedge.`, "action");
     case "open": {
       const price = await getSignedPrice(row.pair_index);
-      if (!price) return note(row.address, "No price from Avantis right now; opening shortly.");
+      if (!price) return note(row.address, "No price from Veranta right now; opening shortly.");
       const lev = BigInt(Math.round(a.leverage * 1e10));
       const hash = await send(vault, "hedgeOpen", [BigInt(row.pair_index), usdcUnits(a.collateralUsd), lev, BigInt(Math.round(price.price * 1e10)), SLIPPAGE], 0n, () =>
         sql`update base_vaults set open_sent_at = now(), status = 'opening', updated_at = now() where address = ${row.address}`
       );
       log("opened", row.address, a, hash);
-      await addVaultEvent(row.address, "info", `Hedge sent to Avantis: ${row.sizing.buy ? "long" : "short"} $${row.sizing.notionalUsd.toFixed(2)} at ${a.leverage}x`, undefined, hash);
-      return note(row.address, "Waiting for Avantis to fill the hedge.");
+      await addVaultEvent(row.address, "info", `Hedge sent to Veranta: ${row.sizing.buy ? "long" : "short"} $${row.sizing.notionalUsd.toFixed(2)} at ${a.leverage}x`, undefined, hash);
+      return note(row.address, "Waiting for Veranta to fill the hedge.");
     }
     case "topUp": {
       const price = await getSignedPrice(row.pair_index);
-      if (!price) return note(row.address, "No price from Avantis right now; adding margin shortly.");
+      if (!price) return note(row.address, "No price from Veranta right now; adding margin shortly.");
       const from = state.position?.collateralUsd ?? 0;
       const hash = await send(vault, "topUpMargin", [BigInt(row.pair_index), BigInt(a.index), usdcUnits(a.amountUsd), [price.updateData], PRICE_SOURCING_LAZER], LAZER_FEE_WEI, () =>
         // Recorded before sending: a receipt timeout or a restart waits for this top-up instead of sending another.

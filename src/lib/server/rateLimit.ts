@@ -30,7 +30,7 @@ const MAX_KEYS = 10_000;
 
 /**
  * Token bucket per key (user id + route), kept in this function instance's memory: a cheap
- * brake on scripted calls that fan out to Avantis or Base, not a global quota.
+ * brake on scripted calls that fan out to Veranta or Base, not a global quota.
  */
 export function rateLimit(key: string, perMinute: number, now = Date.now()) {
   const rate = perMinute / 60_000;

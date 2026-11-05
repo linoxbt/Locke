@@ -35,7 +35,19 @@ export interface CostsInputs {
   bufferPct: number;
 }
 
-export type BasePlanInputs = HoldingsInputs | CostsInputs;
+/** Stocks a business holds (tokenized on Base or not), hedged with a short on Veranta's equity market. */
+export interface StocksInputs {
+  type: "stocks";
+  pairIndex: number;
+  /** Value of the shares held, USD. */
+  valueUsd: number;
+  /** Share of it to protect, 10–100 (%). */
+  sharePct: number;
+  leverage: number;
+  bufferPct: number;
+}
+
+export type BasePlanInputs = HoldingsInputs | CostsInputs | StocksInputs;
 
 /** What the sizing needs from Veranta's market data (fees in % of notional). */
 export interface MarketTerms {
@@ -81,7 +93,7 @@ export function parseBaseInputs(raw: unknown): BasePlanInputs {
   if (!market || market.type !== type) throw new BasePlanError("Pick a market for this plan type");
   between(n("leverage"), 1, MAX_BASE_LEVERAGE, "Leverage");
   between(n("bufferPct"), 10, 100, "Buffer");
-  if (type === "holdings") {
+  if (type === "holdings" || type === "stocks") {
     between(n("valueUsd"), 1, 10_000_000, "Value held");
     between(n("sharePct"), 10, 100, "Share protected");
     return { type, pairIndex: market.pairIndex, valueUsd: n("valueUsd"), sharePct: n("sharePct"), leverage: n("leverage"), bufferPct: n("bufferPct") };
@@ -101,7 +113,7 @@ export function parseBaseInputs(raw: unknown): BasePlanInputs {
 }
 
 export function hedgeNotional(i: BasePlanInputs): number {
-  return i.type === "holdings" ? (i.valueUsd * i.sharePct) / 100 : (i.monthlySpendUsd * i.months * i.crudeSharePct) / 100;
+  return i.type === "costs" ? (i.monthlySpendUsd * i.months * i.crudeSharePct) / 100 : (i.valueUsd * i.sharePct) / 100;
 }
 
 /**
@@ -125,7 +137,7 @@ export function sizeBasePlan(i: BasePlanInputs, m: MarketTerms): BaseSizing {
   if (!market) throw new BasePlanError("Unknown market");
   const notionalUsd = hedgeNotional(i);
   if (notionalUsd < m.minPositionUsd) {
-    throw new BasePlanError(`Avantis's smallest ${market.asset} hedge is $${m.minPositionUsd}; this plan hedges $${notionalUsd.toFixed(2)}`);
+    throw new BasePlanError(`Veranta's smallest ${market.asset} hedge is $${m.minPositionUsd}; this plan hedges $${notionalUsd.toFixed(2)}`);
   }
   if (i.leverage > m.maxLeverage) throw new BasePlanError(`${market.asset} allows at most ${m.maxLeverage}x`);
   const collateralUsd = notionalUsd / i.leverage;
@@ -137,5 +149,6 @@ export function sizeBasePlan(i: BasePlanInputs, m: MarketTerms): BaseSizing {
 
 export function planName(i: BasePlanInputs): string {
   const m = baseMarket(i.pairIndex);
+  if (i.type === "stocks") return m?.asset === "US500" || m?.asset === "US100" ? `${m.label} protection` : `${m?.label ?? "Stock"} stock protection`;
   return i.type === "holdings" ? `${m?.asset ?? "Treasury"} treasury protection` : `${i.months}-month fuel cover (${m?.asset ?? "oil"})`;
 }

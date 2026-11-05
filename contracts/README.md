@@ -1,7 +1,7 @@
 # Locke on Base: vault contracts
 
 Each business gets a `LockeVault` on Base. The vault holds the business's USDC and is the trader on
-[Veranta](https://www.veranta.xyz) (Avantis until September 2026), so every payout lands back in the
+[Veranta](https://www.veranta.xyz) (Veranta until September 2026), so every payout lands back in the
 vault. Locke's keeper can steer the hedge within the owner's plan limits; it can never move funds.
 
 | Role | Can | Can never |
@@ -23,7 +23,7 @@ cooldown; a vault follows the factory's keeper by default, so rotating a comprom
 existing vaults (`setKeeper` picks the owner's own, `followFactoryKeeper` goes back); the owner may
 deposit while paused (to keep a hedge's buffer up); a zero wanted price is refused. Accepted as
 designed: market orders fill at the oracle price, so the wanted price only bounds movement before
-the fill (slippage is capped at 3%); the router and storage are fixed per vault (if Avantis moves,
+the fill (slippage is capped at 3%); the router and storage are fixed per vault (if Veranta moves,
 owners withdraw and create a new vault); `netDeposits` ignores fees paid out, which only makes the
 launch caps slightly stricter; a partly paid fee starts the 30-day period (in the owner's favour).
 

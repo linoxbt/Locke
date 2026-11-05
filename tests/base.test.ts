@@ -10,7 +10,7 @@ vi.mock("@/lib/server/baseChain", () => ({ basePublicClient: () => ({ verifyMess
 import { builderSuffix } from "@/lib/base/builderCode";
 import { factoryAbi, vaultAbi } from "@/lib/base/contracts";
 import { decide, OPEN_RETRY_S, TOP_UP_RETRY_S, type VaultState } from "@/lib/base/keeper";
-import { BasePlanError, parseBaseInputs, planLimits, sizeBasePlan, type MarketTerms } from "@/lib/domain/basePlans";
+import { BasePlanError, parseBaseInputs, planLimits, planName, sizeBasePlan, type MarketTerms } from "@/lib/domain/basePlans";
 import { verantaMarginRatio, type VerantaPosition } from "@/lib/domain/veranta";
 import { HttpError } from "@/lib/server/errors";
 import { checkSiweMessage, signatureMatches } from "@/lib/server/siwe";
@@ -99,7 +99,7 @@ describe("Base keeper decisions", () => {
     expect(decide({ ...base, marketOpen: false }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("market is closed") });
     expect(decide({ ...base, paused: true }).action.kind).toBe("wait");
     expect(decide({ ...base, cooldownLeftS: 1800 }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("30 min") });
-    expect(decide({ ...base, status: "opening", openSentAgoS: 30 }).action).toMatchObject({ kind: "wait", note: "Waiting for Avantis to fill the hedge." });
+    expect(decide({ ...base, status: "opening", openSentAgoS: 30 }).action).toMatchObject({ kind: "wait", note: "Waiting for Veranta to fill the hedge." });
     expect(decide({ ...base, status: "opening", openSentAgoS: OPEN_RETRY_S + 1 }).action.kind).toBe("open");
     expect(decide({ ...base, keeperIsUs: false }).action).toMatchObject({ kind: "wait", note: expect.stringContaining("removed") });
   });
@@ -238,5 +238,21 @@ describe("Base contracts and Builder Codes", () => {
       const have = new Set(real.filter((x) => x.type === "function" || x.type === "event").map(sig));
       for (const x of abi.filter((x) => x.type === "function" || x.type === "event")) expect(have, `${name}: ${sig(x as AbiFunction)}`).toContain(sig(x as AbiFunction));
     }
+  });
+});
+
+describe("Stock plans", () => {
+  const NVDA_TERMS: MarketTerms = { minPositionUsd: 100, maxLeverage: 25, openFeePct: 0.05, closeFeePct: 0.05, spreadPct: 0.02 };
+  it("parses and sizes a stock plan as a short on the stock, sized from the shares held", () => {
+    const i = parseBaseInputs({ type: "stocks", pairIndex: 81, valueUsd: 8000, sharePct: 50, leverage: 2, bufferPct: 75 });
+    const s = sizeBasePlan(i, NVDA_TERMS);
+    expect(s).toMatchObject({ buy: false, notionalUsd: 4000, collateralUsd: 2000, bufferUsd: 1500 });
+    expect(s.limits).toEqual({ maxLeverage: 2, maxNotionalUsd: 4400, maxCollateralUsd: 3500 });
+    expect(planName(i)).toBe("NVIDIA stock protection");
+    expect(planName(parseBaseInputs({ type: "stocks", pairIndex: 78, valueUsd: 8000, sharePct: 50, leverage: 1, bufferPct: 50 }))).toBe("S&P 500 portfolio protection");
+  });
+  it("refuses a stock market on another plan type, and a crypto market on a stock plan", () => {
+    expect(() => parseBaseInputs({ type: "holdings", pairIndex: 81, valueUsd: 1000, sharePct: 50, leverage: 2, bufferPct: 50 })).toThrow("Pick a market");
+    expect(() => parseBaseInputs({ type: "stocks", pairIndex: 0, valueUsd: 1000, sharePct: 50, leverage: 2, bufferPct: 50 })).toThrow("Pick a market");
   });
 });

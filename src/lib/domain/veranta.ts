@@ -1,4 +1,4 @@
-// Veranta (formerly Avantis) on Base: market catalogue, positions and the risk math Locke's keeper
+// Veranta on Base: market catalogue, positions and the risk math Locke's keeper
 // needs. Pure data and functions, safe to import from browser, server and worker.
 //
 // Units on the wire: prices, leverage and percentages 1e10; USDC 1e6. Everything returned here is
@@ -158,7 +158,7 @@ export function parsePosition(p: RawPosition): VerantaPosition {
   const funding = Number(p.unrealisedFundingFee ?? 0) / USDC;
   // Risk math on a half-read position would be NaN: refuse it, so the keeper retries next round.
   if (![collateralUsd, leverage, openPrice, size, rollover, funding].every(Number.isFinite) || collateralUsd <= 0 || leverage <= 0 || openPrice <= 0 || size <= 0) {
-    throw new IncompletePositionError(`Avantis reported an incomplete position (pair ${p.pairIndex}, index ${p.index})`);
+    throw new IncompletePositionError(`Veranta reported an incomplete position (pair ${p.pairIndex}, index ${p.index})`);
   }
   return {
     pairIndex: Number(p.pairIndex),

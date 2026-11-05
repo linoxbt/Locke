@@ -29,6 +29,14 @@ interface MarketInfo {
 
 type Step = "idle" | "wallet" | "confirming" | "pending" | "recording";
 
+/** A tokenized stock the account holds on Base, and the Veranta market that hedges it. */
+interface HeldStock {
+  token: string;
+  pairIndex: number;
+  shares: number;
+  valueUsd: number;
+}
+
 /**
  * A plan sent to Base and not yet saved to Locke: while Base hasn't confirmed it (`sent`, no
  * txHash), or once it has and saving is still to do. Kept in this browser so a reload or a slow
@@ -91,7 +99,17 @@ export function NewVaultForm({
   const [months, setMonths] = useState(3);
   const [crudeSharePct, setCrudeSharePct] = useState(60);
   const [leverage, setLeverage] = useState(2);
-  const [bufferPct, setBufferPct] = useState(50);
+  // Stock markets close outside US trading hours, when the keeper can't add margin: a bigger buffer.
+  const [bufferPct, setBufferPct] = useState(fixedType === "stocks" ? 75 : 50);
+  // Tokenized stocks this account holds on Base (Coinbase's), matched to a market Locke hedges.
+  const [held, setHeld] = useState<HeldStock[] | null>(null);
+  useEffect(() => {
+    if ((fixedType ?? "holdings") !== "stocks") return;
+    fetch("/api/base/stocks/holdings", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { holdings: [] }))
+      .then((d) => setHeld(d.holdings ?? []))
+      .catch(() => setHeld([]));
+  }, [fixedType]);
   const [agreed, setAgreed] = useState(false);
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +119,7 @@ export function NewVaultForm({
 
   useEffect(() => {
     fetch("/api/base/markets", { cache: "no-store" })
-      .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error((await r.json().catch(() => ({})))?.error ?? "Avantis is unavailable"))))
+      .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error((await r.json().catch(() => ({})))?.error ?? "Veranta is unavailable"))))
       .then((d) => setMarkets(d.markets))
       .catch((e) => setLoadError(String(e.message ?? e)));
   }, []);
@@ -109,7 +127,7 @@ export function NewVaultForm({
   const choices = BASE_MARKETS.filter((m) => m.type === type);
   const market = markets?.find((m) => m.pairIndex === pairIndex);
   const inputs: BasePlanInputs =
-    type === "holdings"
+    type !== "costs"
       ? { type, pairIndex, valueUsd, sharePct, leverage, bufferPct }
       : {
           type,
@@ -309,7 +327,7 @@ export function NewVaultForm({
     }
   }
 
-  if (loadError && !created) return <Notice tone="danger">Avantis&apos;s market data didn&apos;t load ({loadError}). Try again shortly.</Notice>;
+  if (loadError && !created) return <Notice tone="danger">Veranta&apos;s market data didn&apos;t load ({loadError}). Try again shortly.</Notice>;
 
   const busy = step !== "idle";
   const sizing = sized.sizing;
@@ -346,6 +364,7 @@ export function NewVaultForm({
               options={[
                 { value: "holdings", label: "Crypto the business holds" },
                 { value: "costs", label: "Fuel the business buys" },
+                { value: "stocks", label: "Stocks the business holds" },
               ]}
             />
           </Field>
@@ -358,15 +377,44 @@ export function NewVaultForm({
             onChange={setPairIndex}
             options={choices.map((m) => ({
               value: m.pairIndex as number,
-              label: m.label,
+              label: type === "stocks" ? m.asset : m.label,
             }))}
           />
         </Field>
+        {type === "stocks" && (
+          <p className="-mt-3 text-[13px] leading-relaxed text-ink-2">
+            Stock markets follow US trading hours. While they&apos;re closed, Locke&apos;s keeper can&apos;t add margin, so stock plans keep a bigger buffer, and
+            prices can gap at the open.
+          </p>
+        )}
+        {type === "stocks" && held && held.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-2xl bg-mist p-4">
+            <span className="text-[13px] text-ink-2">Tokenized stocks in your account on Base</span>
+            <div className="flex flex-wrap gap-2">
+              {held.map((h) => (
+                <button
+                  key={h.token}
+                  type="button"
+                  onClick={() => {
+                    setPairIndex(h.pairIndex);
+                    setValueUsd(Math.round(h.valueUsd));
+                  }}
+                  className="inline-flex h-10 items-center gap-2 rounded-full bg-paper px-4 text-[13px] text-ink transition hover:bg-ink hover:text-paper"
+                >
+                  <span className="num">{h.token}</span>
+                  <span className="text-ink-3">·</span>
+                  <span className="num">{usd(h.valueUsd, 0)}</span>
+                  <span className="text-ink-3">· Protect this</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-        {type === "holdings" ? (
+        {type !== "costs" ? (
           <>
-            <Field label="Value held (USD)" hint={market?.price ? `${market.asset} is ${usd(market.price)} now.` : undefined}>
-              <MoneyInput label="Value held (USD)" value={valueUsd} onChange={setValueUsd} />
+            <Field label={type === "stocks" ? "Value of the shares held (USD)" : "Value held (USD)"} hint={market?.price ? `${market.asset} is ${usd(market.price)} on Veranta now.` : undefined}>
+              <MoneyInput label={type === "stocks" ? "Value of the shares held (USD)" : "Value held (USD)"} value={valueUsd} onChange={setValueUsd} />
             </Field>
             <Field label={`Share to protect: ${sharePct}%`} group>
               <Slider label="Share to protect" value={sharePct} min={10} max={100} step={5} onChange={setSharePct} />
@@ -396,9 +444,9 @@ export function NewVaultForm({
 
       <Card tone="ink" className="flex h-fit flex-col gap-5 lg:sticky lg:top-24">
         <div className="eyebrow text-lime">Your plan</div>
-        {!markets && <p className="text-[14px] text-paper/70">Loading Avantis&apos;s markets…</p>}
+        {!markets && <p className="text-[14px] text-paper/70">Loading Veranta&apos;s markets…</p>}
         {sized.problem && <p className="text-[14px] text-paper">{sized.problem}</p>}
-        {market && !market.available && <p className="text-[14px] text-paper">This market isn&apos;t available on Avantis right now.</p>}
+        {market && !market.available && <p className="text-[14px] text-paper">This market isn&apos;t available on Veranta right now.</p>}
         {sizing && (
           <>
             <div>
@@ -430,7 +478,7 @@ export function NewVaultForm({
             <label className="flex items-start gap-3 text-[13px] text-paper/85">
               <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#d6f36b]" />
               <span>
-                I understand the hedge is a leveraged position on Avantis, can lose its margin if prices move far against it, and that fees and
+                I understand the hedge is a leveraged position on Veranta, can lose its margin if prices move far against it, and that fees and
                 funding apply. I&apos;ve read the{" "}
                 <Link href="/legal/risk" target="_blank" className="underline underline-offset-2">
                   Risk Disclosure
@@ -444,7 +492,7 @@ export function NewVaultForm({
             </label>
             {!created && factory && market && !market.available && (
               <p className="text-[13px] text-paper/80">
-                Avantis isn&apos;t taking new positions on this market right now, so plans for it can&apos;t be created.
+                Veranta isn&apos;t taking new positions on this market right now, so plans for it can&apos;t be created.
               </p>
             )}
             {!created && factory && market?.available && !market.marketOpen && (
@@ -541,10 +589,10 @@ export function NewVaultForm({
 
 function carryHint(m: MarketInfo): string {
   const yearly = (m.carryPctPerHour ?? 0) * 24 * 365;
-  if (Math.abs(yearly) < 0.05) return `${m.symbol} on Avantis. Holding costs almost nothing right now.`;
+  if (Math.abs(yearly) < 0.05) return `${m.symbol} on Veranta. Holding costs almost nothing right now.`;
   return yearly < 0
-    ? `${m.symbol} on Avantis. This side is being paid about ${(-yearly).toFixed(1)}% a year right now.`
-    : `${m.symbol} on Avantis. Holding costs about ${yearly.toFixed(1)}% a year right now.`;
+    ? `${m.symbol} on Veranta. This side is being paid about ${(-yearly).toFixed(1)}% a year right now.`
+    : `${m.symbol} on Veranta. Holding costs about ${yearly.toFixed(1)}% a year right now.`;
 }
 
 /**
@@ -553,6 +601,10 @@ function carryHint(m: MarketInfo): string {
  */
 function MoneyInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   const [text, setText] = useState(String(value));
+  // A value set from outside (a holding picked from the wallet) replaces what was typed.
+  useEffect(() => {
+    setText((cur) => (Number(cur.replace(/[\s,$]/g, "")) === value || Number.isNaN(value) ? cur : value.toLocaleString("en-US")));
+  }, [value]);
   const parsed = Number(text.replace(/[\s,$]/g, ""));
   const bad = text.trim() === "" || !Number.isFinite(parsed) || parsed < 0;
   return (

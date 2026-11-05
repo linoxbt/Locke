@@ -32,7 +32,7 @@ export interface Metrics {
   /** Active hedges by market: USD and count, in BASE_MARKETS order. */
   byMarket: { symbol: string; label: string; usd: number; plans: number }[];
   /** Active hedge value by plan type. */
-  byType: { holdings: number; costs: number };
+  byType: { holdings: number; costs: number; stocks: number };
   /** Daily protected value over the range. */
   protectedSeries: Point[];
   /** Plans created per day (7 and 30 days) or per week (90 days). */
@@ -60,7 +60,7 @@ export function publicMessage(message: string): string {
     [/^Moved \$/, "Incoming USDC moved into a plan"],
     [/^Protect as you get paid is on/, "Protect as you get paid turned on"],
     [/^Added \$/, "Margin added from a plan's buffer"],
-    [/^Hedge sent to Avantis/, "Hedge sent to Avantis"],
+    [/^Hedge sent to Veranta/, "Hedge sent to Veranta"],
     [/^Margin is getting thin/, "A plan needs more margin"],
   ];
   for (const [re, text] of known) if (re.test(message)) return text;
@@ -165,8 +165,8 @@ export async function readMetrics(range: RangeDays): Promise<Metrics> {
   const byStatus: Record<string, number> = { funding: 0, opening: 0, active: 0, closed: 0 };
   for (const s of statuses) byStatus[String(s.status)] = num(s.n);
   const byPair = new Map(markets.map((m) => [Number(m.pair_index), m]));
-  const byType = { holdings: 0, costs: 0 };
-  for (const t of types) byType[t.type === "costs" ? "costs" : "holdings"] = num(t.usd);
+  const byType = { holdings: 0, costs: 0, stocks: 0 };
+  for (const t of types) byType[t.type === "costs" ? "costs" : t.type === "stocks" ? "stocks" : "holdings"] = num(t.usd);
 
   return {
     range,

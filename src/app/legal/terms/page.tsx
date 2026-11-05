@@ -21,8 +21,8 @@ export default function Terms() {
       <h2>1. What Locke is</h2>
       <p>
         Locke is software that helps a business protect what it holds or buys against price moves. It sizes a hedge, opens it on a
-        third-party trading venue, watches it and tells you when it needs attention. Locke runs on Base: it hedges on Avantis
-        (avantisfi.com), from a vault contract on Base that you own.
+        third-party trading venue, watches it and tells you when it needs attention. Locke runs on Base: it hedges on Veranta
+        (veranta.xyz), from a vault contract on Base that you own.
       </p>
       <p>
         Locke is a tool, not a broker, bank, exchange, fund, insurer or investment adviser. It does not give financial, legal or tax advice,
@@ -41,10 +41,10 @@ export default function Terms() {
       <ul>
         <li>You must be at least 18 and able to enter a binding contract.</li>
         <li>
-          You must not use Locke where the law forbids it, where Avantis does not allow you to use its service, or if you are
+          You must not use Locke where the law forbids it, where Veranta does not allow you to use its service, or if you are
           subject to sanctions. You are responsible for checking the rules that apply to you.
         </li>
-        <li>You must not use Locke to break the law, to move the proceeds of crime, or to interfere with Locke, Avantis or any network.</li>
+        <li>You must not use Locke to break the law, to move the proceeds of crime, or to interfere with Locke, Veranta or any network.</li>
       </ul>
 
       <h2>4. Risk</h2>
@@ -72,7 +72,7 @@ export default function Terms() {
       <ul>
         <li>
           A vault can carry a Locke fee of at most 0.20% of the value of a hedge the keeper opens. It is owed
-          when the keeper places the hedge and paid only once Avantis has opened it (an order that never fills is never charged), and
+          when the keeper places the hedge and paid only once Veranta has opened it (an order that never fills is never charged), and
           it is charged at most once per market every 30 days, however often the hedge is reopened. The rate is fixed when you create
           the vault, shown before you do, and included in the deposit Locke asks for.
         </li>
@@ -84,7 +84,7 @@ export default function Terms() {
 
       <h2>7. Third-party services</h2>
       <p>
-        Locke works on top of services we don&apos;t control, including Avantis, the Base network, price oracles
+        Locke works on top of services we don&apos;t control, including Veranta, the Base network, price oracles
         (Pyth), wallets (including Base Account by Coinbase), and our hosting and data providers. Your use of them is governed by their own
         terms. We are not responsible for their availability, their decisions (such as liquidations, delistings or account restrictions), or
         losses they cause.

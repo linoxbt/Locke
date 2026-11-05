@@ -89,9 +89,9 @@ export async function recordVault(user: { uid: string; addr: string }, txHash: s
     throw new HttpError(400, "The vault's limits on Base don't match this plan");
   }
 
-  // The vault exists on Base whatever Avantis's terms are now, so a changed minimum size or
+  // The vault exists on Base whatever Veranta's terms are now, so a changed minimum size or
   // leverage cap must not stop it being recorded: size it with those limits relaxed (the keeper's
-  // open is still checked by Avantis). Avantis being unreachable is a 503 the page retries.
+  // open is still checked by Veranta). Veranta being unreachable is a 503 the page retries.
   const terms = marketTerms(await getMarket(inputs.pairIndex));
   const sizing: BaseSizing = sizeBasePlan(inputs, { ...terms, minPositionUsd: 0, maxLeverage: Math.max(terms.maxLeverage, inputs.leverage) });
   const vault = created.vault.toLowerCase();
@@ -262,7 +262,7 @@ export async function vaultDetail(uid: string, address: string): Promise<VaultVi
       return null;
     }),
     getPositions(vault, { pairIndex: market.pairIndex }).catch(() => {
-      partial.push("Avantis");
+      partial.push("Veranta");
       return null;
     }),
     getSignedPrice(market.pairIndex, { forDisplay: true }).catch(() => null),

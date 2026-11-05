@@ -17,7 +17,7 @@ export const AGENT_ENDPOINTS: AgentEndpoint[] = [
     method: "GET",
     path: "/api/agent/quote",
     price: "$0.01",
-    what: "Size a protection plan on Base from live Avantis prices: hedge, deposit, margin, fees, limits and daily carry.",
+    what: "Size a protection plan on Base from live Veranta prices: hedge, deposit, margin, fees, limits and daily carry.",
   },
   {
     method: "POST",

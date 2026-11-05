@@ -2,12 +2,13 @@
 
 **Protect what your business holds. Manage what it buys, with hedges and from a vault you own.**
 
-Locke helps businesses on Base manage price risk with perpetual futures on [Avantis](https://www.avantisfi.com) (now operating as Veranta). A business tells Locke what it wants to protect — crypto it holds, or the fuel it buys every month — and Locke sizes the hedge, opens it from a vault contract the business owns, and keeps its margin topped up.
+Locke helps businesses on Base manage price risk with perpetual futures on [Veranta](https://www.veranta.xyz) (now operating as Veranta). A business tells Locke what it wants to protect — crypto it holds, or the fuel it buys every month — and Locke sizes the hedge, opens it from a vault contract the business owns, and keeps its margin topped up.
 
-| Plan | Protects against | Avantis market | Side | Hedge quality |
+| Plan | Protects against | Veranta market | Side | Hedge quality |
 |---|---|---|---|---|
 | **Holdings** | A fall in the value of ETH or BTC held | `ETH/USD`, `BTC/USD` | Short | Direct: the hedge tracks the same asset |
 | **Operating costs** | A rise in fuel costs | `WTI/USD`, `BRENT/USD` | Long | Partial: crude explains only part of local fuel prices |
+| **Stocks** | A fall in shares or an index held (Coinbase tokenized stocks on Base are read from the account) | `NVDA/USD`, `AAPL/USD`, `TSLA/USD`, `MSFT/USD`, `AMZN/USD`, `META/USD`, `GOOG/USD`, `COIN/USD`, `US500/USD`, `US100/USD` | Short | Direct; US market hours, so a 75% default buffer |
 
 Every vault follows the same path: **describe exposure → preview the hedge and its costs → create and fund the vault → the keeper opens and watches the hedge → withdraw or close from your own wallet.**
 
@@ -16,7 +17,7 @@ Locke is not a trading terminal. Every screen is about an exposure the business 
 ## What it does
 
 - **Sign in with Base.** Base Account (Coinbase Wallet) or any EVM wallet in the browser signs a Sign-In with Ethereum message. No transaction, no gas.
-- **A vault per plan.** The business's wallet approves USDC and calls `createVault` in one batch. The `LockeVault` contract (see `contracts/`) holds the USDC and is the trader on Avantis, so every payout comes back to it. Only the owner can withdraw.
+- **A vault per plan.** The business's wallet approves USDC and calls `createVault` in one batch. The `LockeVault` contract (see `contracts/`) holds the USDC and is the trader on Veranta, so every payout comes back to it. Only the owner can withdraw.
 - **Limits on chain.** The vault caps market, side, leverage, hedge size, margin and slippage. Locke's keeper can open and add margin only within them (one open an hour, one top-up every two minutes), can never close a hedge and can never withdraw.
 - **Margin kept topped up.** The keeper opens the hedge once the deposit is in and adds margin from the vault's buffer when margin use reaches 60%, back to about 35%.
 - **Exit any time.** Deposit, withdraw, close the hedge and remove the keeper all go straight from the owner's wallet to the vault, even if Locke is offline.
@@ -27,14 +28,14 @@ Locke is not a trading terminal. Every screen is about an exposure the business 
 
 ### Risk levels
 
-Margin use is maintenance ÷ equity: 100% is exactly Avantis's liquidation (losses and fees reaching 85% of the collateral).
+Margin use is maintenance ÷ equity: 100% is exactly Veranta's liquidation (losses and fees reaching 85% of the collateral).
 
 | Level | Margin use | What happens |
 |---|---|---|
 | Watch | 50% | The vault shows amber |
 | Action | 60% | The keeper adds margin from the buffer, back to about 35% |
 | Buffer used up | 60%+ | The vault page says how much USDC to add, or to close part of the hedge |
-| Liquidation | 100% | Avantis closes the position; what's left stays in the vault |
+| Liquidation | 100% | Veranta closes the position; what's left stays in the vault |
 
 ## Pages
 
@@ -42,12 +43,12 @@ A **plan** is what a business sets up; each plan's USDC sits in its own **vault*
 
 | Route | What it is |
 |---|---|
-| `/` | Home, with live prices from Avantis (ETH, BTC, WTI, Brent) |
+| `/` | Home, with live prices from Veranta (ETH, BTC, WTI, Brent) |
 | `/how-it-works` | The four steps, both plan types, the margin ladder, and how a vault works |
 | `/connect` | Sign in with Base |
 | `/portfolio` | Total value protected and one card per plan |
 | `/protect` | Choose what to protect |
-| `/protect/holdings`, `/protect/costs` | Describe the exposure and preview the plan; then create it and fund its vault. Before launch (no factory deployed) it previews only |
+| `/protect/holdings`, `/protect/costs`, `/protect/stocks` | Describe the exposure and preview the plan; then create it and fund its vault. Before launch (no factory deployed) it previews only |
 | `/plans/[address]` | A plan, by its vault's address: hedge, margin, proof, income, and every exit |
 | `/account` | The signed-in wallet, sign out |
 | `/proof/[uid]` | Public "Protected by Locke" proof, read from EAS on Base |
@@ -71,7 +72,7 @@ flowchart LR
   end
   DB[(Postgres / Supabase<br/>base_users · base_vaults<br/>base_vault_events · base_income)]
   V[LockeVault contracts<br/>on Base]
-  A[Avantis<br/>contracts + API + price feed]
+  A[Veranta<br/>contracts + API + price feed]
   E[EAS on Base]
 
   UI <--> API
@@ -90,9 +91,9 @@ flowchart LR
 | Path | What |
 |---|---|
 | `contracts/` | `LockeVault` and `LockeVaultFactory` (Hardhat), unit, fuzz, invariant and Base-fork tests, deploy script |
-| `src/lib/domain/` | Pure math: vault sizing (`basePlans.ts`), Avantis margin and P&L (`veranta.ts`), risk levels |
+| `src/lib/domain/` | Pure math: vault sizing (`basePlans.ts`), Veranta margin and P&L (`veranta.ts`), risk levels |
 | `src/lib/base/` | Contract interfaces, Builder Code, keeper decisions, EAS attestations, spend-permission rules, the browser wallet |
-| `src/lib/veranta/` | Avantis API and signed-price client |
+| `src/lib/veranta/` | Veranta API and signed-price client |
 | `src/lib/server/` | Sign-in (SIWE), sessions, vault records, metrics, x402 |
 | `src/app/` | Pages (see the table above) and API route handlers |
 | `worker/base-keeper.ts` | The keeper |
@@ -130,14 +131,14 @@ cd contracts && npx hardhat test   # contract tests (FORK=1 with a Base RPC for 
 | `X402_PAY_TO` | app | Optional. Address that receives agent API payments (USDC on Base). Unset: `/api/agent/*` paid calls answer 503 |
 | `X402_SETTLER_PRIVATE_KEY` | app | Optional. Gas wallet that settles agent payments when Locke is its own facilitator. Holds a little ETH on Base, never USDC |
 | `X402_FACILITATOR_URL` | app | Optional. A hosted x402 facilitator instead of settling locally |
-| `VERANTA_API_URL`, `VERANTA_FEED_URL` | app, keeper | Avantis's API and signed-price feed (defaults to production) |
+| `VERANTA_API_URL`, `VERANTA_FEED_URL` | app, keeper | Veranta's API and signed-price feed (defaults to production) |
 
 ### Deploy
 
 - **App:** Netlify (`netlify.toml`, Next.js runtime). Set the variables above in the Netlify UI with the Functions scope and mark the secrets as secret.
 - **Keeper:** a Railway service from the same repo, configured on the service itself (Railway's config-as-code is no longer used): pre-deploy `npx tsx scripts/migrate.ts`, start `node --import tsx worker/base-keeper.ts` (run by node directly so SIGTERM reaches it; `npx` doesn't pass it on), healthcheck `/healthz`, restart always. Variables: `DATABASE_URL`, `BASE_FACTORY_ADDRESS`, `BASE_KEEPER_PRIVATE_KEY`, `BASE_BUILDER_CODE` and a paid `BASE_RPC_URL`. `/healthz` answers 503 when rounds stop finishing, a vault has failed for two minutes, the keeper is low on ETH or its key is revoked; a new deploy waiting for the lock answers 200 while it keeps checking. One advisory lock keeps a single keeper acting; the watchdog exits if the lock or its connection is lost, or a round hangs for five minutes. SIGTERM finishes the vault in hand and exits. Every transaction is signed and its hash recorded before it is broadcast.
 - **Contracts:** `contracts/scripts/deploy.mjs` deploys the factory; the admin and guardian must be multisigs. See `contracts/README.md`.
-- **Health:** `/api/health` checks the session secret, the database and Avantis, and, once `BASE_FACTORY_ADDRESS` is set, that the keeper wrote a heartbeat in the last 5 minutes reporting no failing vaults, enough gas and an unrevoked key. Point an uptime monitor at it.
+- **Health:** `/api/health` checks the session secret, the database and Veranta, and, once `BASE_FACTORY_ADDRESS` is set, that the keeper wrote a heartbeat in the last 5 minutes reporting no failing vaults, enough gas and an unrevoked key. Point an uptime monitor at it.
 - **Database:** create a Supabase project, put its connection string in `DATABASE_URL`, and run `npm run db:migrate` (safe to re-run after every schema change).
 
 ## Security
@@ -153,10 +154,10 @@ cd contracts && npx hardhat test   # contract tests (FORK=1 with a Base RPC for 
 
 - **Not audited yet.** The vault contracts have unit, fuzz, invariant and Base-fork tests and a Slither scan, but no outside audit; vaults launch with deposit caps.
 - **Basis risk on fuel.** Crude explains only part of local fuel prices. The costs plan is a partial hedge, and the crude share is the business's own assumption.
-- **Market hours.** Oil markets on Avantis close at night and at weekends; the keeper can't add margin while a market is closed.
+- **Market hours.** Oil markets on Veranta close at night and at weekends; the keeper can't add margin while a market is closed.
 - **No alerts outside the app.** The vault page shows what needs attention; there's no email or push channel yet.
 - **Dependencies.** `npm audit` still reports postcss inside Next 15 (build-time only); the fix is a Next 16 upgrade.
 
 ## Disclaimer
 
-Locke is a tool, not financial advice. Hedges can lose money on their own: a holdings hedge gives up upside, and a fuel hedge loses if fuel prices fall. Positions can be liquidated if margin runs out. Avantis has eligibility rules, so check them before using it.
+Locke is a tool, not financial advice. Hedges can lose money on their own: a holdings hedge gives up upside, and a fuel hedge loses if fuel prices fall. Positions can be liquidated if margin runs out. Veranta has eligibility rules, so check them before using it.

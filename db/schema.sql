@@ -26,7 +26,7 @@ create table if not exists base_vaults (
   address     text primary key check (address ~ '^0x[0-9a-f]{40}$'),
   user_id     uuid not null references base_users(id) on delete cascade,
   pair_index  int  not null,
-  type        text not null check (type in ('holdings', 'costs')),
+  type        text not null check (type in ('holdings', 'costs', 'stocks')),
   name        text not null,
   inputs      jsonb not null,
   sizing      jsonb not null,
@@ -48,6 +48,12 @@ create table if not exists base_vaults (
 alter table base_vaults add column if not exists topup_sent_at timestamptz;
 alter table base_vaults add column if not exists topup_from_usd numeric;
 alter table base_vaults add column if not exists created_via text not null default 'app';
+-- Stock plans: widen the plan-type check on databases created before them.
+do $$
+begin
+  alter table base_vaults drop constraint if exists base_vaults_type_check;
+  alter table base_vaults add constraint base_vaults_type_check check (type in ('holdings', 'costs', 'stocks'));
+end $$;
 create index if not exists base_vaults_user_idx on base_vaults(user_id, created_at desc);
 
 create table if not exists base_vault_events (

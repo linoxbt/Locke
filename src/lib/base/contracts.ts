@@ -6,7 +6,7 @@ import { parseAbi } from "viem";
 
 export const BASE_CHAIN_ID = 8453;
 export const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
-/** Veranta (formerly Avantis) on Base, from tx-builder.veranta.xyz/v2/meta. */
+/** Veranta on Base, from tx-builder.veranta.xyz/v2/meta. */
 export const VERANTA_ROUTER = "0x44914408af82bC9983bbb330e3578E1105e11d4e" as const;
 export const VERANTA_STORAGE = "0x8a311D7048c35985aa31C131B9A13e03a5f7422d" as const;
 
@@ -27,7 +27,7 @@ export const LAZER_FEE_WEI = (() => {
 /** Price sourcing for margin updates: Pyth Lazer, the only feed WTI and Brent have. */
 export const PRICE_SOURCING_LAZER = 1;
 
-export type BasePlanType = "holdings" | "costs";
+export type BasePlanType = "holdings" | "costs" | "stocks";
 
 /** Markets Locke offers on Base, and the side each plan type hedges. */
 export const BASE_MARKETS = [
@@ -35,7 +35,19 @@ export const BASE_MARKETS = [
   { pairIndex: 1, symbol: "BTC/USD", asset: "BTC", type: "holdings", buy: false, label: "BTC or cbBTC treasury" },
   { pairIndex: 96, symbol: "WTI/USD", asset: "WTI", type: "costs", buy: true, label: "Fuel priced off WTI" },
   { pairIndex: 97, symbol: "BRENT/USD", asset: "BRENT", type: "costs", buy: true, label: "Fuel priced off Brent" },
-] as const satisfies readonly { pairIndex: number; symbol: string; asset: string; type: BasePlanType; buy: boolean; label: string }[];
+  // Stocks: a short on Veranta's equity market for the stock (or index) a business holds,
+  // tokenized on Base or anywhere else. token: Coinbase's tokenized-stock symbol on Base, if any.
+  { pairIndex: 81, symbol: "NVDA/USD", asset: "NVDA", type: "stocks", buy: false, label: "NVIDIA", token: "NVDAc" },
+  { pairIndex: 82, symbol: "AAPL/USD", asset: "AAPL", type: "stocks", buy: false, label: "Apple", token: "AAPLc" },
+  { pairIndex: 86, symbol: "TSLA/USD", asset: "TSLA", type: "stocks", buy: false, label: "Tesla", token: "TSLAc" },
+  { pairIndex: 84, symbol: "MSFT/USD", asset: "MSFT", type: "stocks", buy: false, label: "Microsoft", token: "MSFTc" },
+  { pairIndex: 83, symbol: "AMZN/USD", asset: "AMZN", type: "stocks", buy: false, label: "Amazon", token: "AMZNc" },
+  { pairIndex: 85, symbol: "META/USD", asset: "META", type: "stocks", buy: false, label: "Meta", token: "METAc" },
+  { pairIndex: 87, symbol: "GOOG/USD", asset: "GOOG", type: "stocks", buy: false, label: "Alphabet", token: "GOOGLc" },
+  { pairIndex: 80, symbol: "COIN/USD", asset: "COIN", type: "stocks", buy: false, label: "Coinbase" },
+  { pairIndex: 78, symbol: "US500/USD", asset: "US500", type: "stocks", buy: false, label: "S&P 500 portfolio" },
+  { pairIndex: 79, symbol: "US100/USD", asset: "US100", type: "stocks", buy: false, label: "Nasdaq 100 portfolio" },
+] as const satisfies readonly { pairIndex: number; symbol: string; asset: string; type: BasePlanType; buy: boolean; label: string; token?: string }[];
 
 export type BaseMarket = (typeof BASE_MARKETS)[number];
 
@@ -96,7 +108,7 @@ export const erc20Abi = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
 
-/** What the keeper reads from Avantis's TradingStorage to know whether a vault's hedge exists. */
+/** What the keeper reads from Veranta's TradingStorage to know whether a vault's hedge exists. */
 export const tradingStorageAbi = parseAbi([
   "struct Trade { address trader; uint256 pairIndex; uint256 index; uint256 initialPosToken; uint256 positionSizeUSDC; uint256 openPrice; bool buy; uint256 leverage; uint256 tp; uint256 sl; uint256 timestamp; }",
   "function openTrades(address trader, uint256 pairIndex, uint256 index) view returns (Trade)",

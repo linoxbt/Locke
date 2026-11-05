@@ -1,4 +1,4 @@
-// The agent API's work: size a plan from live Avantis terms, and build the wallet calls that create
+// The agent API's work: size a plan from live Veranta terms, and build the wallet calls that create
 // the owner's own vault. The agent's (or business's) wallet sends them; Locke never holds funds.
 
 import { concatHex, encodeFunctionData, getAddress, type Address, type Hex } from "viem";
@@ -22,7 +22,7 @@ export function agentInputs(raw: Record<string, unknown>): BasePlanInputs {
     r.type ??= m.type;
   }
   r.leverage ??= 2;
-  r.bufferPct ??= 50;
+  r.bufferPct ??= r.type === "stocks" ? 75 : 50; // stock markets close overnight: a bigger buffer
   try {
     return parseBaseInputs(r);
   } catch (e) {

@@ -117,7 +117,7 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
           }),
         },
       ],
-      "Close sent. Avantis fills it within a few seconds and the USDC comes back to the vault."
+      "Close sent. Veranta fills it within a few seconds and the USDC comes back to the vault."
     );
   const toggleKeeper = () =>
     run(
@@ -178,7 +178,7 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <Card className="flex flex-col gap-6">
-          <div className="eyebrow">The hedge on Avantis</div>
+          <div className="eyebrow">The hedge on Veranta</div>
           {p ? (
             <>
               <div className="grid grid-cols-2 gap-5 sm:grid-cols-3">
@@ -200,7 +200,7 @@ export function VaultView({ initial, viewer, dataSuffix, factoryKeeper }: { init
                   : keeper === "unknown"
                     ? "No open hedge yet."
                     : keeperOn
-                      ? "Locke's keeper opens the hedge shortly after the deposit lands. Avantis fills it within seconds."
+                      ? "Locke's keeper opens the hedge shortly after the deposit lands. Veranta fills it within seconds."
                       : keeper === "other"
                         ? "No open hedge. This vault uses a keeper you chose, not Locke's."
                         : "No open hedge, and Locke's keeper is removed, so none will be opened."}

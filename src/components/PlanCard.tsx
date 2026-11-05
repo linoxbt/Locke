@@ -23,13 +23,13 @@ export function toneFor(p: PlanRow): Tone {
   const level = (p.risk_level ?? "ok") as RiskLevel;
   if (level === "watch") return "watch";
   if (level !== "ok") return "danger";
-  return p.type === "holdings" ? "cobalt" : "lime";
+  return p.type === "holdings" ? "cobalt" : p.type === "stocks" ? "ink" : "lime";
 }
 
 const WAITING: Record<string, string> = {
   funding: "Waiting for the deposit",
-  opening: "Opening the hedge on Avantis…",
-  closing: "Closing the hedge on Avantis…",
+  opening: "Opening the hedge on Veranta…",
+  closing: "Closing the hedge on Veranta…",
   closed: "Plan closed",
   failed: "Needs attention",
 };
@@ -44,7 +44,7 @@ export function PlanCard({ p }: { p: PlanRow }) {
       <Card tone={tone} className="flex min-h-[172px] flex-col transition-transform duration-300 group-hover:-translate-y-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <Eyebrow className={SUBTLE[tone]}>{p.type === "holdings" ? "Holdings" : "Operating costs"}</Eyebrow>
+            <Eyebrow className={SUBTLE[tone]}>{p.type === "holdings" ? "Holdings" : p.type === "stocks" ? "Stocks" : "Operating costs"}</Eyebrow>
             <div className={`mt-2 text-[15px] font-medium ${REVEAL}`} title={p.name}>
               {p.name}
             </div>
@@ -56,7 +56,7 @@ export function PlanCard({ p }: { p: PlanRow }) {
           <div className={`mt-2 flex items-center justify-between text-[13px] ${SUBTLE[tone]}`}>
             <span>
               {p.status === "active"
-                ? p.type === "holdings"
+                ? p.type !== "costs"
                   ? "Protected value"
                   : "Fuel spend hedged"
                 : p.status === "closed"
@@ -68,7 +68,7 @@ export function PlanCard({ p }: { p: PlanRow }) {
         </div>
         <div className={`mt-6 flex items-center justify-between text-[13px] ${SUBTLE[tone]}`}>
           <span className="line-clamp-1">
-            {p.status === "active" ? (ratio == null ? "Protected" : `Margin use ${Math.round(ratio * 100)}%`) : (WAITING[p.status] ?? "Waiting on Avantis")}
+            {p.status === "active" ? (ratio == null ? "Protected" : `Margin use ${Math.round(ratio * 100)}%`) : (WAITING[p.status] ?? "Waiting on Veranta")}
           </span>
           <Arrow />
         </div>

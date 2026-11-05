@@ -10,7 +10,7 @@ export const GET = route(async (req: Request) => {
   const live = !!config.x402PayTo && !!(config.x402FacilitatorUrl || config.x402SettlerKey);
   return NextResponse.json({
     name: "Locke",
-    description: "Protection vaults on Base: hedge a crypto treasury or a fuel budget on Avantis, from a vault the business owns.",
+    description: "Protection vaults on Base: hedge a crypto treasury or a fuel budget on Veranta, from a vault the business owns.",
     live,
     vaultsLive: !!config.baseFactoryAddress,
     payment: { protocol: "x402", version: 2, scheme: "exact", network: BASE_NETWORK, asset: "USDC", payTo: config.x402PayTo },

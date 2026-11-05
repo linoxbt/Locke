@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 const wrap = "mx-auto w-full max-w-[1440px] px-5 sm:px-14";
 
-/** An Avantis market's price and the daily carry on the side Locke takes; null when it can't be read (or is closed). */
+/** An Veranta market's price and the daily carry on the side Locke takes; null when it can't be read (or is closed). */
 async function quote(pairIndex: number): Promise<Quote> {
   const [markets, signed] = await Promise.all([getMarkets().catch(() => null), getSignedPrice(pairIndex, { forDisplay: true }).catch(() => null)]);
   if (!signed) return null;
@@ -23,7 +23,7 @@ async function quote(pairIndex: number): Promise<Quote> {
 }
 
 export default async function HomePage() {
-  // Live prices from Avantis on Base, where Locke's vaults hedge.
+  // Live prices from Veranta on Base, where Locke's vaults hedge.
   const [session, eth, btc, wti, brent] = await Promise.all([publicBaseSession(), quote(0), quote(1), quote(96), quote(97)]);
   // Signed in: straight to a new plan. Otherwise /connect, to Sign in with Base.
   const start = session ? { href: "/protect", label: "New protection plan" } : { href: "/connect", label: "Try Locke" };
@@ -77,7 +77,7 @@ export default async function HomePage() {
             className="col-span-2 row-span-2 min-h-[220px] sm:min-h-[340px]"
             title={
               <>
-                Live prices on Avantis
+                Live prices on Veranta
                 <LiveDot />
               </>
             }
@@ -108,7 +108,7 @@ export default async function HomePage() {
         </div>
         <p className="mt-10 text-center text-[13px] text-ink-3">Works with</p>
         <ul className="mx-auto mt-6 flex max-w-[1100px] flex-wrap items-center justify-center gap-x-8 gap-y-3 px-5 text-[17px] text-ink sm:text-[19px]">
-          {["Base", "Base Account", "Coinbase Wallet", "Avantis", "USDC", "EAS"].map((n) => (
+          {["Base", "Base Account", "Coinbase Wallet", "Veranta", "USDC", "EAS"].map((n) => (
             <li key={n} className="display">
               {n}
             </li>
