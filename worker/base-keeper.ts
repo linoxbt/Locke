@@ -453,7 +453,7 @@ async function note(vault: string, text: string | null, level = "info") {
   lastNotice.set(vault, { note: text, at: Date.now() });
   if (level !== "info") {
     await addVaultEvent(vault, level, text);
-    await notifyVaultOwner(vault, "needs attention", text);
+    await notifyVaultOwner(vault, "needs attention", text, "watch");
   }
 }
 
@@ -517,10 +517,10 @@ async function tend(row: Row) {
   }
   if (row.status !== "active" && d.status === "active") {
     await addVaultEvent(row.address, "info", "Hedge open on Veranta: the vault is protected");
-    await notifyVaultOwner(row.address, "protected", "Your hedge is open on Veranta. Locke watches its margin from here.");
+    await notifyVaultOwner(row.address, "your hedge is open", "Your hedge is open on Veranta, so this plan is protected. Locke watches its margin from here and tops it up when it needs to.", "ok");
   }
   if (row.status !== "closed" && d.status === "closed") {
-    await notifyVaultOwner(row.address, "closed", "This plan's hedge is closed on Veranta. Anything left in the vault is yours to withdraw.");
+    await notifyVaultOwner(row.address, "plan closed", "This plan's hedge is closed on Veranta. Anything left in the vault is yours to withdraw from the plan page.", "info");
   }
   // Locke's fee is owed from the open and paid once Base shows the trade (whatever the API says yet).
   // Never holds up the hedge; the next round retries.
@@ -530,7 +530,12 @@ async function tend(row: Row) {
   if (d.level !== row.risk_level && d.level !== "ok") {
     const used = `Margin ${Math.round((d.ratio ?? 0) * 100)}% used`;
     await addVaultEvent(row.address, "action", used, { level: d.level });
-    await notifyVaultOwner(row.address, used.toLowerCase(), `${used} (${d.level.replace("_", " ")}). Locke tops the hedge up from the vault's buffer; if the buffer runs out, deposit more.`);
+    await notifyVaultOwner(
+      row.address,
+      used.toLowerCase(),
+      `${used} (${d.level.replace("_", " ")}). Locke tops the hedge up from the vault's buffer; if the buffer runs out, deposit more to keep the hedge open.`,
+      ["margin_call", "reduce_only", "liquidation"].includes(d.level) ? "danger" : "watch"
+    );
   }
 
   const a = d.action;
@@ -563,7 +568,7 @@ async function tend(row: Row) {
       );
       log("topped up", row.address, a, hash);
       await addVaultEvent(row.address, "action", `Added $${a.amountUsd.toFixed(2)} of margin from the vault's buffer`, undefined, hash);
-      await notifyVaultOwner(row.address, "margin topped up", `Locke added $${a.amountUsd.toFixed(2)} of margin to the hedge from the vault's buffer.`);
+      await notifyVaultOwner(row.address, "margin topped up", `Locke added $${a.amountUsd.toFixed(2)} of margin to the hedge from the vault's buffer, so it stays open.`, "info");
       return note(row.address, null);
     }
   }

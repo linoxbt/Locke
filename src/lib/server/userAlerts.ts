@@ -4,6 +4,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { baseMarket } from "../base/contracts";
 import { db } from "./db";
+import { renderEmail, siteUrl, type EmailContent, type EmailTone } from "./emailTemplate";
 import { HttpError } from "./errors";
 
 const LINK_TTL_MIN = 15;
@@ -82,7 +83,7 @@ export async function telegramUpdate(u: TelegramUpdate): Promise<void> {
   if (!m || chat == null || m.chat?.type !== "private") return;
   const text = (m.text ?? "").trim();
   const chatId = String(chat);
-  const site = env("NEXT_PUBLIC_SITE_URL") ?? "https://trylocke.online";
+  const site = siteUrl();
   if (text.startsWith("/start")) {
     const t = text.split(/\s+/)[1];
     if (!t) return telegramSend(chatId, `Hi. To get alerts about your Locke plans here, open your account on ${site}/account and choose Link Telegram.`);
@@ -109,14 +110,15 @@ export async function telegramUpdate(u: TelegramUpdate): Promise<void> {
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/i;
 
-async function sendEmail(to: string, subject: string, text: string): Promise<void> {
+async function sendEmail(to: string, subject: string, content: EmailContent): Promise<void> {
   const key = env("RESEND_API_KEY");
   const from = env("USER_EMAIL_FROM");
   if (!key || !from) throw new Error("Email isn't set up");
+  const { html, text } = renderEmail(content);
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({ from, to: [to], subject, text }),
+    body: JSON.stringify({ from, to: [to], subject, html, text, headers: { "List-Unsubscribe": `<${siteUrl()}/account>` } }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Resend answered ${res.status}`);
@@ -138,11 +140,18 @@ export async function startEmail(uid: string, raw: unknown, origin: string): Pro
     on conflict (user_id) do update set email = excluded.email, email_verified_at = null, email_token = excluded.email_token,
       email_token_expires = excluded.email_token_expires, email_sent_at = now(), updated_at = now()`;
   const link = `${origin}/api/base/alerts/email/confirm?t=${t}`;
-  await sendEmail(
-    email,
-    "Confirm your email for Locke alerts",
-    `Confirm this address to get alerts about your Locke plans: when a hedge opens or closes, when margin runs thin and when a plan needs money.\n\n${link}\n\nThe link works for ${EMAIL_TTL_H} hours. If you didn't ask for this, ignore this email.`
-  ).catch(async (e) => {
+  await sendEmail(email, "Confirm your email for Locke alerts", {
+    preheader: "One click and alerts about your plans come here.",
+    eyebrow: "Email alerts",
+    title: "Confirm your email",
+    paragraphs: [
+      "Confirm this address and Locke emails you about your protection plans: when a hedge opens or closes, when margin runs thin, and when a plan needs money.",
+      "Nothing else is sent, and you can turn alerts off in your account at any time.",
+    ],
+    cta: { label: "Confirm email", url: link },
+    showLink: true,
+    footnote: `The link works for ${EMAIL_TTL_H} hours. If you didn't ask for this, ignore this email: nothing changes.`,
+  }).catch(async (e) => {
     await db()`update base_user_alerts set email_sent_at = null where user_id = ${uid}`;
     console.warn(`[user-alerts] confirmation email: ${(e as Error).message}`);
     throw new HttpError(502, "Locke couldn't send the confirmation email. Try again shortly.");
@@ -164,8 +173,10 @@ export async function removeEmail(uid: string) {
 
 // ---------------------------------------------------------------- sending
 
-/** Send one message to every channel this account has linked. Never throws. */
-export async function notifyUser(uid: string, subject: string, text: string): Promise<string[]> {
+const ALERT_FOOTNOTE = "You get this because you turned on email alerts in your Locke account.";
+
+/** Send one message to every channel this account has linked: Telegram gets the text, email the branded layout. Never throws. */
+export async function notifyUser(uid: string, subject: string, text: string, email?: EmailContent): Promise<string[]> {
   const sent: string[] = [];
   try {
     const [r] = await db()`select email, email_verified_at, telegram_chat_id from base_user_alerts where user_id = ${uid}`;
@@ -177,7 +188,7 @@ export async function notifyUser(uid: string, subject: string, text: string): Pr
             .catch((e) => console.warn(`[user-alerts] telegram: ${(e as Error).message}`))
         : null,
       r.email && r.email_verified_at && emailReady()
-        ? sendEmail(String(r.email), subject, `${text}\n\nYou get these because you turned on email alerts in your Locke account. Turn them off there any time.`)
+        ? sendEmail(String(r.email), subject, email ?? { preheader: text.slice(0, 90), title: subject, paragraphs: [text], footnote: ALERT_FOOTNOTE })
             .then(() => sent.push("email"))
             .catch((e) => console.warn(`[user-alerts] email: ${(e as Error).message}`))
         : null,
@@ -189,13 +200,28 @@ export async function notifyUser(uid: string, subject: string, text: string): Pr
 }
 
 /** Tell a vault's owner something about that plan, with a link to it. */
-export async function notifyVaultOwner(vault: string, headline: string, text: string): Promise<void> {
+export async function notifyVaultOwner(vault: string, headline: string, text: string, tone: EmailTone = "info"): Promise<void> {
   try {
-    const [v] = await db()`select user_id, pair_index from base_vaults where address = ${vault.toLowerCase()}`;
+    const [v] = await db()`select user_id, pair_index, name from base_vaults where address = ${vault.toLowerCase()}`;
     if (!v?.user_id) return;
-    const market = baseMarket(Number(v.pair_index))?.label ?? "Your plan";
-    const site = env("NEXT_PUBLIC_SITE_URL") ?? "https://trylocke.online";
-    await notifyUser(String(v.user_id), `Locke · ${market}: ${headline}`, `${text}\n\n${site}/plans/${vault.toLowerCase()}`);
+    const m = baseMarket(Number(v.pair_index));
+    const plan = String(v.name ?? m?.label ?? "Your plan");
+    const url = `${siteUrl()}/plans/${vault.toLowerCase()}`;
+    const title = headline.charAt(0).toUpperCase() + headline.slice(1);
+    await notifyUser(String(v.user_id), `Locke · ${plan}: ${headline}`, `${text}\n\n${url}`, {
+      preheader: text.slice(0, 110),
+      eyebrow: plan,
+      title,
+      paragraphs: [text],
+      facts: [
+        ["Plan", plan],
+        ...(m ? ([["Hedged on Veranta", m.symbol]] as [string, string][]) : []),
+        ["Vault", `${vault.slice(0, 6)}…${vault.slice(-4)}`],
+      ],
+      cta: { label: "View plan", url },
+      tone,
+      footnote: ALERT_FOOTNOTE,
+    });
   } catch (e) {
     console.warn(`[user-alerts] ${(e as Error).message}`);
   }

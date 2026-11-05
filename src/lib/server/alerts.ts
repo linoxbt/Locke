@@ -3,6 +3,7 @@
 // Channels are optional: with none set, alerts are only logged.
 
 import { db } from "./db";
+import { renderEmail, type EmailTone } from "./emailTemplate";
 
 export interface Alert {
   /** Stable id within its source, e.g. "gas" or "risk:0xabc…". */
@@ -36,7 +37,7 @@ async function post(url: string, body: unknown, headers: Record<string, string> 
 }
 
 /** Send one message on every channel that is set up; a failing channel doesn't stop the others. */
-export async function sendAlertMessage(subject: string, text: string): Promise<string[]> {
+export async function sendAlertMessage(subject: string, text: string, tone: EmailTone = "danger"): Promise<string[]> {
   const sent: string[] = [];
   const token = env("ALERT_TELEGRAM_BOT_TOKEN");
   const chat = env("ALERT_TELEGRAM_CHAT_ID");
@@ -51,7 +52,19 @@ export async function sendAlertMessage(subject: string, text: string): Promise<s
     resend && to
       ? post(
           "https://api.resend.com/emails",
-          { from: env("ALERT_EMAIL_FROM") ?? "Locke alerts <onboarding@resend.dev>", to: to.split(",").map((s) => s.trim()), subject, text },
+          {
+            from: env("ALERT_EMAIL_FROM") ?? "Locke alerts <onboarding@resend.dev>",
+            to: to.split(",").map((s) => s.trim()),
+            subject,
+            ...renderEmail({
+              preheader: text.split("\n")[0].slice(0, 110),
+              eyebrow: "Locke operations",
+              title: subject.replace(/^\S+\s+Locke:\s*/u, ""),
+              paragraphs: text.split("\n\n"),
+              tone,
+              footnote: "Sent to whoever runs Locke. Set by ALERT_EMAIL_TO."
+            })
+          },
           { Authorization: `Bearer ${resend}` }
         )
           .then(() => sent.push("email"))
@@ -85,7 +98,7 @@ export async function syncAlerts(source: string, active: Alert[]): Promise<void>
       if (!fresh && !escalated && now - r!.last_sent_at.getTime() < REPEAT_MS[a.level]) continue;
       const lead = a.level === "urgent" ? "🔴" : "🟠";
       const subject = `${lead} Locke: ${a.title}${fresh || escalated ? "" : " (still)"}`;
-      await sendAlertMessage(subject, `${a.detail ?? a.title}\n\nSource: ${source} · ${new Date(now).toISOString()}`);
+      await sendAlertMessage(subject, `${a.detail ?? a.title}\n\nSource: ${source} · ${new Date(now).toISOString()}`, a.level === "urgent" ? "danger" : "watch");
       await sql`
         insert into ops_alerts (source, key, level, title, first_at, last_sent_at, resolved_at)
         values (${source}, ${a.key}, ${a.level}, ${a.title}, now(), now(), null)
@@ -95,7 +108,7 @@ export async function syncAlerts(source: string, active: Alert[]): Promise<void>
     const still = new Set(active.map((a) => a.key));
     for (const r of rows) {
       if (r.resolved_at != null || still.has(r.key)) continue;
-      await sendAlertMessage(`✅ Locke: resolved: ${r.title}`, `This is no longer reported.\n\nSource: ${source} · ${new Date(now).toISOString()}`);
+      await sendAlertMessage(`✅ Locke: resolved: ${r.title}`, `This is no longer reported.\n\nSource: ${source} · ${new Date(now).toISOString()}`, "ok");
       await sql`update ops_alerts set resolved_at = now() where source = ${source} and key = ${r.key}`;
     }
   } catch (e) {
