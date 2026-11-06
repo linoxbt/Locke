@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { readPrefill } from "@/lib/base/prefill";
 import { createPublicClient, custom, decodeEventLog, encodeFunctionData, type Address, type Hex, type TransactionReceipt } from "viem";
 import { base } from "viem/chains";
 import { BASE_MARKETS, erc20Abi, factoryAbi, USDC, usdcUnits, type BasePlanType } from "@/lib/base/contracts";
@@ -143,6 +144,27 @@ export function NewVaultForm({
   }
   useEffect(() => loadMarkets(), []);
 
+  // A "Protect this position" link from another app fills the form in (the person still reviews it).
+  const [units, setUnits] = useState<number | null>(null);
+  const [ref, setRef] = useState<string | null>(null);
+  useEffect(() => {
+    const p = readPrefill(window.location.search, type);
+    if (p.pairIndex != null) setPairIndex(p.pairIndex);
+    if (p.valueUsd != null) setValueUsd(p.valueUsd);
+    if (p.units != null && p.valueUsd == null) setUnits(p.units);
+    if (p.sharePct != null) setSharePct(p.sharePct);
+    if (p.product) pickProduct(p.product);
+    if (p.monthlySpendUsd != null) setMonthlySpendUsd(p.monthlySpendUsd);
+    if (p.months != null) setMonths(p.months);
+    try {
+      if (p.ref) sessionStorage.setItem("locke.ref", p.ref);
+      setRef(p.ref ?? sessionStorage.getItem("locke.ref"));
+    } catch {
+      setRef(p.ref ?? null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const choices = BASE_MARKETS.filter((m) => m.type === type);
   // Stock prices come one market at a time (there are dozens): the one picked, refreshed every 15 s.
   useEffect(() => {
@@ -162,6 +184,12 @@ export function NewVaultForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, pairIndex, markets == null]);
   const market = markets?.find((m) => m.pairIndex === pairIndex);
+  // Shares or coins from a link become a value once the market's price is in.
+  useEffect(() => {
+    if (units == null || !market?.price) return;
+    setValueUsd(Math.round(units * market.price));
+    setUnits(null);
+  }, [units, market?.price]);
   const inputs: BasePlanInputs =
     type !== "costs"
       ? { type, pairIndex, valueUsd, sharePct, leverage, bufferPct }
@@ -208,7 +236,7 @@ export function NewVaultForm({
     setError(null);
     setStep("recording");
     try {
-      const res = await fetch("/api/base/vaults", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ txHash: c.txHash, inputs: c.inputs }) });
+      const res = await fetch("/api/base/vaults", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ txHash: c.txHash, inputs: c.inputs, ref }) });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error ?? "Couldn't save the vault to Locke");
       storeCreated(address, null);

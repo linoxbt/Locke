@@ -36,6 +36,14 @@ export async function requireBasePage(returnTo: string): Promise<Session> {
   return s;
 }
 
+/** A page's path with its query string, so signing in returns to the same filled-in link. */
+export function withQuery(path: string, sp: Record<string, string | string[] | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) for (const x of Array.isArray(v) ? v : v != null ? [v] : []) q.append(k, x);
+  const s = q.toString();
+  return s ? `${path}?${s}` : path;
+}
+
 /** What client components need to send transactions: the factory and the Builder Code suffix. */
 export function baseClientSettings() {
   return { factory: config.baseFactoryAddress, dataSuffix: builderSuffix(config.baseBuilderCode) };

@@ -59,7 +59,11 @@ export default async function AgentsPage() {
           ))}
         </ul>
         <p className="text-[13px] text-ink-3">
-          Discovery: <span className="num">GET /api/agent</span> lists these with live prices and where payments go.
+          Discovery: <span className="num">GET /api/agent</span> lists these with live prices and where payments go. Using a Bankr agent?{" "}
+          <a href="/integrate" className="underline underline-offset-2">
+            Install the Locke skill
+          </a>
+          .
         </p>
       </Card>
 

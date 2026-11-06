@@ -22,7 +22,8 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
       ["Stocks plan", "/how-it-works#stocks"],
       ["Operating costs plan", "/how-it-works#costs"],
       ["Metrics", "/metrics"],
-      ["For agents", "/agents"]
+      ["For agents", "/agents"],
+      ["Integrate Locke", "/integrate"]
     ]
   },
   { title: "Legal", links: LEGAL_DOCS.map((d) => [d.label, d.href] as [string, string]) },

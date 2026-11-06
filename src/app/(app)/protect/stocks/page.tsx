@@ -3,14 +3,14 @@ import { Crumbs } from "@/components/Crumbs";
 import { NewVaultForm } from "@/components/base/NewVaultForm";
 import { Notice } from "@/components/ui";
 import { basePublicClient } from "@/lib/server/baseChain";
-import { baseClientSettings, factoryFeeBps, requireBasePage } from "@/lib/server/basePages";
+import { baseClientSettings, factoryFeeBps, requireBasePage, withQuery } from "@/lib/server/basePages";
 import { readFactoryRoom } from "@/lib/ui/factoryRoom";
 
 export const metadata: Metadata = { title: "Protect the stocks you hold — Locke" };
 export const dynamic = "force-dynamic";
 
-export default async function Page() {
-  const s = await requireBasePage("/protect/stocks");
+export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const s = await requireBasePage(withQuery("/protect/stocks", await searchParams));
   const { factory, dataSuffix } = baseClientSettings();
   // Before launch (no factory yet) the form still sizes and previews the plan; only creating it waits.
   // Paused or launch caps: the form says so before anything is sent (and checks again when it sends).
