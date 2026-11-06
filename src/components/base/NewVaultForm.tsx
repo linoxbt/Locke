@@ -730,8 +730,36 @@ function MoneyInput({ label, value, onChange }: { label: string; value: number; 
  * Every stock and index a stock plan can protect, searchable by ticker or company. One tab stop for
  * the whole grid (the picked stock, or the first match); arrow keys, Home and End move the pick.
  */
+/** Every stock's last Veranta price, refreshed every 30 s while the page is visible. */
+function useStockPrices(): Record<number, number> {
+  const [prices, setPrices] = useState<Record<number, number>>({});
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      if (document.visibilityState !== "visible") return;
+      const res = await fetch("/api/base/prices").catch(() => null);
+      const body = (await res?.json().catch(() => null)) as { prices?: Record<string, { price: number }> } | null;
+      if (stop || !body?.prices) return;
+      setPrices(Object.fromEntries(Object.entries(body.prices).map(([k, v]) => [Number(k), v.price])));
+    };
+    load();
+    const t = setInterval(load, 30_000);
+    document.addEventListener("visibilitychange", load);
+    return () => {
+      stop = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", load);
+    };
+  }, []);
+  return prices;
+}
+
+const tickerPrice = (v: number | undefined) =>
+  v == null ? null : `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 function StockPicker({ value, onChange }: { value: number; onChange: (pairIndex: number) => void }) {
   const [q, setQ] = useState("");
+  const prices = useStockPrices();
   const all = BASE_MARKETS.filter((m) => m.type === "stocks");
   const needle = q.trim().toLowerCase();
   const list = needle ? all.filter((m) => m.asset.toLowerCase().includes(needle) || m.label.toLowerCase().includes(needle)) : all;
@@ -770,7 +798,12 @@ function StockPicker({ value, onChange }: { value: number; onChange: (pairIndex:
             onClick={() => onChange(m.pairIndex)}
             className={`flex min-w-0 flex-col items-start rounded-[14px] px-3 py-2 text-left transition ${value === m.pairIndex ? "bg-ink text-paper" : "text-ink hover:bg-paper"}`}
           >
-            <span className="num text-[13px]">{m.asset}</span>
+            <span className="flex w-full items-baseline justify-between gap-2">
+              <span className="num text-[13px]">{m.asset}</span>
+              <span className={`num shrink-0 text-[12px] ${value === m.pairIndex ? "text-lime" : "text-ink-2"}`}>
+                {tickerPrice(prices[m.pairIndex]) ?? <span className="inline-block h-2.5 w-12 animate-pulse rounded bg-current opacity-15" aria-hidden />}
+              </span>
+            </span>
             <span className={`w-full truncate text-[12px] ${value === m.pairIndex ? "text-paper/70" : "text-ink-3"}`}>{m.label}</span>
           </button>
         ))}

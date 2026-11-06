@@ -36,7 +36,7 @@ const nextConfig: NextConfig = {
         ],
       },
       // A signed-in account's data: never kept by a browser or a CDN.
-      { source: "/api/base/:path((?!markets).*)", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
+      { source: "/api/base/:path((?!markets|prices).*)", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
       { source: "/api/agent/vaults/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
     ];
   },
