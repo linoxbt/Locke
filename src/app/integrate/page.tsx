@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { configuredSiteUrl } from "@/lib/ui/site";
 import { Card, Display, Eyebrow, LinkButton, Arrow } from "@/components/ui";
 import { protectLink } from "@/lib/base/prefill";
 
@@ -28,8 +28,8 @@ const button = (href: string, site: string) => `<a href="${href}"
 </a>`;
 
 export default async function IntegratePage() {
-  const h = await headers();
-  const site = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? "localhost"}`;
+  // Links partners copy always name Locke's public address, wherever this page is served from.
+  const site = (configuredSiteUrl() ?? new URL("https://rebase.trylocke.online")).origin;
   const nvda = protectLink(site, "stocks", { asset: "NVDA", shares: 25, ref: "o1" });
   const eth = protectLink(site, "holdings", { asset: "ETH", value: 20000, share: 40, ref: "o1" });
   const oil = `${site}/protect/costs?asset=WTI&product=diesel&monthly=12000&months=3&ref=o1`;

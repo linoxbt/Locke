@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { configuredSiteUrl } from "@/lib/ui/site";
 import { BaseMark } from "@/components/base/BaseMark";
 import { Card, Display, Eyebrow, Notice } from "@/components/ui";
 import { AGENT_ENDPOINTS } from "@/lib/agent/catalog";
@@ -29,8 +29,8 @@ console.log(await quote.json());                      // settles on Base only be
 export const dynamic = "force-dynamic";
 
 export default async function AgentsPage() {
-  const h = await headers();
-  const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host") ?? "localhost"}`;
+  // Links partners copy always name Locke's public address, wherever this page is served from.
+  const origin = (configuredSiteUrl() ?? new URL("https://rebase.trylocke.online")).origin;
   let live = false;
   try {
     live = !!config.x402PayTo && !!(config.x402FacilitatorUrl || config.x402SettlerKey);
