@@ -34,8 +34,8 @@ export type BasePlanType = "holdings" | "costs" | "stocks";
 export const BASE_MARKETS = [
   { pairIndex: 0, symbol: "ETH/USD", asset: "ETH", type: "holdings", buy: false, label: "ETH treasury" },
   { pairIndex: 1, symbol: "BTC/USD", asset: "BTC", type: "holdings", buy: false, label: "BTC or cbBTC treasury" },
-  { pairIndex: 96, symbol: "WTI/USD", asset: "WTI", type: "costs", buy: true, label: "Fuel priced off WTI" },
-  { pairIndex: 97, symbol: "BRENT/USD", asset: "BRENT", type: "costs", buy: true, label: "Fuel priced off Brent" },
+  { pairIndex: 96, symbol: "WTI/USD", asset: "WTI", type: "costs", buy: true, label: "WTI crude" },
+  { pairIndex: 97, symbol: "BRENT/USD", asset: "BRENT", type: "costs", buy: true, label: "Brent crude" },
   // Stocks: a short on Veranta's market for the stock (or index) a business holds. See stockMarkets.ts.
   ...STOCK_MARKETS,
 ] as const satisfies readonly { pairIndex: number; symbol: string; asset: string; type: BasePlanType; buy: boolean; label: string; token?: string }[];

@@ -11,7 +11,7 @@ const COLUMNS: { title: string; links: [string, string][] }[] = [
       ["Portfolio", "/portfolio"],
       ["Protect your holdings", "/protect/holdings"],
       ["Protect your stocks", "/protect/stocks"],
-      ["Manage fuel costs", "/protect/costs"]
+      ["Manage oil costs", "/protect/costs"]
     ]
   },
   {
@@ -57,7 +57,7 @@ export function SiteFooter() {
         <div className="col-span-2 md:col-span-1">
           <h2 className="text-[15px]">Locke</h2>
           <p className="mt-3 text-[15px] leading-relaxed text-paper/50">
-            Protection plans for businesses on Base, for the crypto and tokenized stocks they hold and the fuel they buy, hedged on Veranta from a
+            Protection plans for businesses on Base, for the crypto and tokenized stocks they hold and the crude oil and fuel they buy, hedged on Veranta from a
             vault each business owns. A tool, not financial advice.
           </p>
         </div>

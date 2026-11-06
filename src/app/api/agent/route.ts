@@ -10,7 +10,7 @@ export const GET = route(async (req: Request) => {
   const live = !!config.x402PayTo && !!(config.x402FacilitatorUrl || config.x402SettlerKey);
   return NextResponse.json({
     name: "Locke",
-    description: "Protection vaults on Base: hedge a crypto treasury, a fuel budget or tokenized stocks on Veranta, from a vault the business owns.",
+    description: "Protection vaults on Base: hedge a crypto treasury, tokenized stocks, or a crude oil or fuel budget on Veranta, from a vault the business owns.",
     // Stock plans: not for US persons. /api/agent/plan needs eligibility: "not-us-person" for them.
     eligibility: { stocks: "Send eligibility: \"not-us-person\" with a stock plan to confirm the business is not a US person." },
     live,

@@ -15,7 +15,7 @@ export default async function ProtectPage() {
       <Display lead="What do you want to protect?" rest="Pick one. You can add the others later." className="max-w-[16ch]" />
       <DropIn className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         <Choice href="/protect/holdings" tone="cobalt" n="01" title="Holdings" line="Protect what your business holds" body="A fall in the value of ETH or BTC in your treasury. Direct hedge on ETH/USD or BTC/USD." />
-        <Choice href="/protect/costs" tone="lime" n="02" title="Operating costs" line="Manage what it needs to buy" body="A rise in what you pay for diesel or petrol. Partial hedge on WTI or Brent crude." />
+        <Choice href="/protect/costs" tone="lime" n="02" title="Operating costs" line="Manage the oil it buys" body="A rise in what you pay for crude oil or anything priced off it: diesel, petrol, jet and marine fuel, heating oil and more. Hedged on WTI or Brent crude." />
         <Choice href="/protect/stocks" tone="ink" n="03" title="Stocks" line="Protect the stocks it holds" body="A fall in shares your business holds, tokenized on Base or not: NVIDIA, Apple, Tesla and more, or an S&P 500 or Nasdaq 100 portfolio." />
       </DropIn>
     </div>

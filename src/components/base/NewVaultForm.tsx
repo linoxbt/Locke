@@ -7,7 +7,7 @@ import { createPublicClient, custom, decodeEventLog, encodeFunctionData, type Ad
 import { base } from "viem/chains";
 import { BASE_MARKETS, erc20Abi, factoryAbi, USDC, usdcUnits, type BasePlanType } from "@/lib/base/contracts";
 import { providerFor, rememberedKind, sendBaseCalls, SentFailedError, StillPendingError, waitForSent, walletErrorMessage, walletFor, type SentRef } from "@/lib/base/wallet";
-import { BasePlanError, parseBaseInputs, sizeBasePlan, type BasePlanInputs, type BaseSizing, type MarketTerms } from "@/lib/domain/basePlans";
+import { BasePlanError, OIL_PRODUCTS, oilProduct, parseBaseInputs, sizeBasePlan, type BasePlanInputs, type BaseSizing, type MarketTerms, type OilProduct } from "@/lib/domain/basePlans";
 import { readFactoryRoom, roomProblem, type FactoryRoom } from "@/lib/ui/factoryRoom";
 import { usd } from "@/lib/ui/format";
 import { CREATE_STEPS, Crumbs } from "../Crumbs";
@@ -101,7 +101,13 @@ export function NewVaultForm({
   const [sharePct, setSharePct] = useState(50);
   const [monthlySpendUsd, setMonthlySpendUsd] = useState(500);
   const [months, setMonths] = useState(3);
+  const [product, setProduct] = useState<OilProduct>("diesel");
   const [crudeSharePct, setCrudeSharePct] = useState(60);
+  const productInfo = oilProduct(product)!;
+  const pickProduct = (p: OilProduct) => {
+    setProduct(p);
+    setCrudeSharePct(oilProduct(p)!.share);
+  };
   const [leverage, setLeverage] = useState(2);
   // Stock markets close outside US trading hours, when the keeper can't add margin: a bigger buffer.
   const [bufferPct, setBufferPct] = useState(fixedType === "stocks" ? 75 : 50);
@@ -162,6 +168,7 @@ export function NewVaultForm({
       : {
           type,
           pairIndex,
+          product,
           monthlySpendUsd,
           months,
           crudeSharePct,
@@ -412,7 +419,7 @@ export function NewVaultForm({
               onChange={pickType}
               options={[
                 { value: "holdings", label: "Crypto the business holds" },
-                { value: "costs", label: "Fuel the business buys" },
+                { value: "costs", label: "Oil the business buys" },
                 { value: "stocks", label: "Stocks the business holds" },
               ]}
             />
@@ -481,13 +488,29 @@ export function NewVaultForm({
           </>
         ) : (
           <>
-            <Field label="Fuel bought each month (USD)">
-              <MoneyInput label="Fuel bought each month (USD)" value={monthlySpendUsd} onChange={setMonthlySpendUsd} />
+            <Field label="What the business buys" group>
+              <div role="radiogroup" aria-label="What the business buys" className="flex flex-wrap gap-2">
+                {OIL_PRODUCTS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={product === p.id}
+                    onClick={() => pickProduct(p.id)}
+                    className={`inline-flex h-10 items-center rounded-full px-4 text-[13px] transition ${product === p.id ? "bg-ink text-paper" : "bg-mist text-ink hover:bg-line"}`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label={`${productInfo.label} bought each month (USD)`}>
+              <MoneyInput label={`${productInfo.label} bought each month (USD)`} value={monthlySpendUsd} onChange={setMonthlySpendUsd} />
             </Field>
             <Field label={`Months to cover: ${months}`} group>
               <Slider label="Months" value={months} min={1} max={6} onChange={setMonths} valueText={months === 1 ? "1 month" : `${months} months`} />
             </Field>
-            <Field label={`Share of the fuel price that follows crude: ${crudeSharePct}%`} group hint="Pump prices move with crude for part of their cost; taxes, margins and transport don't.">
+            <Field label={`Share of its price that follows crude: ${crudeSharePct}%`} group hint={`${productInfo.hint} Set your own share if your supplier's price works differently.`}>
               <Slider
                 label="Crude share"
                 value={crudeSharePct}

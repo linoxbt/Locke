@@ -58,7 +58,7 @@ export function PlanCard({ p }: { p: PlanRow }) {
               {p.status === "active"
                 ? p.type !== "costs"
                   ? "Protected value"
-                  : "Fuel spend hedged"
+                  : "Oil spend hedged"
                 : p.status === "closed"
                   ? "Was protected"
                   : "To protect once the hedge opens"}

@@ -15,8 +15,8 @@ export const metadata: Metadata = {
   metadataBase: siteUrl(),
   title: "Locke — Protection plans on Base",
   description:
-    "Protect the crypto and tokenized stocks your business holds, and manage the fuel it buys. Hedges on Base from a vault you own, sized and watched for you.",
-  openGraph: { title: "Locke", description: "Protect the crypto and stocks your business holds. Manage the fuel it buys, with hedges from a vault you own." },
+    "Protect the crypto and tokenized stocks your business holds, and manage the oil and fuel it buys. Hedges on Base from a vault you own, sized and watched for you.",
+  openGraph: { title: "Locke", description: "Protect the crypto and stocks your business holds. Manage the oil and fuel it buys, with hedges from a vault you own." },
 };
 
 export const viewport: Viewport = { themeColor: "#f2f1ee", width: "device-width", initialScale: 1 };

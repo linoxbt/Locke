@@ -6,7 +6,7 @@ import { basePublicClient } from "@/lib/server/baseChain";
 import { baseClientSettings, factoryFeeBps, requireBasePage } from "@/lib/server/basePages";
 import { readFactoryRoom } from "@/lib/ui/factoryRoom";
 
-export const metadata: Metadata = { title: "Manage your fuel costs — Locke" };
+export const metadata: Metadata = { title: "Manage your oil costs — Locke" };
 export const dynamic = "force-dynamic";
 
 export default async function Page() {

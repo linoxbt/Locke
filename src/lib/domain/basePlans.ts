@@ -2,7 +2,7 @@
 //
 // A plan hedges a notional N on one Veranta market at leverage L:
 //   holdings: N = value held × share protected        (short ETH or BTC)
-//   costs:    N = monthly fuel spend × months × crude share   (long WTI or Brent)
+//   costs:    N = monthly spend on crude or an oil product × months × crude share   (long WTI or Brent)
 // The vault is funded with the hedge's collateral N / L, a buffer kept idle in the vault for
 // top-ups (b% of the collateral), and the trading fees to open and close.
 
@@ -22,14 +22,35 @@ export interface HoldingsInputs {
   bufferPct: number;
 }
 
+/**
+ * What a business buys whose price follows crude, with the share of its price that typically moves
+ * with crude (the rest is refining, transport, taxes and margins). A starting point: the business
+ * sets its own share.
+ */
+export const OIL_PRODUCTS = [
+  { id: "crude", label: "Crude oil", share: 100, hint: "Crude bought at a price set off WTI or Brent moves almost one for one with it." },
+  { id: "diesel", label: "Diesel", share: 60, hint: "About 60% of a diesel price follows crude; refining, transport, taxes and margins make up the rest." },
+  { id: "petrol", label: "Petrol", share: 50, hint: "About half of a pump price follows crude; taxes and margins make up much of the rest." },
+  { id: "jet", label: "Jet fuel", share: 65, hint: "Jet fuel follows crude closely, apart from refining margins and delivery." },
+  { id: "marine", label: "Marine fuel", share: 75, hint: "Bunker and marine fuels are mostly crude, with refining and port costs on top." },
+  { id: "heating", label: "Heating oil", share: 60, hint: "About 60% of a heating oil price follows crude." },
+  { id: "lpg", label: "LPG and propane", share: 40, hint: "LPG follows crude only in part: gas markets and seasons move it too." },
+  { id: "asphalt", label: "Asphalt", share: 50, hint: "Asphalt and bitumen follow crude for about half their price." },
+  { id: "petrochemicals", label: "Plastics and chemicals", share: 35, hint: "Plastics, resins and other petrochemicals follow crude for part of their cost." },
+] as const;
+export type OilProduct = (typeof OIL_PRODUCTS)[number]["id"];
+export const oilProduct = (id: string | undefined) => OIL_PRODUCTS.find((p) => p.id === id);
+
 export interface CostsInputs {
   type: "costs";
   pairIndex: number;
-  /** Fuel bought each month, USD. */
+  /** What the business buys (crude, diesel, jet fuel…). Plans made before this field say fuel. */
+  product?: OilProduct;
+  /** Spent on it each month, USD. */
   monthlySpendUsd: number;
   /** Months covered, 1–6. */
   months: number;
-  /** Share of the fuel price that moves with crude, 10–100 (%). */
+  /** Share of its price that moves with crude, 10–100 (%). */
   crudeSharePct: number;
   leverage: number;
   bufferPct: number;
@@ -98,12 +119,15 @@ export function parseBaseInputs(raw: unknown): BasePlanInputs {
     between(n("sharePct"), 10, 100, "Share protected");
     return { type, pairIndex: market.pairIndex, valueUsd: n("valueUsd"), sharePct: n("sharePct"), leverage: n("leverage"), bufferPct: n("bufferPct") };
   }
-  between(n("monthlySpendUsd"), 1, 10_000_000, "Monthly fuel spend");
+  const product = r.product == null || r.product === "" ? undefined : oilProduct(String(r.product))?.id;
+  if (r.product != null && r.product !== "" && !product) throw new BasePlanError(`Product must be one of ${OIL_PRODUCTS.map((p) => p.id).join(", ")}`);
+  between(n("monthlySpendUsd"), 1, 10_000_000, "Monthly spend");
   between(n("months"), 1, 6, "Months");
   between(n("crudeSharePct"), 10, 100, "Crude share");
   return {
     type,
     pairIndex: market.pairIndex,
+    ...(product ? { product } : {}),
     monthlySpendUsd: n("monthlySpendUsd"),
     months: n("months"),
     crudeSharePct: n("crudeSharePct"),
@@ -150,5 +174,7 @@ export function sizeBasePlan(i: BasePlanInputs, m: MarketTerms): BaseSizing {
 export function planName(i: BasePlanInputs): string {
   const m = baseMarket(i.pairIndex);
   if (i.type === "stocks") return m?.asset === "US500" || m?.asset === "US100" ? `${m.label} protection` : `${m?.label ?? "Stock"} stock protection`;
-  return i.type === "holdings" ? `${m?.asset ?? "Treasury"} treasury protection` : `${i.months}-month fuel cover (${m?.asset ?? "oil"})`;
+  if (i.type === "holdings") return `${m?.asset ?? "Treasury"} treasury protection`;
+  const what = oilProduct(i.product)?.label.toLowerCase() ?? "fuel";
+  return `${i.months}-month ${what} cover (${m?.asset === "BRENT" ? "Brent" : (m?.asset ?? "oil")})`;
 }

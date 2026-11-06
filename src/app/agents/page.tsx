@@ -67,7 +67,7 @@ export default async function AgentsPage() {
         {[
           [
             "1. Quote",
-            "Ask for a plan: a treasury in ETH or BTC, stocks or an index (NVDA, US500 and more), or a fuel budget priced off WTI or Brent. Locke sizes the hedge from live Veranta prices and says what it costs to hold."
+            "Ask for a plan: a treasury in ETH or BTC, stocks or an index (NVDA, US500 and more), or a crude oil or fuel budget priced off WTI or Brent. Locke sizes the hedge from live Veranta prices and says what it costs to hold."
           ],
           ["2. Open", "Locke returns the wallet calls that create the owner's own vault with the plan's limits and deposit. The owner's wallet sends them; Locke never holds the funds."],
           ["3. Register", "Send the creation transaction hash. Locke's keeper opens the hedge, adds margin when needed, and publishes a Protected by Locke proof on Base."],

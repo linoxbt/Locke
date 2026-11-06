@@ -6,7 +6,7 @@ import { Arrow, Card, Display, Eyebrow, SUBTLE } from "@/components/ui";
 export const metadata: Metadata = { title: "How it works — Locke" };
 
 const STEPS = [
-  ["Describe", "ETH or BTC you hold, stocks you hold, or the fuel you buy each month. Pick how much to protect and the leverage."],
+  ["Describe", "ETH or BTC you hold, stocks you hold, or the crude oil or fuel you buy each month. Pick how much to protect and the leverage."],
   ["Preview", "Hedge size, margin, buffer, trading fees, Locke's fee, the vault's limits and what holding the hedge costs on Veranta right now."],
   ["Fund", "Sign in with Base and approve: one request in Base Account (two in other wallets) creates your vault and deposits the USDC. Locke's keeper opens the hedge on Veranta."],
   ["Watch", "The keeper watches margin around the clock and, while the market is open, tops it up from the buffer within your vault's limits."],
@@ -65,9 +65,10 @@ export default function HowItWorksPage() {
           <Eyebrow className={SUBTLE.lime}>Operating costs plan · WTI or Brent · protects against a rise</Eyebrow>
           <h2 className="display mt-7 text-[22px]">Manage what you buy</h2>
           <p className={`mt-4 text-[14px] leading-relaxed ${SUBTLE.lime}`}>
-            Locke buys crude on Veranta for the part of your fuel bill you believe moves with oil. If crude rises, the hedge gains and pays
-            down your fuel bill. It&apos;s a partial hedge: local prices also move with exchange rates, taxes and policy, which crude
-            doesn&apos;t capture.
+            Locke buys crude on Veranta for the part of your oil bill that moves with crude: all of it for crude oil itself, part of it for
+            diesel, petrol, jet and marine fuel, heating oil, LPG, asphalt or plastics. If crude rises, the hedge gains and pays down the
+            bill. For anything but crude it&apos;s a partial hedge: local prices also move with refining margins, exchange rates, taxes
+            and policy, which crude doesn&apos;t capture.
           </p>
         </Card>
         <Card tone="ink" id="stocks" className="scroll-mt-24">

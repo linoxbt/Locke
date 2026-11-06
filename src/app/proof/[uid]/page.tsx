@@ -11,7 +11,7 @@ import { shortAddr, usd } from "@/lib/ui/format";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Protected by Locke",
-  description: "A public, on-chain proof that a business's holdings, stocks or fuel budget are protected by a Locke hedge on Base."
+  description: "A public, on-chain proof that a business's holdings, stocks or oil budget are protected by a Locke hedge on Base."
 };
 
 const HEADLINE: Record<ProofStatus, { lead: string; rest: string; chip: string; cls: string }> = {

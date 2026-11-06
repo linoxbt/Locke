@@ -19,6 +19,19 @@ const ETH_TERMS: MarketTerms = { minPositionUsd: 100, maxLeverage: 50, openFeePc
 const WTI_TERMS: MarketTerms = { minPositionUsd: 10, maxLeverage: 25, openFeePct: 0.1, closeFeePct: 0, spreadPct: 0.06 };
 
 describe("Base plan sizing", () => {
+  it("covers crude oil and the products priced off it", () => {
+    const crude = parseBaseInputs({ type: "costs", pairIndex: 96, product: "crude", monthlySpendUsd: 1000, months: 3, crudeSharePct: 100, leverage: 2, bufferPct: 50 });
+    expect(crude).toMatchObject({ product: "crude", crudeSharePct: 100 });
+    expect(planName(crude)).toBe("3-month crude oil cover (WTI)");
+    const jet = parseBaseInputs({ type: "costs", pairIndex: 97, product: "jet", monthlySpendUsd: 1000, months: 2, crudeSharePct: 65, leverage: 2, bufferPct: 50 });
+    expect(planName(jet)).toBe("2-month jet fuel cover (Brent)");
+    // Plans made before the product field still read, and say fuel.
+    const old = parseBaseInputs({ type: "costs", pairIndex: 96, monthlySpendUsd: 1000, months: 3, crudeSharePct: 60, leverage: 2, bufferPct: 50 });
+    expect(old.type === "costs" && old.product).toBe(undefined);
+    expect(planName(old)).toBe("3-month fuel cover (WTI)");
+    expect(() => parseBaseInputs({ type: "costs", pairIndex: 96, product: "gold", monthlySpendUsd: 1000, months: 3, crudeSharePct: 60, leverage: 2, bufferPct: 50 })).toThrow(BasePlanError);
+  });
+
   it("sizes a holdings plan: hedge, margin, buffer, fees and on-chain limits", () => {
     const i = parseBaseInputs({ type: "holdings", pairIndex: 0, valueUsd: 1000, sharePct: 50, leverage: 2, bufferPct: 50 });
     const s = sizeBasePlan(i, ETH_TERMS);
