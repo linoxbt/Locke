@@ -48,7 +48,7 @@ function tiles(wti: number | null, eth: number | null): Tile[][] {
       t("h-80", (
         <div className="relative h-full overflow-hidden bg-danger">
           <span className={`${POSTER} bottom-2 left-3 text-[60px] leading-none text-paper group-hover:bottom-4 group-hover:left-4 group-hover:text-[44px]`}>−50%</span>
-          <span className="eyebrow absolute left-4 top-4 text-paper/80">ETH moves</span>
+          <span className="eyebrow absolute left-4 top-4 text-paper/80">If ETH falls</span>
         </div>
       )),
       t("h-52", (
@@ -100,7 +100,7 @@ function tiles(wti: number | null, eth: number | null): Tile[][] {
       t("h-80", (
         <div className="relative h-full overflow-hidden bg-lime">
           <span className={`${POSTER} -left-3 bottom-0 text-[120px] leading-[0.78] text-ink group-hover:bottom-4 group-hover:left-4 group-hover:text-[64px]`}>WTI</span>
-          <span className="eyebrow absolute left-4 top-4 text-ink/60">Fuel priced off crude</span>
+          <span className="eyebrow absolute left-4 top-4 text-ink/60">Oil costs priced off crude</span>
         </div>
       )),
       t("h-56", (
@@ -125,7 +125,7 @@ function tiles(wti: number | null, eth: number | null): Tile[][] {
       t("h-48", (
         <div className="relative h-full overflow-hidden bg-ink">
           <span className="display absolute left-3 top-3 text-[44px] leading-none text-paper">+25%</span>
-          <span className="eyebrow absolute bottom-4 left-4 text-lime">Crude rises · hedge gains</span>
+          <span className="eyebrow absolute bottom-4 left-4 text-lime">If crude rises · hedge gains</span>
         </div>
       )),
       t("h-56", (
@@ -145,7 +145,6 @@ export function Collage({ wti, eth }: { wti: number | null; eth: number | null }
   const cols = tiles(wti, eth);
   return (
     <>
-      <span className="pointer-events-none absolute bottom-3 right-3 z-10 rounded-full bg-ink/70 px-2.5 py-1 text-[11px] text-paper/80">Example figures</span>
       <FallIn aria-hidden className="absolute inset-0 grid grid-cols-2 gap-2 overflow-hidden p-2 sm:grid-cols-3 lg:grid-cols-5">
         {cols.map((col, i) => (
           <div key={i} className={`overflow-hidden ${i >= 2 ? "hidden sm:block" : ""} ${i >= 3 ? "sm:hidden lg:block" : ""}`}>
