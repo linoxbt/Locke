@@ -28,7 +28,52 @@ const telegramReady = () => !!env("ALERT_TELEGRAM_BOT_TOKEN");
 /** Email to businesses needs a sender on a domain verified with Resend (onboarding@resend.dev only reaches Locke's own inbox). */
 const emailReady = () => !!env("RESEND_API_KEY") && !!env("USER_EMAIL_FROM");
 
+/**
+ * The alerts table, created on first use if the migration hasn't run (the Strike site has no
+ * worker deploy to run it). Same SQL as db/schema.sql; once per process. Null when the database
+ * won't allow it: alerts are then simply not offered.
+ */
+let tableReady: Promise<boolean> | null = null;
+function ensureTable(): Promise<boolean> {
+  tableReady ??= (async () => {
+    try {
+      const [t] = await db()`select to_regclass('public.user_alerts') as t`;
+      if (t?.t) return true;
+      await db().unsafe(`
+        create table if not exists user_alerts (
+          user_id                 uuid primary key references users(id) on delete cascade,
+          email                   text,
+          email_verified_at       timestamptz,
+          email_token             text,
+          email_token_expires     timestamptz,
+          email_sent_at           timestamptz,
+          telegram_chat_id        text,
+          telegram_username       text,
+          telegram_token          text,
+          telegram_token_expires  timestamptz,
+          updated_at              timestamptz not null default now()
+        );
+        create unique index if not exists user_alerts_email_token_idx on user_alerts(email_token) where email_token is not null;
+        create unique index if not exists user_alerts_telegram_token_idx on user_alerts(telegram_token) where telegram_token is not null;
+        create index if not exists user_alerts_chat_idx on user_alerts(telegram_chat_id) where telegram_chat_id is not null;
+        alter table user_alerts enable row level security;
+        do $$
+        begin
+          if exists (select 1 from pg_roles where rolname = 'anon') then revoke all on table public.user_alerts from anon; end if;
+          if exists (select 1 from pg_roles where rolname = 'authenticated') then revoke all on table public.user_alerts from authenticated; end if;
+        end $$;`);
+      return true;
+    } catch (e) {
+      console.warn(`[user-alerts] can't create the alerts table: ${(e as Error).message}`);
+      tableReady = null;
+      return false;
+    }
+  })();
+  return tableReady;
+}
+
 export async function alertSettings(uid: string): Promise<AlertSettings> {
+  if (!(await ensureTable())) return { telegram: { linked: false, username: null, available: false }, email: { address: null, verified: false, pending: false, available: false } };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let r: Record<string, any> | undefined;
   try {
@@ -53,6 +98,7 @@ export async function alertSettings(uid: string): Promise<AlertSettings> {
 
 /** A one-time link that opens Locke's bot; pressing Start in it links that chat to this account. */
 export async function telegramLink(uid: string): Promise<string> {
+  if (!(await ensureTable())) throw new HttpError(503, "Alerts aren't available yet.");
   if (!telegramReady()) throw new HttpError(503, "Telegram alerts aren't set up yet.");
   const t = token();
   await db()`
@@ -63,6 +109,7 @@ export async function telegramLink(uid: string): Promise<string> {
 }
 
 export async function unlinkTelegram(uid: string) {
+  if (!(await ensureTable())) throw new HttpError(503, "Alerts aren't available yet.");
   const [r] = await db()`select telegram_chat_id from user_alerts where user_id = ${uid}`;
   await db()`update user_alerts set telegram_chat_id = null, telegram_username = null, telegram_token = null, updated_at = now() where user_id = ${uid}`;
   if (r?.telegram_chat_id) {
@@ -108,6 +155,7 @@ interface TelegramUpdate {
  * for both sites).
  */
 export async function telegramUpdate(u: TelegramUpdate, opts: { forwarded?: boolean } = {}): Promise<{ unlinked?: number } | void> {
+  if (!(await ensureTable())) return;
   const m = u.message;
   const chat = m?.chat?.id;
   if (!m || chat == null || m.chat?.type !== "private") return;
@@ -181,6 +229,7 @@ async function sendEmail(to: string, subject: string, content: EmailContent): Pr
 
 /** Save the address and send it a confirmation link; alerts go there once it's confirmed. */
 export async function startEmail(uid: string, raw: unknown, origin: string): Promise<void> {
+  if (!(await ensureTable())) throw new HttpError(503, "Alerts aren't available yet.");
   if (!emailReady()) throw new HttpError(503, "Email alerts aren't set up yet.");
   const email = typeof raw === "string" ? raw.trim().toLowerCase() : "";
   if (!EMAIL.test(email) || email.length > 254) throw new HttpError(400, "Enter a valid email address.");
@@ -215,6 +264,7 @@ export async function startEmail(uid: string, raw: unknown, origin: string): Pro
 
 /** The confirmation link: true when it confirmed an address. */
 export async function confirmEmail(t: string): Promise<boolean> {
+  if (!(await ensureTable())) return false;
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(t)) return false;
   const rows = await db()`
     update user_alerts set email_verified_at = now(), email_token = null, email_token_expires = null, updated_at = now()
@@ -223,6 +273,7 @@ export async function confirmEmail(t: string): Promise<boolean> {
 }
 
 export async function removeEmail(uid: string) {
+  if (!(await ensureTable())) throw new HttpError(503, "Alerts aren't available yet.");
   await db()`update user_alerts set email = null, email_verified_at = null, email_token = null, email_token_expires = null, updated_at = now() where user_id = ${uid}`;
 }
 
@@ -232,6 +283,7 @@ const ALERT_FOOTNOTE = "You get this because you turned on email alerts in your 
 
 /** Send one message to every channel this account has linked: Telegram gets the text, email the branded layout. Never throws. */
 export async function notifyUser(uid: string, subject: string, text: string, email?: EmailContent): Promise<string[]> {
+  if (!(await ensureTable())) return [];
   const sent: string[] = [];
   try {
     const [r] = await db()`select email, email_verified_at, telegram_chat_id from user_alerts where user_id = ${uid}`;
