@@ -101,8 +101,13 @@ interface TelegramUpdate {
   message?: { text?: string; chat?: { id?: number; type?: string }; from?: { username?: string } };
 }
 
-/** One update from Telegram's webhook: /start <token> links the chat, /stop unlinks it. */
-export async function telegramUpdate(u: TelegramUpdate): Promise<void> {
+/**
+ * One update from Locke's bot: /start <token> links the chat, /stop unlinks it. The bot is shared
+ * with Locke's other site, which receives Telegram's webhook and passes on what isn't its own:
+ * a /start link it didn't issue, and every /stop (`forwarded`: answered quietly, it replies once
+ * for both sites).
+ */
+export async function telegramUpdate(u: TelegramUpdate, opts: { forwarded?: boolean } = {}): Promise<{ unlinked?: number } | void> {
   const m = u.message;
   const chat = m?.chat?.id;
   if (!m || chat == null || m.chat?.type !== "private") return;
@@ -142,6 +147,7 @@ export async function telegramUpdate(u: TelegramUpdate): Promise<void> {
   }
   if (text === "/stop") {
     const rows = await db()`update user_alerts set telegram_chat_id = null, telegram_username = null, updated_at = now() where telegram_chat_id = ${chatId} returning user_id`;
+    if (opts.forwarded) return { unlinked: rows.length };
     return telegramSend(
       chatId,
       rows.length
