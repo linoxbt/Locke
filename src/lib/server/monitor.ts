@@ -3,6 +3,8 @@
 // the same way and write alerts the same way; only how often they look differs.
 
 import { liveHeadline } from "../domain/plans";
+import type { EmailTone } from "./emailTemplate";
+import { notifyPlanOwner } from "./userAlerts";
 import {
   combinedLevel,
   distanceToLiquidation,
@@ -75,7 +77,26 @@ export async function recordLevel(
     await tx`insert into plan_events (plan_id, level, message, detail)
              values (${planId}, ${level}, ${text}, ${tx.json({ from: prev, to: level, ratio, demo: config.demoAlerts } as never)})`;
   });
+  // Also on Telegram and by email, where the owner linked them. Never throws.
+  await notifyPlanOwner(planId, LEVEL_HEADLINES[level], text, LEVEL_TONE[level]);
 }
+
+const LEVEL_HEADLINES: Record<RiskLevel, string> = {
+  ok: "margin back to normal",
+  watch: "margin weakening",
+  action: "action needed",
+  margin_call: "margin call",
+  reduce_only: "reduce only",
+  liquidation: "liquidation level reached",
+};
+const LEVEL_TONE: Record<RiskLevel, EmailTone> = {
+  ok: "ok",
+  watch: "watch",
+  action: "danger",
+  margin_call: "danger",
+  reduce_only: "danger",
+  liquidation: "danger",
+};
 
 const UNWATCHED = "Locke can't watch this plan right now";
 

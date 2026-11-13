@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SignOutButton } from "@/components/AccountActions";
+import { AlertsCard } from "@/components/AlertsCard";
 import { DelegationPanel } from "@/components/plan/DelegationPanel";
 import { Arrow, Card, Display, Eyebrow, LinkButton, Stat } from "@/components/ui";
 import { strikeKeysFor } from "@/lib/server/keys";
@@ -12,8 +13,9 @@ import { config } from "@/lib/server/config";
 export const metadata: Metadata = { title: "Account — Locke" };
 export const dynamic = "force-dynamic";
 
-export default async function AccountPage() {
+export default async function AccountPage({ searchParams }: { searchParams: Promise<{ email?: string }> }) {
   const s = await requirePageSession("/account");
+  const { email } = await searchParams;
   const info = await getAccountInfo(s.uid);
   let balance: { wallet: number; available: number } | null = null;
   try {
@@ -70,6 +72,7 @@ export default async function AccountPage() {
             <li>Signing in again replaces that key; Locke deletes the old one. Signing out ends your session on every device.</li>
           </ul>
         </Card>
+        <AlertsCard confirmed={email === "confirmed" || email === "expired" ? email : null} />
       </div>
     </div>
   );

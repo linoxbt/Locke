@@ -1,5 +1,7 @@
 // Plan lifecycle: draft → funding → opening → active → closing → closed.
 // Used by the API routes and by the risk worker, so it must not import Next.js modules.
+import type { EmailTone } from "./emailTemplate";
+import { notifyPlanOwner } from "./userAlerts";
 //
 // Rules (spec section 12):
 // - The server recomputes every order from the stored plan; sizes from the browser are never trusted.
@@ -155,6 +157,17 @@ export function thresholds(): Thresholds {
 export async function addEvent(planId: string, level: string, message: string, detail?: object) {
   await db()`insert into plan_events (plan_id, level, message, detail)
              values (${planId}, ${level}, ${message}, ${detail ? db().json(detail as never) : null})`;
+  const notice = ownerNotice(level, message);
+  if (notice) await notifyPlanOwner(planId, notice.headline, message, notice.tone);
+}
+
+/** Which plan events also go to the owner on Telegram and by email (risk levels are sent from recordLevel). */
+export function ownerNotice(level: string, message: string): { headline: string; tone: EmailTone } | null {
+  if (message.startsWith("Hedge open on Strike")) return { headline: "your hedge is open", tone: "ok" };
+  if (message.startsWith("Plan closed")) return { headline: "plan closed", tone: "info" };
+  if (level === "liquidation") return { headline: "position no longer open", tone: "danger" };
+  if (level === "action") return { headline: "needs attention", tone: "watch" };
+  return null;
 }
 
 /** An event that must never undo the step it reports (it runs after Strike already acted). */

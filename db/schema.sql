@@ -192,3 +192,32 @@ create table if not exists monitor_heartbeat (
   result  jsonb
 );
 alter table monitor_heartbeat enable row level security;
+
+-- Where each user gets alerts about their plans: a Telegram chat linked through Locke's bot, and an
+-- email address they confirmed. Link tokens are stored hashed and expire.
+create table if not exists user_alerts (
+  user_id                 uuid primary key references users(id) on delete cascade,
+  email                   text,
+  email_verified_at       timestamptz,
+  email_token             text,
+  email_token_expires     timestamptz,
+  email_sent_at           timestamptz,
+  telegram_chat_id        text,
+  telegram_username       text,
+  telegram_token          text,
+  telegram_token_expires  timestamptz,
+  updated_at              timestamptz not null default now()
+);
+create unique index if not exists user_alerts_email_token_idx on user_alerts(email_token) where email_token is not null;
+create unique index if not exists user_alerts_telegram_token_idx on user_alerts(telegram_token) where telegram_token is not null;
+create index if not exists user_alerts_chat_idx on user_alerts(telegram_chat_id) where telegram_chat_id is not null;
+alter table user_alerts enable row level security;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on table public.user_alerts from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on table public.user_alerts from authenticated;
+  end if;
+end $$;
