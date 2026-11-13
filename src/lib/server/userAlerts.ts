@@ -90,6 +90,29 @@ export async function telegramSend(chatId: string, msg: TelegramMessage): Promis
   if (!res.ok) throw new Error(`Telegram answered ${res.status}`);
 }
 
+/**
+ * The bot is shared with Locke on Strike (trylocke.online). Telegram sends its updates here only,
+ * so what isn't ours is passed on: a /start link this site didn't issue, and /stop (both sites
+ * turn alerts off; this one replies once). Unset TELEGRAM_FORWARD_URL: nothing is passed on.
+ */
+async function forward(u: TelegramUpdate): Promise<{ ok: boolean; unlinked?: number } | null> {
+  const url = env("TELEGRAM_FORWARD_URL");
+  const secret = env("TELEGRAM_FORWARD_SECRET") ?? env("TELEGRAM_WEBHOOK_SECRET");
+  if (!url || !secret) return null;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-telegram-bot-api-secret-token": secret, "x-locke-forwarded": "1" },
+      body: JSON.stringify(u),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    return res.ok ? ((await res.json().catch(() => ({ ok: true }))) as { ok: boolean; unlinked?: number }) : null;
+  } catch (e) {
+    console.warn(`[telegram] forward: ${(e as Error).message}`);
+    return null;
+  }
+}
+
 interface TelegramUpdate {
   message?: { text?: string; chat?: { id?: number; type?: string }; from?: { username?: string } };
 }
@@ -115,7 +138,11 @@ export async function telegramUpdate(u: TelegramUpdate): Promise<void> {
         telegram_token_expires = null, updated_at = now()
       where telegram_token = ${hash(t)} and telegram_token_expires > now()
       returning user_id`;
-    if (!r) return telegramSend(chatId, botReply("Link expired", "That link has expired or was already used. Make a new one from your account.", "watch", "Make a new link", `${site}/account`));
+    if (!r) {
+      // Not one of this site's links: Locke on Strike may have issued it, and replies itself if so.
+      if (await forward(u)) return;
+      return telegramSend(chatId, botReply("Link expired", "That link has expired or was already used. Make a new one from your account.", "watch", "Make a new link", `${site}/account`));
+    }
     // One chat follows one account: linking here moves it off any other.
     await db()`update base_user_alerts set telegram_chat_id = null, telegram_username = null where telegram_chat_id = ${chatId} and user_id <> ${r.user_id}`;
     const [u2] = await db()`select address from base_users where id = ${r.user_id}`;
@@ -135,9 +162,10 @@ export async function telegramUpdate(u: TelegramUpdate): Promise<void> {
   }
   if (text === "/stop") {
     const rows = await db()`update base_user_alerts set telegram_chat_id = null, telegram_username = null, updated_at = now() where telegram_chat_id = ${chatId} returning user_id`;
+    const strike = await forward(u);
     return telegramSend(
       chatId,
-      rows.length
+      rows.length + (strike?.unlinked ?? 0)
         ? botReply("Alerts off", "This chat no longer gets alerts about your Locke plans. Link it again from your account any time.", "info", "Open your account", `${site}/account`)
         : botReply("Not linked", "This chat isn't linked to a Locke account.", "info", "Link from your account", `${site}/account`)
     );
